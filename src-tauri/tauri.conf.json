@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MoonLit",
+  "version": "0.1.0",
+  "identifier": "com.souriscg.moonlit",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MoonLit",
+        "width": 1200,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data:; media-src 'self' asset: https://asset.localhost blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.png"
+    ],
+    "windows": {
+      "wix": null,
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

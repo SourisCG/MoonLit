@@ -1,0 +1,36 @@
+# Frontend
+node_modules/
+dist/
+.svelte-kit/
+
+# Rust and Tauri
+target/
+src-tauri/gen/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local media and generated test artifacts
+clips/
+recordings/
+proxies/
+test-results/**/*.mkv
+test-results/**/*.mp4
+test-results/**/*.webm
+test-results/**/*.wav
+test-results/**/*.png
+test-results/**/*.jpg
+
+# Editor and operating system files
+.DS_Store
+.direnv/
+.idea/
+.vscode/
+*.swp
+
+# Local Tauri signing material
+src-tauri/keys/
