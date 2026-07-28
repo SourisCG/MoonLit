@@ -13,9 +13,11 @@ pub mod linux;
 
 // Re-export the appropriate backend based on platform
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 pub use windows::WindowsCaptureBackend;
 
 #[cfg(target_os = "linux")]
 pub use linux::LinuxCaptureBackend;
 
+#[allow(unused_imports)]
 pub use fake::FakeBackend;

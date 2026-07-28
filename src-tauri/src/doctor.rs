@@ -1,7 +1,11 @@
 use std::env;
-use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(target_os = "linux")]
+use std::fs;
+#[cfg(windows)]
+use std::path::Path;
 
 use serde::Serialize;
 
@@ -41,11 +45,13 @@ fn now_seconds() -> u64 {
         .as_secs()
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn first_env(keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|key| env::var(key).ok().filter(|value| !value.trim().is_empty()))
 }
 
+#[cfg(target_os = "linux")]
 fn os_release() -> (String, Option<String>) {
     let contents = fs::read_to_string("/etc/os-release").unwrap_or_default();
     let mut name = None;
@@ -62,6 +68,11 @@ fn os_release() -> (String, Option<String>) {
         }
     }
     (name.unwrap_or_else(|| env::consts::OS.to_string()), version)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn os_release() -> (String, Option<String>) {
+    (env::consts::OS.to_string(), None)
 }
 
 fn clean_output(bytes: &[u8]) -> Option<String> {
@@ -116,12 +127,26 @@ fn probe_named(label: &str, program: &str, args: &[&str]) -> CommandProbe {
 }
 
 fn find_in_path(program: &str) -> Option<String> {
-    env::split_paths(&env::var_os("PATH")?)
-        .map(|directory| directory.join(program))
-        .find(|candidate| candidate.is_file())
-        .map(|path| path.to_string_lossy().into_owned())
+    for directory in env::split_paths(&env::var_os("PATH")?) {
+        let candidate = directory.join(program);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+
+        #[cfg(windows)]
+        if Path::new(program).extension().is_none() {
+            for extension in [".com", ".exe", ".bat", ".cmd"] {
+                let candidate = directory.join(format!("{program}{extension}"));
+                if candidate.is_file() {
+                    return Some(candidate.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    None
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn display_flags(session: &str, has_wayland: bool, has_x11: bool) -> (bool, bool) {
     (
         session.eq_ignore_ascii_case("wayland") && has_wayland,
@@ -129,6 +154,7 @@ fn display_flags(session: &str, has_wayland: bool, has_x11: bool) -> (bool, bool
     )
 }
 
+#[cfg(target_os = "linux")]
 fn detect_gpu() -> Option<String> {
     if let Ok(output) = Command::new("nvidia-smi")
         .args(["--query-gpu=name", "--format=csv,noheader"])
@@ -153,9 +179,24 @@ fn detect_gpu() -> Option<String> {
         .map(|line| line.trim().to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn detect_gpu() -> Option<String> {
+    let output = Command::new("nvidia-smi")
+        .args(["--query-gpu=name", "--format=csv,noheader"])
+        .output()
+        .ok()?;
+    clean_output(&output.stdout)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn detect_gpu() -> Option<String> {
+    None
+}
+
 #[tauri::command]
 pub fn run_doctor() -> DoctorReport {
     let (os_name, os_version) = os_release();
+    #[cfg(target_os = "linux")]
     let session = first_env(&["XDG_SESSION_TYPE"]).unwrap_or_else(|| {
         if env::var_os("WAYLAND_DISPLAY").is_some() {
             "wayland".to_string()
@@ -165,8 +206,16 @@ pub fn run_doctor() -> DoctorReport {
             "desconocida".to_string()
         }
     });
+    #[cfg(not(target_os = "linux"))]
+    let session = "windows".to_string();
+
+    #[cfg(target_os = "linux")]
     let desktop = first_env(&["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"])
         .unwrap_or_else(|| "desconocido".to_string());
+    #[cfg(not(target_os = "linux"))]
+    let desktop = "Windows Desktop".to_string();
+
+    #[cfg(target_os = "linux")]
     let commands = vec![
         probe("gpu-screen-recorder", &["--version"]),
         probe("ffmpeg", &["-version"]),
@@ -177,53 +226,82 @@ pub fn run_doctor() -> DoctorReport {
         probe("nvidia-smi", &["--version"]),
         probe("lspci", &["-nn"]),
     ];
+    #[cfg(target_os = "windows")]
+    let commands = vec![probe("nvidia-smi", &["--version"])];
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    let commands = Vec::new();
+
+    #[cfg(target_os = "linux")]
     let (wayland_display, x11_display) = display_flags(
         &session,
         env::var_os("WAYLAND_DISPLAY").is_some(),
         env::var_os("DISPLAY").is_some(),
     );
+    #[cfg(not(target_os = "linux"))]
+    let (wayland_display, x11_display) = (false, false);
+
     let mut capabilities = vec!["fake-backend".to_string()];
     let mut notes =
         vec!["Este diagnóstico no inicia una captura ni modifica el sistema.".to_string()];
 
-    if wayland_display {
-        capabilities.push("wayland-display".to_string());
-    }
-    if x11_display {
-        capabilities.push("x11-display".to_string());
-    }
-    if wayland_display {
+    #[cfg(target_os = "windows")]
+    {
+        capabilities.push("windows".to_string());
         notes.push(
+            "La captura Windows.Graphics.Capture y el encoder NVENC aún requieren implementación nativa."
+                .to_string(),
+        );
+        if commands
+            .iter()
+            .any(|item| item.name == "nvidia-smi" && item.available)
+        {
+            capabilities.push("nvidia-gpu".to_string());
+        } else {
+            notes.push("nvidia-smi no fue encontrado en PATH.".to_string());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if wayland_display {
+            capabilities.push("wayland-display".to_string());
+        }
+        if x11_display {
+            capabilities.push("x11-display".to_string());
+        }
+        if wayland_display {
+            notes.push(
             "La captura Wayland requiere consentimiento del portal; todavía no se marca como lista."
                 .to_string(),
         );
-    }
-    if env::var_os("DISPLAY").is_some() && session.eq_ignore_ascii_case("wayland") {
-        notes.push(
-            "DISPLAY pertenece a XWayland; no se cuenta como una sesión X11 real.".to_string(),
-        );
-    }
-    if commands
-        .iter()
-        .any(|item| item.name == "pipewire-graph" && item.available)
-    {
-        capabilities.push("pipewire".to_string());
-    } else {
-        notes.push("PipeWire no fue encontrado en PATH.".to_string());
-    }
-    if commands
-        .iter()
-        .any(|item| item.name == "gpu-screen-recorder" && item.available)
-    {
-        capabilities.push("gpu-screen-recorder".to_string());
-    } else {
-        notes.push("gpu-screen-recorder todavía no está instalado.".to_string());
-    }
-    if commands
-        .iter()
-        .any(|item| item.name == "ffprobe" && item.available)
-    {
-        capabilities.push("ffprobe".to_string());
+        }
+        if env::var_os("DISPLAY").is_some() && session.eq_ignore_ascii_case("wayland") {
+            notes.push(
+                "DISPLAY pertenece a XWayland; no se cuenta como una sesión X11 real.".to_string(),
+            );
+        }
+        if commands
+            .iter()
+            .any(|item| item.name == "pipewire-graph" && item.available)
+        {
+            capabilities.push("pipewire".to_string());
+        } else {
+            notes.push("PipeWire no fue encontrado en PATH.".to_string());
+        }
+        if commands
+            .iter()
+            .any(|item| item.name == "gpu-screen-recorder" && item.available)
+        {
+            capabilities.push("gpu-screen-recorder".to_string());
+        } else {
+            notes.push("gpu-screen-recorder todavía no está instalado.".to_string());
+        }
+        if commands
+            .iter()
+            .any(|item| item.name == "ffprobe" && item.available)
+        {
+            capabilities.push("ffprobe".to_string());
+        }
     }
 
     DoctorReport {
@@ -274,7 +352,7 @@ mod tests {
 
     #[test]
     fn failed_command_is_not_reported_as_available() {
-        let probe = probe_named("false-test", "false", &[]);
+        let probe = probe_named("rustc-invalid-test", "rustc", &["--moonlit-invalid-option"]);
         assert!(!probe.available);
         assert_eq!(probe.state, "failed");
     }

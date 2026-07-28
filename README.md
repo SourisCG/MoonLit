@@ -30,7 +30,7 @@ Windows with future Linux portability planned.
 ### Development Requirements
 - Node.js 20 or newer
 - npm 10 or newer
-- Rust stable (1.77.2+)
+- Rust stable (1.88+)
 - Tauri 2.x CLI
 - Windows SDK (for Windows-specific features)
 
@@ -48,6 +48,12 @@ Windows with future Linux portability planned.
 ### Development Build
 
 See [Development](#development) section below.
+
+### Current Development Status
+
+The Windows bootstrap is verified: the Tauri application builds and launches
+with the simulated backend. Native Windows.Graphics.Capture, WASAPI, NVENC,
+the persistent library and the installer are still under development.
 
 ## Usage
 

@@ -7,6 +7,8 @@
 //!
 //! Currently a stub that returns errors. Implementation will be completed on Windows machine.
 
+#![allow(dead_code)]
+
 use crate::traits::*;
 use std::path::PathBuf;
 

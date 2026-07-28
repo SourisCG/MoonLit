@@ -332,7 +332,8 @@ mod tests {
         let clip = backend.save_clip().expect("save fake clip");
         let contents = fs::read_to_string(&clip.path).expect("manifest exists");
         assert!(contents.contains("FakeBackend"));
-        assert!(!directory.join("captures.json.tmp").exists());
+        let temporary_manifest = clip.path.with_extension("json.tmp");
+        assert!(!temporary_manifest.exists());
         backend.stop().expect("stop fake backend");
         fs::remove_dir_all(directory).expect("remove temporary directory");
     }

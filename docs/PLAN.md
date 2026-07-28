@@ -37,13 +37,13 @@ MoonLit is a Windows-first, local-first desktop application for saving game clip
 
 The project is designed as a Windows-first application with portable architecture for future Linux support.
 
-**Phase 0: Preparation (Linux - Current)**
+**Phase 0: Foundation and Windows Bootstrap**
 - ✅ Project configuration and setup
 - ✅ Update package.json, Cargo.toml, tauri.conf.json
 - ✅ Update documentation (PLAN.md, README.md, AI_CONTEXT.md)
-- ⏳ Configure Tauri for Windows (cross-compilation setup)
-- ⏳ Create portable backend structure (traits, interfaces)
-- ⏳ Document Windows APIs (Windows.Graphics.Capture, WASAPI)
+- ✅ Configure Tauri/Rust for Windows and verify the MSVC build
+- ⏳ Unify the portable runtime contract with the connected FakeBackend
+- ✅ Document Windows APIs (Windows.Graphics.Capture, WASAPI)
 - ⏳ Prepare NSIS/WiX installer configuration
 
 **Phase 1: Windows Backend Implementation (Windows Required)**
@@ -302,7 +302,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 ### Development
 - **Node.js**: 20 or newer
 - **npm**: 10 or newer
-- **Rust**: Stable (1.77.2+)
+- **Rust**: Stable (1.88+)
 - **Tauri**: 2.x
 - **Windows SDK**: For Windows-specific features
 

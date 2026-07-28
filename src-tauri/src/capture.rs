@@ -3,12 +3,14 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -51,7 +53,7 @@ impl Default for CaptureProfile {
             width: 1920,
             height: 1080,
             fps: 60,
-            buffer_seconds: 60,
+            buffer_seconds: 30,
             audio_sources: Vec::new(),
         }
     }
@@ -90,53 +92,75 @@ pub struct GsrBackend {
 
 impl GsrBackend {
     pub fn discover_with_resource_dir(resource_dir: Option<PathBuf>) -> Self {
-        let mut candidates = Vec::new();
+        #[cfg(target_os = "linux")]
+        {
+            let mut candidates = Vec::new();
 
-        if let Ok(path) = env::var("SOURISTV_GSR_PATH") {
-            candidates.push((PathBuf::from(path), "external".to_string()));
-        }
+            if let Ok(path) = env::var("SOURISTV_GSR_PATH") {
+                candidates.push((PathBuf::from(path), "external".to_string()));
+            }
 
-        if let Some(resource_dir) = resource_dir {
-            candidates.push((
-                resource_dir.join("gsr/gpu-screen-recorder"),
-                "bundled".to_string(),
-            ));
-            candidates.push((
-                resource_dir.join("gpu-screen-recorder"),
-                "bundled".to_string(),
-            ));
-        }
+            if let Some(resource_dir) = resource_dir {
+                candidates.push((
+                    resource_dir.join("gsr/gpu-screen-recorder"),
+                    "bundled".to_string(),
+                ));
+                candidates.push((
+                    resource_dir.join("gpu-screen-recorder"),
+                    "bundled".to_string(),
+                ));
+            }
 
-        if let Ok(executable) = env::current_exe() {
-            if let Some(bin_dir) = executable.parent() {
-                if let Some(prefix) = bin_dir.parent() {
-                    candidates.push((
-                        prefix.join("libexec/moonlit/gpu-screen-recorder"),
-                        "bundled".to_string(),
-                    ));
+            if let Ok(executable) = env::current_exe() {
+                if let Some(bin_dir) = executable.parent() {
+                    if let Some(prefix) = bin_dir.parent() {
+                        candidates.push((
+                            prefix.join("libexec/moonlit/gpu-screen-recorder"),
+                            "bundled".to_string(),
+                        ));
+                    }
                 }
             }
+
+            candidates.push((
+                PathBuf::from("/usr/libexec/moonlit/gpu-screen-recorder"),
+                "bundled".to_string(),
+            ));
+            if let Some(path) = find_in_path("gpu-screen-recorder") {
+                candidates.push((path, "system".to_string()));
+            }
+
+            Self::from_candidates(candidates)
         }
 
-        candidates.push((
-            PathBuf::from("/usr/libexec/moonlit/gpu-screen-recorder"),
-            "bundled".to_string(),
-        ));
-        if let Some(path) = find_in_path("gpu-screen-recorder") {
-            candidates.push((path, "system".to_string()));
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = resource_dir;
+            Self {
+                executable: None,
+                origin: None,
+            }
         }
-
-        Self::from_candidates(candidates)
     }
 
     pub fn from_external_path(path: PathBuf) -> Result<Self, String> {
-        let path = validate_executable_path(path)?;
-        Ok(Self {
-            executable: Some(path),
-            origin: Some("external".to_string()),
-        })
+        #[cfg(target_os = "linux")]
+        {
+            let path = validate_executable_path(path)?;
+            Ok(Self {
+                executable: Some(path),
+                origin: Some("external".to_string()),
+            })
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = path;
+            Err("gpu-screen-recorder sólo está soportado en Linux".to_string())
+        }
     }
 
+    #[cfg(target_os = "linux")]
     fn from_candidates(candidates: Vec<(PathBuf, String)>) -> Self {
         candidates
             .into_iter()
@@ -164,6 +188,19 @@ impl GsrBackend {
 
     fn executable_dir(&self) -> Option<&Path> {
         self.executable.as_deref().and_then(Path::parent)
+    }
+
+    fn missing_note() -> String {
+        #[cfg(target_os = "linux")]
+        {
+            "No instalado; el FakeBackend sigue habilitado".to_string()
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            "gpu-screen-recorder sólo está soportado en Linux; el FakeBackend sigue habilitado"
+                .to_string()
+        }
     }
 }
 
@@ -537,7 +574,7 @@ impl GsrBackend {
                 status: "missing".to_string(),
                 version: None,
                 codecs: Vec::new(),
-                note: "No instalado; el FakeBackend sigue habilitado".to_string(),
+                note: Self::missing_note(),
             };
         };
 
@@ -672,12 +709,14 @@ fn detect_codecs(output: &str) -> Vec<String> {
     codecs
 }
 
+#[cfg(target_os = "linux")]
 fn find_in_path(program: &str) -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
         .map(|directory| directory.join(program))
         .find(|candidate| is_executable_file(candidate))
 }
 
+#[cfg(target_os = "linux")]
 fn validate_executable_path(path: PathBuf) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err("La ruta de GSR debe ser absoluta".to_string());
@@ -698,6 +737,7 @@ fn validate_executable_path(path: PathBuf) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(target_os = "linux")]
 fn is_executable_file(path: &Path) -> bool {
     fs::metadata(path)
         .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
@@ -782,10 +822,19 @@ mod tests {
         assert_eq!(status.status, "missing");
     }
 
+    #[cfg(unix)]
     #[test]
     fn external_gsr_requires_an_absolute_executable_path() {
         let error = GsrBackend::from_external_path(PathBuf::from("gpu-screen-recorder"))
             .expect_err("relative path must be rejected");
         assert!(error.contains("absoluta"));
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn external_gsr_is_rejected_outside_linux() {
+        let error = GsrBackend::from_external_path(PathBuf::from("C:\\gpu-screen-recorder.exe"))
+            .expect_err("GSR must not be selectable on Windows");
+        assert!(error.contains("Linux"));
     }
 }

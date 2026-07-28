@@ -67,7 +67,7 @@
     sessionId: null,
     gameLabel: null,
     startedAt: null,
-    bufferSeconds: 60,
+    bufferSeconds: 30,
     savedClips: 0,
     lastClip: null,
     message: 'Listo para iniciar una prueba.',
@@ -76,7 +76,7 @@
   let snapshot = emptySnapshot;
   let doctor: DoctorReport | null = null;
   let nativeBackend: NativeBackendStatus | null = null;
-  let bufferSeconds = 60;
+  let bufferSeconds = 30;
   let externalGsrPath = '';
   let busy = false;
   let notice = '';

@@ -1,6 +1,6 @@
 # MoonLit AI Context
 
-Updated: 2026-07-23 (Phase 0 Completed)
+Updated: 2026-07-28 (Windows bootstrap verified)
 
 ## Project Overview
 
@@ -8,15 +8,15 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ## Current State
 
-### Phase: Windows Implementation Ready
+### Phase: Windows Bootstrap
 
-**✅ Phase 0 Completed (Linux)**:
+**Foundation and bootstrap status**:
 - Portable architecture designed and implemented with traits
 - Complete FakeBackend for development/testing on Linux
 - Windows backend stubs ready for implementation
 - Comprehensive documentation created (7 documents)
-- NSIS installer configuration prepared
-- All code compiles and passes automated checks
+- NSIS installer configuration is not yet verified
+- Windows baseline is compilable and launch-tested on the RTX 3060 workstation
 
 **⏳ Phase 1 Pending (Windows Required)**:
 - Implement WindowsCaptureBackend (Windows.Graphics.Capture)
@@ -26,7 +26,17 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - Implement GameDetector (process/window enumeration)
 - Testing and validation on Windows 10/11
 
-**Status**: Ready for Windows implementation phase
+**Status**: Bootstrap verified; native capture implementation has not started
+
+### Windows Bootstrap Verification (2026-07-28)
+
+- Environment: Windows 11 Pro x64, Rust 1.97.1 MSVC, WebView2, RTX 3060 12 GB
+- `npm run check`, `npm run build`, Rust format, tests and strict clippy pass
+- `cargo check --locked --target x86_64-pc-windows-msvc` passes
+- `npm run tauri -- info` passes
+- `npm run tauri -- build --no-bundle` produces `moonlit.exe`
+- The executable starts successfully with the current FakeBackend
+- No Windows.Graphics.Capture, WASAPI or NVENC path is implemented yet
 
 ### What Exists (Linux Implementation)
 
@@ -154,16 +164,16 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ## Implementation Phases
 
-### Phase 0: Preparation (Linux - Current)
-**Status**: ✅ Completed (2026-07-23)
+### Phase 0: Preparation and Windows Bootstrap
+**Status**: In progress on Windows (started 2026-07-28)
 
 1. ✅ Project configuration and setup
 2. ✅ Update package.json, Cargo.toml, tauri.conf.json
 3. ✅ Update documentation (PLAN.md, README.md, AI_CONTEXT.md)
-4. ✅ Configure Tauri for Windows (cross-compilation setup)
+4. ✅ Verify Tauri and Rust build on Windows
 5. ✅ Create portable backend structure (traits, interfaces)
 6. ✅ Document Windows APIs (Windows.Graphics.Capture, WASAPI)
-7. ✅ Prepare NSIS/WiX installer configuration
+7. ⏳ Prepare and verify Windows installer configuration
 
 **Completed Files:**
 - `src-tauri/src/traits.rs` - Portable trait definitions (CaptureService, AudioMixerService, HotkeyService, GameDetector)
@@ -179,7 +189,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - `docs/ARCHITECTURE.md` - Complete architecture documentation with trait-based design
 - `docs/WINDOWS_APIS.md` - Detailed Windows API documentation
 
-**Can do on Linux**: All of Phase 0 ✅
+**Can do on Linux**: Portable core, fake flows and frontend; native Windows verification remains here
 
 ### Phase 1: Windows Backend Implementation (Windows Required)
 **Status**: Pending
@@ -244,16 +254,17 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ## Development Strategy
 
-### Current: Linux Development
-- **Environment**: Fedora 44 GNOME (current workstation)
-- **Tools**: Can edit code, write tests, create structure
-- **Limitations**: Cannot compile for Windows, cannot test Windows APIs
-- **Focus**: Architecture, documentation, portable code, frontend
+### Current: Windows Bootstrap
+- **Environment**: Windows 11 Pro x64 with RTX 3060 12 GB
+- **Tools**: Rust MSVC, Visual Studio Build Tools, Windows SDK, WebView2 and Tauri CLI
+- **Limitations**: Native capture, audio and encoder paths are still stubs
+- **Focus**: Windows baseline, WGC/NVENC spike and native validation
 
-### Future: Windows Development
-- **Environment**: Fedora 44 KDE with RTX 3060 (at home)
-- **Tools**: Full Windows development environment
-- **Focus**: Real implementation, testing, optimization, packaging
+### Parallel Linux Work
+- **Environment**: Fedora workstations
+- **Tools**: Portable Rust/frontend development and FakeBackend tests
+- **Limitations**: Cannot validate Windows APIs or Windows GPU drivers
+- **Focus**: Unified contracts, replay core, fake flows and frontend
 
 ## Key APIs Documentation
 

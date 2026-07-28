@@ -2,7 +2,7 @@
 
 These checks require Windows hardware, specific GPUs, or long-running sessions that may not be available during Linux development. They do not block ordinary feature development but must be completed before release.
 
-## ✅ Phase 0: Preparation (Linux - Completed 2026-07-23)
+## ✅ Phase 0: Foundation and Windows Bootstrap (2026-07-28)
 
 ### Project Setup
 - [x] Update package.json name to "moonlit"
@@ -45,9 +45,18 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [x] Update README.md with MoonLit information
 
 ### Code Quality
-- [x] All code compiles without errors (warnings for unused code expected)
+- [x] Windows target compiles without errors
 - [x] Code formatted with `cargo fmt`
-- [x] Automated checks pass (npm run check, cargo check)
+- [x] Automated checks pass (`npm run check`, `npm run build`, `cargo test`, strict clippy)
+
+### Windows Bootstrap Evidence
+- [x] `npm run tauri -- info` recognizes the Windows toolchain
+- [x] `npm run tauri -- build --no-bundle` produces `moonlit.exe`
+- [x] Release executable starts successfully with FakeBackend
+- [ ] Manual Tauri UI start/save/stop interaction
+- [ ] Native Windows.Graphics.Capture capture
+- [ ] Native WASAPI capture
+- [ ] Direct NVENC encoding
 
 ## Windows API Validation
 

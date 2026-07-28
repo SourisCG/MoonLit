@@ -3,6 +3,8 @@
 //! These traits define platform-agnostic interfaces that can be implemented
 //! for different operating systems (Windows, Linux, macOS).
 
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 use std::time::Duration;
 

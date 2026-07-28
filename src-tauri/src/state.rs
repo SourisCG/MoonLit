@@ -41,7 +41,7 @@ impl Default for RuntimeSnapshot {
             session_id: None,
             game_label: None,
             started_at: None,
-            buffer_seconds: 60,
+            buffer_seconds: 30,
             saved_clips: 0,
             last_clip: None,
             message: "Listo para iniciar una prueba.".to_string(),

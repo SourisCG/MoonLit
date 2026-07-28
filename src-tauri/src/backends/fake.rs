@@ -3,6 +3,8 @@
 //! This backend simulates capture operations without requiring real hardware.
 //! Useful for development on Linux and testing UI without actual capture.
 
+#![allow(dead_code)]
+
 use crate::traits::*;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -68,7 +70,7 @@ impl CaptureService for FakeBackend {
 
         let clip_name = format!("fake-clip-{}-{}.mp4", session.id, timestamp);
 
-        let clip_path = PathBuf::from("/tmp/moonlit").join(clip_name);
+        let clip_path = std::env::temp_dir().join("moonlit").join(clip_name);
 
         // Create fake file (just a placeholder)
         std::fs::create_dir_all(clip_path.parent().unwrap())?;
