@@ -42,7 +42,7 @@ The project is designed as a Windows-first application with portable architectur
 - ✅ Update package.json, Cargo.toml, tauri.conf.json
 - ✅ Update documentation (PLAN.md, README.md, AI_CONTEXT.md)
 - ✅ Configure Tauri/Rust for Windows and verify the MSVC build
-- ⏳ Unify the portable runtime contract with the connected FakeBackend
+- ✅ Unify the portable runtime contract with the connected FakeBackend
 - ✅ Document Windows APIs (Windows.Graphics.Capture, WASAPI)
 - ⏳ Prepare NSIS/WiX installer configuration
 
@@ -54,6 +54,15 @@ The project is designed as a Windows-first application with portable architectur
 - ⏳ Implement GameDetector (process/window scanning)
 - ⏳ Testing on Windows 10 and Windows 11
 - ⏳ Testing with NVIDIA, AMD, Intel GPUs
+
+**Current Contract Milestone: ReplayBackend v1**
+- ✅ Canonical replay backend trait and serializable DTOs
+- ✅ FakeBackend connected through the platform factory
+- ✅ Runtime actor with snapshots, state transitions and recorder events
+- ✅ GSR quarantined as a Linux-only legacy adapter
+- ✅ Frontend IPC client and source/backend selection flow
+- ✅ GOP-aware encoded replay core
+- ⏳ Windows.Graphics.Capture + direct NVENC H.264 spike
 
 **Phase 2: Frontend Adaptation (Linux - Current)**
 - ⏳ Redesign UI for Windows (Fluent Design-inspired)

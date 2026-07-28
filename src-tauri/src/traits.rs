@@ -1,42 +1,55 @@
-//! Portable traits for MoonLit backend services
+//! Portable replay backend contract.
 //!
-//! These traits define platform-agnostic interfaces that can be implemented
-//! for different operating systems (Windows, Linux, macOS).
+//! Native resources and encoded frame data stay inside a backend. Only
+//! descriptors, source metadata and completed clip metadata cross this layer.
 
-#![allow(dead_code)]
+use std::fmt;
+use std::path::{Path, PathBuf};
 
-use std::path::PathBuf;
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
 
-/// Configuration for video encoding
-#[derive(Debug, Clone)]
-pub struct EncodingConfig {
-    pub codec: VideoCodec,
-    pub resolution: (u32, u32),
-    pub fps: u32,
-    pub bitrate: u32,
-    pub quality: QualityPreset,
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackendId {
+    Fake,
+    #[serde(rename = "windowsNative")]
+    WindowsNative,
+    #[serde(rename = "legacyGsr")]
+    LegacyGsr,
 }
 
-/// Video codec options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureSourceKind {
+    Monitor,
+    Window,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureSource {
+    pub id: String,
+    pub kind: CaptureSourceKind,
+    pub label: String,
+    pub is_default: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct VideoResolution {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum VideoCodec {
     H264,
-    H265,
+    Hevc,
 }
 
-/// Quality presets for encoding
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QualityPreset {
-    Low,
-    Medium,
-    High,
-    Ultra,
-}
-
-/// Type of encoder to use
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EncoderType {
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EncoderPreference {
     Auto,
     Nvenc,
     Amf,
@@ -44,352 +57,215 @@ pub enum EncoderType {
     Software,
 }
 
-/// Errors that can occur during capture operations
-#[derive(Debug, thiserror::Error)]
-pub enum CaptureError {
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-
-    #[error("Source not found: {0}")]
-    SourceNotFound(String),
-
-    #[error("Capture failed: {0}")]
-    CaptureFailed(String),
-
-    #[error("Buffer overflow")]
-    BufferOverflow,
-
-    #[error("Encoder error: {0}")]
-    EncoderError(String),
-
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncoderCapability {
+    pub id: EncoderPreference,
+    pub available: bool,
+    pub reason: Option<String>,
 }
 
-/// Errors that can occur during audio operations
-#[derive(Debug, thiserror::Error)]
-pub enum AudioError {
-    #[error("Device not found: {0}")]
-    DeviceNotFound(String),
-
-    #[error("Device busy: {0}")]
-    DeviceBusy(String),
-
-    #[error("Audio capture failed: {0}")]
-    CaptureFailed(String),
-
-    #[error("Mixing error: {0}")]
-    MixingError(String),
-}
-
-/// Errors that can occur during encoding operations
-#[derive(Debug, thiserror::Error)]
-pub enum EncodingError {
-    #[error("Encoder initialization failed: {0}")]
-    InitializationFailed(String),
-
-    #[error("Encoding failed: {0}")]
-    EncodingFailed(String),
-
-    #[error("GPU not available: {0}")]
-    GpuNotAvailable(String),
-
-    #[error("Unsupported codec: {0}")]
-    UnsupportedCodec(String),
-}
-
-/// Trait for platform-specific capture implementations
-pub trait CaptureService: Send + Sync {
-    /// Start replay buffer capture
-    fn start_replay(&mut self, config: CaptureConfig) -> Result<CaptureSession, CaptureError>;
-
-    /// Save the last N seconds from replay buffer
-    fn save_clip(&mut self, session: &mut CaptureSession) -> Result<PathBuf, CaptureError>;
-
-    /// Stop capture and clean up resources
-    fn stop(&mut self, session: &mut CaptureSession) -> Result<(), CaptureError>;
-
-    /// Get list of available capture sources (monitors, windows)
-    fn get_sources(&self) -> Result<Vec<CaptureSource>, CaptureError>;
-
-    /// Check if the service is currently capturing
-    fn is_capturing(&self) -> bool;
-
-    /// Get backend name (e.g., "Windows.Graphics.Capture", "Linux PipeWire")
-    fn backend_name(&self) -> &str;
-
-    /// Get backend capabilities
-    fn capabilities(&self) -> BackendCapabilities;
-}
-
-/// Configuration for capture
-#[derive(Debug, Clone)]
-pub struct CaptureConfig {
-    pub source: CaptureSource,
-    pub duration: Duration,
-    pub resolution: Option<(u32, u32)>,
-    pub fps: Option<u32>,
-    pub encoder: EncoderType,
-}
-
-/// Type of capture source
-#[derive(Debug, Clone)]
-pub enum CaptureSource {
-    Monitor(String),
-    Window(String),
-    Region {
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-    },
-}
-
-/// Active capture session
-#[derive(Debug)]
-pub struct CaptureSession {
-    pub id: String,
-    pub source: CaptureSource,
-    pub start_time: std::time::Instant,
-    pub duration: Duration,
-}
-
-/// Capabilities of a capture backend
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BackendCapabilities {
-    pub supports_window_capture: bool,
-    pub supports_monitor_capture: bool,
-    pub supports_region_capture: bool,
-    pub max_resolution: Option<(u32, u32)>,
+    pub source_kinds: Vec<CaptureSourceKind>,
+    pub max_resolution: Option<VideoResolution>,
     pub max_fps: Option<u32>,
-    pub supported_codecs: Vec<VideoCodec>,
+    pub encoders: Vec<EncoderCapability>,
 }
 
-/// Trait for platform-specific audio mixing implementations
-pub trait AudioMixerService: Send + Sync {
-    /// Add an audio source to the mixer
-    fn add_source(&mut self, source: AudioSource) -> Result<String, AudioError>;
-
-    /// Remove an audio source
-    fn remove_source(&mut self, source_id: &str) -> Result<(), AudioError>;
-
-    /// Set volume for a specific source (0.0 to 1.0)
-    fn set_volume(&mut self, source_id: &str, volume: f32) -> Result<(), AudioError>;
-
-    /// Mute/unmute a source
-    fn set_muted(&mut self, source_id: &str, muted: bool) -> Result<(), AudioError>;
-
-    /// Get list of available audio devices
-    fn get_devices(&self) -> Result<Vec<AudioDevice>, AudioError>;
-
-    /// Get current mixer state
-    fn get_state(&self) -> MixerState;
-
-    /// Start audio capture
-    fn start_capture(&mut self) -> Result<(), AudioError>;
-
-    /// Stop audio capture
-    fn stop_capture(&mut self) -> Result<(), AudioError>;
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendDescriptor {
+    pub id: BackendId,
+    pub display_name: String,
+    pub available: bool,
+    pub simulated: bool,
+    pub capabilities: BackendCapabilities,
+    pub note: Option<String>,
 }
 
-/// Type of audio source
-#[derive(Debug, Clone)]
-pub enum AudioSource {
-    SystemAudio(String),
-    Microphone(String),
-    Application(String),
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayConfig {
+    pub source_id: String,
+    pub buffer_seconds: u32,
+    pub resolution: Option<VideoResolution>,
+    pub fps: Option<u32>,
+    pub encoder: EncoderPreference,
+    pub codec: VideoCodec,
 }
 
-/// Audio device information
-#[derive(Debug, Clone)]
-pub struct AudioDevice {
-    pub id: String,
-    pub name: String,
-    pub device_type: AudioDeviceType,
-    pub is_default: bool,
+impl Default for ReplayConfig {
+    fn default() -> Self {
+        Self {
+            source_id: "fake-monitor-1".to_string(),
+            buffer_seconds: 30,
+            resolution: None,
+            fps: None,
+            encoder: EncoderPreference::Auto,
+            codec: VideoCodec::H264,
+        }
+    }
 }
 
-/// Type of audio device
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioDeviceType {
-    Input,
-    Output,
+impl ReplayConfig {
+    pub fn validate(&self, sources: &[CaptureSource]) -> Result<(), BackendError> {
+        if !(10..=300).contains(&self.buffer_seconds) {
+            return Err(BackendError::invalid_config(
+                "El buffer debe estar entre 10 y 300 segundos",
+            ));
+        }
+        if self.source_id.trim().is_empty() {
+            return Err(BackendError::invalid_config(
+                "La fuente de captura no puede estar vacia",
+            ));
+        }
+        if !sources.iter().any(|source| source.id == self.source_id) {
+            return Err(BackendError::source_not_found(&self.source_id));
+        }
+        if self.fps.is_some_and(|fps| fps == 0) {
+            return Err(BackendError::invalid_config(
+                "Los FPS deben ser mayores que cero",
+            ));
+        }
+        if self
+            .resolution
+            .as_ref()
+            .is_some_and(|resolution| resolution.width == 0 || resolution.height == 0)
+        {
+            return Err(BackendError::invalid_config(
+                "La resolucion debe ser mayor que cero",
+            ));
+        }
+        Ok(())
+    }
 }
 
-/// Current state of the audio mixer
-#[derive(Debug, Clone)]
-pub struct MixerState {
-    pub sources: Vec<SourceState>,
-    pub master_volume: f32,
-    pub is_capturing: bool,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ClipKind {
+    Simulation,
+    #[allow(dead_code)]
+    Media,
 }
 
-/// State of an individual audio source
-#[derive(Debug, Clone)]
-pub struct SourceState {
-    pub id: String,
-    pub name: String,
-    pub volume: f32,
-    pub muted: bool,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClipArtifact {
+    pub path: PathBuf,
+    pub duration_seconds: u32,
+    pub kind: ClipKind,
 }
 
-/// Trait for platform-specific hotkey implementations
-pub trait HotkeyService: Send + Sync {
-    /// Register a global hotkey
-    fn register(&mut self, hotkey: Hotkey) -> Result<String, HotkeyError>;
-
-    /// Unregister a hotkey
-    fn unregister(&mut self, hotkey_id: &str) -> Result<(), HotkeyError>;
-
-    /// Update hotkey configuration
-    fn update(&mut self, hotkey_id: &str, hotkey: Hotkey) -> Result<(), HotkeyError>;
-
-    /// Get list of registered hotkeys
-    fn get_registered(&self) -> Vec<HotkeyRegistration>;
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackendErrorCode {
+    InvalidConfig,
+    InvalidState,
+    BackendUnavailable,
+    PermissionDenied,
+    SourceNotFound,
+    SourceEnded,
+    EncoderUnavailable,
+    Io,
+    Timeout,
+    BackendExited,
+    Unsupported,
+    Internal,
 }
 
-/// Hotkey configuration
-#[derive(Debug, Clone)]
-pub struct Hotkey {
-    pub key: KeyCode,
-    pub modifiers: Vec<Modifier>,
-    pub action: HotkeyAction,
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendError {
+    pub code: BackendErrorCode,
+    pub message: String,
+    pub retryable: bool,
 }
 
-/// Keyboard key codes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyCode {
-    F1,
-    F2,
-    F3,
-    F4,
-    F5,
-    F6,
-    F7,
-    F8,
-    F9,
-    F10,
-    F11,
-    F12,
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-    I,
-    J,
-    K,
-    L,
-    M,
-    N,
-    O,
-    P,
-    Q,
-    R,
-    S,
-    T,
-    U,
-    V,
-    W,
-    X,
-    Y,
-    Z,
-    Num0,
-    Num1,
-    Num2,
-    Num3,
-    Num4,
-    Num5,
-    Num6,
-    Num7,
-    Num8,
-    Num9,
+impl BackendError {
+    pub fn new(code: BackendErrorCode, message: impl Into<String>, retryable: bool) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            retryable,
+        }
+    }
+
+    pub fn invalid_config(message: impl Into<String>) -> Self {
+        Self::new(BackendErrorCode::InvalidConfig, message, false)
+    }
+
+    pub fn invalid_state(message: impl Into<String>) -> Self {
+        Self::new(BackendErrorCode::InvalidState, message, true)
+    }
+
+    pub fn backend_unavailable(message: impl Into<String>) -> Self {
+        Self::new(BackendErrorCode::BackendUnavailable, message, true)
+    }
+
+    pub fn source_not_found(source_id: &str) -> Self {
+        Self::new(
+            BackendErrorCode::SourceNotFound,
+            format!("No se encontro la fuente '{source_id}'"),
+            true,
+        )
+    }
+
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::new(BackendErrorCode::Io, message, true)
+    }
 }
 
-/// Keyboard modifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Modifier {
-    Ctrl,
-    Alt,
-    Shift,
-    Win,
+impl fmt::Display for BackendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
 }
 
-/// Action to perform when hotkey is pressed
-#[derive(Debug, Clone)]
-pub enum HotkeyAction {
-    SaveClip,
-    StartCapture,
-    StopCapture,
-    ToggleCapture,
-    MuteMic,
+impl std::error::Error for BackendError {}
+
+impl From<std::io::Error> for BackendError {
+    fn from(error: std::io::Error) -> Self {
+        Self::io(error.to_string())
+    }
 }
 
-/// Registered hotkey information
-#[derive(Debug, Clone)]
-pub struct HotkeyRegistration {
-    pub id: String,
-    pub hotkey: Hotkey,
+/// Owns the complete capture, encode and replay pipeline for one backend.
+pub trait ReplayBackend: Send {
+    fn descriptor(&self) -> BackendDescriptor;
+    fn list_sources(&self) -> Result<Vec<CaptureSource>, BackendError>;
+    fn start(&mut self, config: &ReplayConfig, output_dir: &Path) -> Result<(), BackendError>;
+    fn save_replay(&mut self) -> Result<ClipArtifact, BackendError>;
+    fn stop(&mut self) -> Result<(), BackendError>;
 }
 
-/// Errors that can occur during hotkey operations
-#[derive(Debug, thiserror::Error)]
-pub enum HotkeyError {
-    #[error("Hotkey registration failed: {0}")]
-    RegistrationFailed(String),
+#[cfg(test)]
+mod tests {
+    use super::{CaptureSource, CaptureSourceKind, ReplayConfig};
 
-    #[error("Hotkey not found: {0}")]
-    NotFound(String),
+    fn sources() -> Vec<CaptureSource> {
+        vec![CaptureSource {
+            id: "monitor-1".to_string(),
+            kind: CaptureSourceKind::Monitor,
+            label: "Monitor 1".to_string(),
+            is_default: true,
+        }]
+    }
 
-    #[error("Hotkey conflict: {0}")]
-    Conflict(String),
-}
+    #[test]
+    fn default_replay_config_is_valid_for_a_known_source() {
+        let config = ReplayConfig {
+            source_id: "monitor-1".to_string(),
+            ..ReplayConfig::default()
+        };
+        assert!(config.validate(&sources()).is_ok());
+    }
 
-/// Trait for game detection
-pub trait GameDetector: Send + Sync {
-    /// Scan for running games
-    fn scan(&self) -> Result<Vec<DetectedGame>, GameDetectorError>;
-
-    /// Check if a specific process is a known game
-    fn is_game(&self, process_name: &str) -> bool;
-
-    /// Get known games database
-    fn get_database(&self) -> &GameDatabase;
-}
-
-/// Information about a detected game
-#[derive(Debug, Clone)]
-pub struct DetectedGame {
-    pub process_id: u32,
-    pub process_name: String,
-    pub window_title: Option<String>,
-    pub game_name: String,
-    pub is_active: bool,
-}
-
-/// Database of known games
-#[derive(Debug, Clone)]
-pub struct GameDatabase {
-    pub games: Vec<KnownGame>,
-}
-
-/// Information about a known game
-#[derive(Debug, Clone)]
-pub struct KnownGame {
-    pub name: String,
-    pub process_names: Vec<String>,
-    pub window_titles: Vec<String>,
-}
-
-/// Errors that can occur during game detection
-#[derive(Debug, thiserror::Error)]
-pub enum GameDetectorError {
-    #[error("Detection failed: {0}")]
-    DetectionFailed(String),
-
-    #[error("Database error: {0}")]
-    DatabaseError(String),
+    #[test]
+    fn replay_config_rejects_unknown_source() {
+        let error = ReplayConfig::default()
+            .validate(&sources())
+            .expect_err("unknown source must be rejected");
+        assert_eq!(error.code, super::BackendErrorCode::SourceNotFound);
+    }
 }

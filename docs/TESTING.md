@@ -6,11 +6,12 @@ MoonLit testing is divided into two categories:
 1. **Linux Testing** (can be done now): Automated checks, FakeBackend, frontend
 2. **Windows Testing** (requires Windows): Real Windows APIs, GPU encoding, audio
 
-## Automated Checks (Linux - Can Do Now)
+## Automated Checks (Any Development Machine)
 
 ### Frontend Checks
 ```bash
 npm run check
+npm test
 npm run build
 ```
 
@@ -28,17 +29,17 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 
 ## Unit Tests (Linux - Can Do Now)
 
-### Portable Backend Tests
-- ✅ CaptureService trait validation
-- ✅ AudioMixerService trait validation
-- ✅ EncodingService trait validation
-- ✅ HotkeyService trait validation
-- ✅ GameDetector trait validation
-- ✅ FakeBackend functionality
-- ✅ State management
-- ✅ Configuration handling
+### Portable Replay Tests
+- ✅ Canonical DTO validation and configuration bounds
+- ✅ FakeBackend source/capability discovery
+- ✅ FakeBackend atomic simulation manifest
+- ✅ Runtime actor start/save/stop transitions
+- ✅ Recorder revisioned event model
+- ✅ GOP-aware encoded replay buffer with synthetic H.264 packet tests
 
 ### Frontend Tests
+- ✅ IPC command names and camelCase payloads
+- ✅ Recorder event forwarding and unlisten handling
 - ⏳ View rendering
 - ⏳ Component interactions
 - ⏳ State updates

@@ -1,28 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-
-  type CaptureStatus = 'idle' | 'buffering' | 'error';
-
-  type ClipRecord = {
-    id: string;
-    path: string;
-    createdAt: number;
-    durationSeconds: number;
-    kind: string;
-  };
-
-  type RuntimeSnapshot = {
-    status: CaptureStatus;
-    backend: string;
-    sessionId: string | null;
-    gameLabel: string | null;
-    startedAt: number | null;
-    bufferSeconds: number;
-    savedClips: number;
-    lastClip: ClipRecord | null;
-    message: string;
-  };
+  import { captureClient } from './lib/capture/client';
+  import type {
+    BackendDescriptor,
+    BackendId,
+    CapturePhase,
+    CaptureSnapshot,
+    CaptureSource,
+    ReplayConfig,
+  } from './lib/capture/types';
 
   type CommandProbe = {
     name: string;
@@ -32,18 +19,6 @@
     exitCode: number | null;
     version: string | null;
     detail: string | null;
-  };
-
-  type NativeBackendStatus = {
-    name: string;
-    available: boolean;
-    executable: string | null;
-    origin: string;
-    sha256: string | null;
-    status: string;
-    version: string | null;
-    codecs: string[];
-    note: string;
   };
 
   type DoctorReport = {
@@ -61,23 +36,47 @@
     notes: string[];
   };
 
-  const emptySnapshot: RuntimeSnapshot = {
-    status: 'idle',
-    backend: 'fake',
-    sessionId: null,
-    gameLabel: null,
-    startedAt: null,
-    bufferSeconds: 30,
-    savedClips: 0,
-    lastClip: null,
-    message: 'Listo para iniciar una prueba.',
+  const fakeBackend: BackendDescriptor = {
+    id: 'fake',
+    displayName: 'Simulado',
+    available: true,
+    simulated: true,
+    capabilities: {
+      sourceKinds: ['monitor', 'window'],
+      maxResolution: { width: 3840, height: 2160 },
+      maxFps: 144,
+      encoders: [
+        { id: 'auto', available: true, reason: null },
+        { id: 'software', available: true, reason: null },
+      ],
+    },
+    note: 'Escribe manifests para probar el flujo sin hardware.',
   };
 
-  let snapshot = emptySnapshot;
+  const browserSources: CaptureSource[] = [
+    { id: 'fake-monitor-1', kind: 'monitor', label: 'Fake Monitor 1', isDefault: true },
+    { id: 'fake-window-1', kind: 'window', label: 'Fake Window 1', isDefault: false },
+  ];
+
+  function emptySnapshot(): CaptureSnapshot {
+    return {
+      revision: 0,
+      phase: 'idle',
+      backend: fakeBackend,
+      config: null,
+      session: null,
+      savedClips: 0,
+      lastClip: null,
+      lastError: null,
+    };
+  }
+
+  let snapshot = emptySnapshot();
   let doctor: DoctorReport | null = null;
-  let nativeBackend: NativeBackendStatus | null = null;
+  let backends: BackendDescriptor[] = [fakeBackend];
+  let sources: CaptureSource[] = browserSources;
+  let selectedSourceId = browserSources[0].id;
   let bufferSeconds = 30;
-  let externalGsrPath = '';
   let busy = false;
   let notice = '';
   let activeView = 'overview';
@@ -104,33 +103,51 @@
     };
   }
 
-  function browserBackend(): NativeBackendStatus {
-    return {
-      name: 'gpu-screen-recorder',
-      available: false,
-      executable: null,
-      origin: 'preview',
-      sha256: null,
-      status: 'preview',
-      version: null,
-      codecs: [],
-      note: 'La vista web no puede consultar ni iniciar el backend nativo.',
-    };
+  function browserSnapshot(): CaptureSnapshot {
+    return emptySnapshot();
+  }
+
+  function applySnapshot(next: CaptureSnapshot) {
+    if (next.revision < snapshot.revision) return;
+    snapshot = next;
+    if (next.config) {
+      bufferSeconds = next.config.bufferSeconds;
+      selectedSourceId = next.config.sourceId;
+    }
+    if (next.session) selectedSourceId = next.session.sourceId;
+  }
+
+  function errorText(error: unknown) {
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      return String((error as { message: unknown }).message);
+    }
+    return String(error);
+  }
+
+  function handleCommandError(error: unknown, operation: string) {
+    notice = `${operation}: ${errorText(error)}`;
   }
 
   async function refreshSnapshot() {
-    if (!isTauri) return;
-    snapshot = await invoke<RuntimeSnapshot>('get_runtime_snapshot');
+    if (!isTauri) {
+      applySnapshot(browserSnapshot());
+      return;
+    }
+    applySnapshot(await captureClient.getSnapshot());
   }
 
-  async function refreshBackend() {
-    try {
-      nativeBackend = isTauri
-        ? await invoke<NativeBackendStatus>('get_capture_backend')
-        : browserBackend();
-    } catch (error) {
-      nativeBackend = null;
-      notice = `No se pudo consultar el backend nativo: ${String(error)}`;
+  async function refreshBackends() {
+    backends = isTauri
+      ? await captureClient.listBackends()
+      : [fakeBackend];
+  }
+
+  async function refreshSources() {
+    sources = isTauri
+      ? await captureClient.listSources()
+      : browserSources;
+    if (!sources.some((source) => source.id === selectedSourceId)) {
+      selectedSourceId = sources.find((source) => source.isDefault)?.id ?? sources[0]?.id ?? '';
     }
   }
 
@@ -139,10 +156,10 @@
     notice = '';
     try {
       doctor = isTauri ? await invoke<DoctorReport>('run_doctor') : browserDoctor();
-      await refreshBackend();
+      await refreshBackends();
       notice = 'Diagnóstico actualizado.';
     } catch (error) {
-      notice = `No se pudo ejecutar el diagnóstico: ${String(error)}`;
+      handleCommandError(error, 'No se pudo ejecutar el diagnóstico');
     } finally {
       busy = false;
     }
@@ -152,20 +169,36 @@
     busy = true;
     notice = '';
     try {
-      snapshot = isTauri
-        ? await invoke<RuntimeSnapshot>('start_capture', { bufferSeconds })
-        : {
-            ...snapshot,
-            status: 'buffering',
-            bufferSeconds,
-            sessionId: `preview-${Date.now()}`,
-            gameLabel: 'Simulación MoonLit',
-            startedAt: Math.floor(Date.now() / 1000),
-            message: 'Buffer simulado activo en la vista previa.',
-          };
-      notice = snapshot.backend === 'fake' ? 'Buffer simulado iniciado.' : 'Buffer GSR iniciado.';
+      if (!selectedSourceId) throw new Error('Selecciona una fuente de captura');
+      const config: ReplayConfig = {
+        sourceId: selectedSourceId,
+        bufferSeconds,
+        resolution: null,
+        fps: null,
+        encoder: 'auto',
+        codec: 'h264',
+      };
+      if (isTauri) {
+        applySnapshot(await captureClient.start(config));
+      } else {
+        const source = sources.find((item) => item.id === selectedSourceId);
+        applySnapshot({
+          ...snapshot,
+          revision: snapshot.revision + 1,
+          phase: 'buffering',
+          config,
+          session: {
+            id: `preview-${Date.now()}`,
+            sourceId: selectedSourceId,
+            sourceLabel: source?.label ?? selectedSourceId,
+            startedAtMs: Date.now(),
+          },
+          lastError: null,
+        });
+      }
+      notice = snapshot.backend.simulated ? 'Buffer simulado iniciado.' : 'Buffer iniciado.';
     } catch (error) {
-      notice = `No se pudo iniciar el buffer: ${String(error)}`;
+      handleCommandError(error, 'No se pudo iniciar el buffer');
     } finally {
       busy = false;
     }
@@ -175,26 +208,27 @@
     busy = true;
     notice = '';
     try {
-      if (snapshot.status !== 'buffering') {
-        throw new Error('Inicia el buffer antes de guardar un clip');
+      if (snapshot.phase !== 'buffering') throw new Error('Inicia el buffer antes de guardar');
+      if (isTauri) {
+        applySnapshot(await captureClient.save());
+      } else {
+        applySnapshot({
+          ...snapshot,
+          revision: snapshot.revision + 1,
+          lastClip: {
+            id: `preview-${Date.now()}`,
+            path: 'vista previa / manifest simulado',
+            createdAtMs: Date.now(),
+            durationSeconds: bufferSeconds,
+            kind: 'simulation',
+          },
+          savedClips: snapshot.savedClips + 1,
+          lastError: null,
+        });
       }
-      snapshot = isTauri
-        ? await invoke<RuntimeSnapshot>('save_clip')
-        : {
-            ...snapshot,
-            savedClips: snapshot.savedClips + 1,
-            lastClip: {
-              id: `preview-${Date.now()}`,
-              path: 'vista previa / clip simulado',
-              createdAt: Math.floor(Date.now() / 1000),
-              durationSeconds: bufferSeconds,
-              kind: 'simulation',
-            },
-            message: 'Clip simulado guardado en la vista previa.',
-          };
-      notice = snapshot.backend === 'fake' ? 'Clip simulado guardado.' : 'Clip nativo guardado.';
+      notice = 'Clip guardado.';
     } catch (error) {
-      notice = `No se pudo guardar el clip: ${String(error)}`;
+      handleCommandError(error, 'No se pudo guardar el clip');
     } finally {
       busy = false;
     }
@@ -204,83 +238,85 @@
     busy = true;
     notice = '';
     try {
-      snapshot = isTauri
-        ? await invoke<RuntimeSnapshot>('stop_capture')
-        : {
-            ...snapshot,
-            status: 'idle',
-            sessionId: null,
-            gameLabel: null,
-            startedAt: null,
-            message: 'Buffer simulado detenido.',
-          };
+      if (isTauri) {
+        applySnapshot(await captureClient.stop());
+      } else {
+        applySnapshot({ ...snapshot, revision: snapshot.revision + 1, phase: 'idle', config: null, session: null });
+      }
       notice = 'Buffer detenido.';
     } catch (error) {
-      notice = `No se pudo detener el buffer: ${String(error)}`;
+      handleCommandError(error, 'No se pudo detener el buffer');
     } finally {
       busy = false;
     }
   }
 
-  function formatTime(timestamp: number | null) {
-    if (!timestamp) return 'Nunca';
-    return new Date(timestamp * 1000).toLocaleString('es-ES', {
+  async function selectBackend(id: BackendId) {
+    busy = true;
+    notice = '';
+    try {
+      if (isTauri) applySnapshot(await captureClient.selectBackend(id));
+      else applySnapshot({ ...snapshot, revision: snapshot.revision + 1, backend: fakeBackend });
+      await refreshSources();
+      notice = `Backend ${backends.find((item) => item.id === id)?.displayName ?? id} seleccionado.`;
+    } catch (error) {
+      handleCommandError(error, 'No se pudo cambiar el backend');
+    } finally {
+      busy = false;
+    }
+  }
+
+  function formatTime(timestampMs: number | null) {
+    if (!timestampMs) return 'Nunca';
+    return new Date(timestampMs).toLocaleString('es-ES', {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
   }
 
-  function command(name: string) {
-    return doctor?.commands.find((item) => item.name === name);
+  function phaseLabel(phase: CapturePhase) {
+    return {
+      idle: 'En espera',
+      starting: 'Iniciando',
+      buffering: 'Buffer activo',
+      saving: 'Guardando',
+      stopping: 'Deteniendo',
+      faulted: 'Error',
+    }[phase];
   }
 
-  async function selectBackend(name: 'fake' | 'gpu-screen-recorder') {
-    busy = true;
-    notice = '';
-    try {
-      if (!isTauri) {
-        snapshot = { ...snapshot, backend: 'fake' };
-        notice = 'La vista web sólo admite el backend simulado.';
-        return;
-      }
-      snapshot = await invoke<RuntimeSnapshot>('set_capture_backend', { backend: name });
-      notice = name === 'fake' ? 'Backend simulado seleccionado.' : 'Backend GSR seleccionado.';
-    } catch (error) {
-      notice = `No se pudo cambiar el backend: ${String(error)}`;
-    } finally {
-      busy = false;
-    }
-  }
+  let unlisten: (() => void) | undefined;
 
-  async function selectExternalBackend() {
-    busy = true;
-    notice = '';
-    try {
-      if (!isTauri) {
-        throw new Error('La vista web no puede seleccionar ejecutables externos');
+  onMount(() => {
+    let active = true;
+    const bootstrap = async () => {
+      try {
+        if (isTauri) {
+          unlisten = await captureClient.subscribe((payload) => {
+            if (!active) return;
+            if (payload.type === 'stateChanged' || payload.type === 'clipSaved' || payload.type === 'errorOccurred') {
+              applySnapshot(payload.snapshot);
+            }
+          });
+        }
+        await refreshSnapshot();
+        await refreshBackends();
+        await refreshSources();
+        await runDoctor();
+      } catch (error) {
+        handleCommandError(error, 'No se pudo inicializar MoonLit');
       }
-      if (!externalGsrPath.trim()) {
-        throw new Error('Indica una ruta absoluta a gpu-screen-recorder');
-      }
-      snapshot = await invoke<RuntimeSnapshot>('set_external_capture_backend', {
-        path: externalGsrPath.trim(),
-      });
-      notice = 'Backend GSR externo seleccionado.';
-    } catch (error) {
-      notice = `No se pudo seleccionar GSR externo: ${String(error)}`;
-    } finally {
-      busy = false;
-    }
-  }
-
-  onMount(async () => {
-    await refreshSnapshot();
-    await runDoctor();
+    };
+    void bootstrap();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   });
 </script>
 
 <svelte:head>
-  <title>MoonLit | Clips Windows</title>
+  <title>MoonLit | Clips locales</title>
 </svelte:head>
 
 <div class="app-shell">
@@ -289,29 +325,29 @@
       <div class="brand-mark">S</div>
       <div>
         <strong>MoonLit</strong>
-        <span>clips para Linux</span>
+        <span>clips locales</span>
       </div>
     </div>
 
     <nav aria-label="Navegación principal">
-      <button class:active={activeView === 'overview'} on:click={() => (activeView = 'overview')}>
+      <button class:active={activeView === 'overview'} aria-current={activeView === 'overview' ? 'page' : undefined} on:click={() => (activeView = 'overview')}>
         <span class="nav-icon">◈</span>
         Resumen
       </button>
-      <button class:active={activeView === 'library'} on:click={() => (activeView = 'library')}>
+      <button class:active={activeView === 'library'} aria-current={activeView === 'library' ? 'page' : undefined} on:click={() => (activeView = 'library')}>
         <span class="nav-icon">▦</span>
         Biblioteca
         <span class="nav-count">{snapshot.savedClips}</span>
       </button>
-      <button class:active={activeView === 'settings'} on:click={() => (activeView = 'settings')}>
+      <button class:active={activeView === 'settings'} aria-current={activeView === 'settings' ? 'page' : undefined} on:click={() => (activeView = 'settings')}>
         <span class="nav-icon">⚙</span>
         Ajustes
       </button>
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="connection-dot"><span></span> {snapshot.backend === 'fake' ? 'Motor simulado' : 'Motor GSR'}</div>
-      <small>Fase 2 · Viabilidad</small>
+      <div class="connection-dot"><span></span> {snapshot.backend.displayName}</div>
+      <small>Contrato de captura v1</small>
     </div>
   </aside>
 
@@ -322,9 +358,9 @@
         <h1>{activeView === 'overview' ? 'Tu momento, guardado.' : activeView === 'library' ? 'Biblioteca local' : 'Ajustes del sistema'}</h1>
       </div>
       <div class="topbar-actions">
-        <span class:live={snapshot.status === 'buffering'} class="status-pill">
+        <span class:live={snapshot.phase === 'buffering'} class:error={snapshot.phase === 'faulted'} class="status-pill">
           <span class="status-dot"></span>
-          {snapshot.status === 'buffering' ? 'Buffer activo' : 'En espera'}
+          {phaseLabel(snapshot.phase)}
         </span>
         <button class="icon-button" aria-label="Actualizar diagnóstico" on:click={runDoctor} disabled={busy}>↻</button>
       </div>
@@ -336,7 +372,7 @@
           <div class="hero-copy">
             <p class="eyebrow accent">REPLAY BUFFER</p>
             <h2>No vuelvas a decir<br /><em>“debí grabarlo”.</em></h2>
-          <p class="hero-description">Prueba el flujo de clips ahora. El motor simulado permite trabajar sin GPU; GSR sólo se activa de forma explícita cuando el sistema pasa su diagnóstico.</p>
+            <p class="hero-description">El contrato único permite probar el flujo completo con FakeBackend y conectar después captura Windows sin mover datos multimedia por IPC.</p>
           </div>
           <div class="hero-orbit orbit-one"></div>
           <div class="hero-orbit orbit-two"></div>
@@ -347,47 +383,54 @@
         <div class="capture-card">
           <div class="card-heading">
             <div>
-              <p class="eyebrow">PRUEBA DE CAPTURA</p>
+              <p class="eyebrow">CAPTURA</p>
               <h3>Buffer de clips</h3>
             </div>
-            <span class="recording-indicator" class:recording={snapshot.status === 'buffering'}></span>
+            <span class:recording={snapshot.phase === 'buffering'} class="recording-indicator"></span>
           </div>
+
+          <label for="capture-source">Fuente</label>
+          <select id="capture-source" bind:value={selectedSourceId} disabled={busy || snapshot.phase !== 'idle'}>
+            {#each sources as source}
+              <option value={source.id}>{source.label}</option>
+            {/each}
+          </select>
 
           <label for="buffer-length">Duración del clip</label>
           <div class="duration-control">
-            <input id="buffer-length" type="range" min="10" max="300" step="10" bind:value={bufferSeconds} disabled={snapshot.status === 'buffering'} />
+            <input id="buffer-length" type="range" min="10" max="300" step="10" bind:value={bufferSeconds} disabled={snapshot.phase !== 'idle' || busy} />
             <strong>{bufferSeconds}<small>s</small></strong>
           </div>
           <div class="range-labels"><span>10 s</span><span>5 min</span></div>
 
           <div class="capture-actions">
-            {#if snapshot.status === 'buffering'}
+            {#if snapshot.phase === 'buffering'}
               <button class="primary-button" on:click={saveClip} disabled={busy}><span>●</span> Guardar clip</button>
               <button class="secondary-button" on:click={stopCapture} disabled={busy}>Detener</button>
             {:else}
-              <button class="primary-button" on:click={startCapture} disabled={busy}><span>▶</span> Iniciar buffer</button>
+              <button class="primary-button" on:click={startCapture} disabled={busy || !selectedSourceId || !snapshot.backend.available}><span>▶</span> Iniciar buffer</button>
               <button class="secondary-button" on:click={runDoctor} disabled={busy}>Diagnóstico</button>
             {/if}
           </div>
-          <p class="card-footnote">{snapshot.backend === 'fake' ? 'El manifest guardado es simulado y no contiene vídeo.' : 'La captura nativa requiere consentimiento del portal en Wayland.'}</p>
+          <p class="card-footnote">{snapshot.backend.simulated ? 'El manifest guardado es simulado y no contiene vídeo.' : snapshot.backend.note ?? 'Backend nativo seleccionado.'}</p>
         </div>
       </section>
 
       <section class="stats-grid">
         <article class="stat-card">
-          <span class="stat-label">SESIÓN ACTUAL</span>
-          <strong>{snapshot.gameLabel ?? 'Ningún juego detectado'}</strong>
-          <span class="stat-detail">{snapshot.startedAt ? `Desde ${formatTime(snapshot.startedAt)}` : 'Esperando actividad'}</span>
+          <span class="stat-label">FUENTE ACTUAL</span>
+          <strong>{snapshot.session?.sourceLabel ?? 'Ninguna seleccionada'}</strong>
+          <span class="stat-detail">{snapshot.session ? `Desde ${formatTime(snapshot.session.startedAtMs)}` : 'Esperando actividad'}</span>
         </article>
         <article class="stat-card highlight-stat">
           <span class="stat-label">CLIPS GUARDADOS</span>
           <strong>{snapshot.savedClips}</strong>
           <span class="stat-detail">En esta sesión de prueba</span>
         </article>
-          <article class="stat-card">
-            <span class="stat-label">BACKEND</span>
-            <strong>{snapshot.backend === 'fake' ? 'Simulado' : 'GSR nativo'}</strong>
-            <span class="stat-detail">{snapshot.backend === 'fake' ? 'Predeterminado seguro' : 'Proceso supervisado'}</span>
+        <article class="stat-card">
+          <span class="stat-label">BACKEND</span>
+          <strong>{snapshot.backend.displayName}</strong>
+          <span class="stat-detail">{snapshot.backend.available ? (snapshot.backend.simulated ? 'Modo seguro' : 'Disponible') : 'No disponible'}</span>
         </article>
       </section>
 
@@ -403,13 +446,12 @@
           {#if doctor}
             <div class="system-summary">
               <div class="system-main"><span class="system-icon">⌁</span><div><strong>{doctor.osName}</strong><span>{doctor.desktop} · {doctor.session}</span></div></div>
-              <span class="ready-badge">{doctor.capabilities.length} capacidades</span>
+              <span class="ready-badge">{backends.filter((backend) => backend.available).length} disponibles</span>
             </div>
             <div class="capability-list">
-              <div><span class:ok={doctor.waylandDisplay} class="cap-dot"></span><span>Wayland</span><strong>{doctor.waylandDisplay ? 'Detectado' : 'No detectado'}</strong></div>
-              <div><span class:ok={doctor.x11Display} class="cap-dot"></span><span>X11</span><strong>{doctor.x11Display ? 'Detectado' : 'No detectado'}</strong></div>
-              <div><span class:ok={Boolean(command('pipewire-graph')?.available)} class="cap-dot"></span><span>PipeWire</span><strong>{command('pipewire-graph')?.available ? 'Disponible' : 'Pendiente'}</strong></div>
-              <div><span class:ok={Boolean(nativeBackend?.available)} class="cap-dot"></span><span>Grabador GPU</span><strong>{nativeBackend?.status === 'ready' ? 'Listo' : nativeBackend?.status === 'degraded' ? 'Degradado' : 'Pendiente'}</strong></div>
+              {#each backends as backend}
+                <div><span class:ok={backend.available} class="cap-dot"></span><span>{backend.displayName}</span><strong>{backend.available ? 'Disponible' : 'Pendiente'}</strong></div>
+              {/each}
             </div>
           {:else}
             <div class="empty-state">Ejecutando diagnóstico...</div>
@@ -419,36 +461,37 @@
         <article class="panel last-clip-panel">
           <div class="panel-heading"><div><p class="eyebrow">ACTIVIDAD RECIENTE</p><h3>Último clip</h3></div><span class="panel-arrow">↗</span></div>
           {#if snapshot.lastClip}
-            <div class="clip-preview"><div class="clip-art"><span>PLAY</span></div><div class="clip-info"><strong>Clip simulado</strong><span>{snapshot.lastClip.durationSeconds}s · {formatTime(snapshot.lastClip.createdAt)}</span><small>{snapshot.lastClip.path}</small></div></div>
+            <div class="clip-preview"><div class="clip-art"><span>PLAY</span></div><div class="clip-info"><strong>{snapshot.lastClip.kind === 'simulation' ? 'Clip simulado' : 'Clip multimedia'}</strong><span>{snapshot.lastClip.durationSeconds}s · {formatTime(snapshot.lastClip.createdAtMs)}</span><small>{snapshot.lastClip.path}</small></div></div>
           {:else}
-            <div class="empty-state"><span class="empty-icon">◇</span><span>Guarda tu primer clip de prueba<br />y aparecerá aquí.</span></div>
+            <div class="empty-state"><span class="empty-icon">◇</span><span>Guarda tu primer clip<br />y aparecerá aquí.</span></div>
           {/if}
         </article>
       </section>
     {:else if activeView === 'library'}
-      <section class="page-panel"><div class="empty-large"><span class="empty-icon">▦</span><h2>Biblioteca en construcción</h2><p>La biblioteca SQLite y sus filtros serán el siguiente módulo. Por ahora puedes generar clips simulados desde el resumen.</p><button class="primary-button" on:click={() => (activeView = 'overview')}>Volver al resumen</button></div></section>
+      <section class="page-panel"><div class="empty-large"><span class="empty-icon">▦</span><h2>Biblioteca en construcción</h2><p>La persistencia SQLite será el siguiente módulo. El runtime ya devuelve metadata de clips mediante el contrato único.</p><button class="primary-button" on:click={() => (activeView = 'overview')}>Volver al resumen</button></div></section>
     {:else}
       <section class="page-panel settings-page">
         <div class="settings-row">
-          <div><p class="eyebrow">MODO DE CAPTURA</p><h3>Backend actual</h3><p>El backend simulado es seguro para desarrollo. GSR sólo se ejecuta tras seleccionarlo y comprobar que está disponible.</p></div>
+          <div><p class="eyebrow">BACKEND DE CAPTURA</p><h3>Backend actual</h3><p>La aplicación muestra únicamente backends publicados por la factory de la plataforma. No hay fallback silencioso a simulación.</p></div>
           <div class="backend-choice">
-            <button class:chosen={snapshot.backend === 'fake'} class="backend-button" on:click={() => selectBackend('fake')} disabled={busy || snapshot.status === 'buffering'}>Simulado</button>
-            <button class:chosen={snapshot.backend === 'gpu-screen-recorder'} class="backend-button" on:click={() => selectBackend('gpu-screen-recorder')} disabled={busy || snapshot.status === 'buffering' || !nativeBackend?.available}>GSR nativo</button>
+            {#each backends as backend}
+              <button class:chosen={snapshot.backend.id === backend.id} class="backend-button" aria-pressed={snapshot.backend.id === backend.id} on:click={() => selectBackend(backend.id)} disabled={busy || snapshot.phase !== 'idle' || !backend.available}>{backend.displayName}</button>
+            {/each}
           </div>
         </div>
         <div class="settings-row">
-          <div><p class="eyebrow">BACKEND EXTERNO</p><h3>Ruta personalizada</h3><p>Úsalo para probar otra versión de GSR sin reemplazar el componente incluido.</p></div>
-          <div class="external-choice"><input class="backend-input" type="text" bind:value={externalGsrPath} placeholder="/ruta/a/gpu-screen-recorder" aria-label="Ruta externa de GSR" /><button class="secondary-button" on:click={selectExternalBackend} disabled={busy || snapshot.status === 'buffering'}>Usar ruta</button></div>
+          <div><p class="eyebrow">FUENTES</p><h3>{sources.length} fuentes disponibles</h3><p>{sources.map((source) => source.label).join(' · ') || 'No hay fuentes disponibles.'}</p></div>
+          <span class="settings-value">{snapshot.backend.capabilities.sourceKinds.join(' / ') || 'Pendiente'}</span>
         </div>
         <div class="settings-row">
-          <div><p class="eyebrow">DIAGNÓSTICO</p><h3>{doctor?.gpu ?? 'GPU pendiente de detección'}</h3><p>{nativeBackend?.note ?? doctor?.notes[0] ?? 'Ejecuta el diagnóstico para conocer las capacidades locales.'}</p>{#if nativeBackend}<small class="backend-meta">{nativeBackend.version ?? 'Versión pendiente'} · Origen: {nativeBackend.origin} · {nativeBackend.codecs.length ? `Codecs: ${nativeBackend.codecs.join(', ')}` : 'Codecs no reportados'}</small>{/if}</div>
+          <div><p class="eyebrow">DIAGNÓSTICO</p><h3>{doctor?.gpu ?? 'GPU pendiente de detección'}</h3><p>{snapshot.lastError?.message ?? snapshot.backend.note ?? doctor?.notes[0] ?? 'Ejecuta el diagnóstico para conocer las capacidades locales.'}</p></div>
           <button class="secondary-button" on:click={runDoctor} disabled={busy}>Ejecutar</button>
         </div>
       </section>
     {/if}
 
     {#if notice}
-      <div class="toast" role="status">{notice}</div>
+      <div class="toast" role={snapshot.lastError ? 'alert' : 'status'}>{notice}</div>
     {/if}
   </main>
 </div>

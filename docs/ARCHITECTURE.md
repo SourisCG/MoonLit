@@ -1,5 +1,33 @@
 # MoonLit Architecture
 
+> **Current implementation note (2026-07-28):** The runtime now uses the
+> `ReplayBackend` contract in `src-tauri/src/traits.rs`, a bounded recorder
+> actor in `src-tauri/src/recorder.rs`, and a single connected `FakeBackend`.
+> GSR is a Linux-only legacy adapter. The sections below describe the broader
+> target architecture for audio, library and native capture work; examples
+> mentioning the retired `CaptureService` contract are historical until those
+> services are implemented.
+
+## Current Runtime Contract
+
+The current runtime has one backend factory and exposes only metadata over
+Tauri IPC:
+
+```text
+Frontend capture client
+        -> Tauri commands/events
+RecorderRuntime actor
+        -> ReplayBackend
+           ├─ FakeBackend
+           ├─ WindowsNativeBackend boundary
+           └─ LegacyGsrBackend (Linux only)
+```
+
+The backend owns capture, encoding and replay resources. Frames, textures,
+encoded packets and native handles never cross IPC. The portable core now
+includes a GOP-aware replay packet buffer; the next addition is the Windows
+WGC/NVENC spike.
+
 ## Overview
 
 MoonLit uses a **portable, trait-based architecture** that enables platform-specific implementations while maintaining a unified codebase. This design allows the project to start on Windows and expand to Linux in the future without rewriting the entire application.

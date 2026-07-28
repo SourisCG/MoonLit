@@ -1,359 +1,540 @@
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
-use crate::capture::{CaptureBackend, CaptureProfile, CapturedClip, GsrRecorder};
-use crate::state::{CaptureStatus, ClipRecord, RuntimeSnapshot};
+use crate::backends;
+use crate::state::{CapturePhase, CaptureSnapshot, ClipRecord, RecorderEvent, SessionSnapshot};
+use crate::traits::{
+    BackendDescriptor, BackendError, BackendErrorCode, BackendId, ClipArtifact, ReplayBackend,
+    ReplayConfig,
+};
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SimulationManifest<'a> {
-    id: &'a str,
-    created_at: u64,
-    duration_seconds: u32,
-    backend: &'a str,
-    note: &'a str,
+type Reply<T> = Sender<Result<T, BackendError>>;
+
+enum RuntimeCommand {
+    Backends {
+        reply: Reply<Vec<BackendDescriptor>>,
+    },
+    Sources {
+        reply: Reply<Vec<crate::traits::CaptureSource>>,
+    },
+    SelectBackend {
+        id: BackendId,
+        reply: Reply<CaptureSnapshot>,
+    },
+    Start {
+        config: ReplayConfig,
+        reply: Reply<CaptureSnapshot>,
+    },
+    Save {
+        reply: Reply<CaptureSnapshot>,
+    },
+    Stop {
+        reply: Reply<CaptureSnapshot>,
+    },
+    Shutdown,
 }
 
-#[derive(Default)]
-struct FakeBackend {
-    profile: Option<CaptureProfile>,
+pub struct RecorderRuntime {
+    commands: SyncSender<RuntimeCommand>,
+    snapshot: Arc<Mutex<CaptureSnapshot>>,
+    join: Mutex<Option<JoinHandle<()>>>,
 }
 
-pub struct CaptureService {
-    controller: Mutex<CaptureController>,
-}
-
-struct CaptureController {
-    engine: Box<dyn CaptureBackend>,
-    runtime: RuntimeSnapshot,
-}
-
-impl Default for CaptureService {
-    fn default() -> Self {
-        Self {
-            controller: Mutex::new(CaptureController {
-                engine: Box::new(FakeBackend::default()),
-                runtime: RuntimeSnapshot::default(),
-            }),
-        }
-    }
-}
-
-impl CaptureService {
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, CaptureController>, String> {
-        self.controller
-            .lock()
-            .map_err(|_| "El estado de captura quedó bloqueado".to_string())
-    }
-
-    fn snapshot(&self) -> Result<RuntimeSnapshot, String> {
-        Ok(self.lock()?.runtime.clone())
-    }
-
-    fn start(&self, app_data_dir: PathBuf, buffer_seconds: u32) -> Result<RuntimeSnapshot, String> {
-        if !(10..=300).contains(&buffer_seconds) {
-            return Err("La duración debe estar entre 10 y 300 segundos".to_string());
-        }
-
-        let mut controller = self.lock()?;
-        if matches!(controller.runtime.status, CaptureStatus::Buffering) {
-            return Err("El buffer ya está activo".to_string());
-        }
-
-        let profile = CaptureProfile {
-            output_dir: app_data_dir.join("captures"),
-            buffer_seconds,
-            ..CaptureProfile::default()
-        };
-        controller.engine.start(&profile)?;
-        controller.runtime.status = CaptureStatus::Buffering;
-        controller.runtime.session_id = Some(unique_id("session"));
-        controller.runtime.game_label = Some("Simulación MoonLit".to_string());
-        controller.runtime.started_at = Some(now_seconds());
-        controller.runtime.buffer_seconds = buffer_seconds;
-        controller.runtime.message = if controller.engine.name() == "fake" {
-            "Buffer simulado activo. Puedes guardar un clip.".to_string()
-        } else {
-            "Buffer nativo activo. Puedes guardar un clip.".to_string()
-        };
-
-        Ok(controller.runtime.clone())
-    }
-
-    fn save_clip(&self) -> Result<RuntimeSnapshot, String> {
-        let mut controller = self.lock()?;
-        if !matches!(controller.runtime.status, CaptureStatus::Buffering) {
-            return Err("Inicia el buffer antes de guardar un clip".to_string());
-        }
-
-        let captured = controller.engine.save_clip()?;
-        controller.runtime.saved_clips = controller.runtime.saved_clips.saturating_add(1);
-        controller.runtime.last_clip = Some(clip_record(captured));
-        controller.runtime.message = if controller.engine.name() == "fake" {
-            "Clip simulado guardado en el directorio de datos de MoonLit.".to_string()
-        } else {
-            "Clip nativo guardado en el directorio de datos de MoonLit.".to_string()
-        };
-
-        Ok(controller.runtime.clone())
-    }
-
-    fn stop(&self) -> Result<RuntimeSnapshot, String> {
-        let mut controller = self.lock()?;
-        controller.engine.stop()?;
-        controller.runtime.status = CaptureStatus::Idle;
-        controller.runtime.session_id = None;
-        controller.runtime.game_label = None;
-        controller.runtime.started_at = None;
-        controller.runtime.message = "Buffer detenido.".to_string();
-        Ok(controller.runtime.clone())
-    }
-
-    fn select_backend(
-        &self,
-        backend: &str,
+impl RecorderRuntime {
+    pub fn new(
+        output_dir: PathBuf,
         resource_dir: Option<PathBuf>,
-    ) -> Result<RuntimeSnapshot, String> {
-        let mut controller = self.lock()?;
-        if matches!(controller.runtime.status, CaptureStatus::Buffering) {
-            return Err("Detén el buffer antes de cambiar de backend".to_string());
-        }
-
-        let engine: Box<dyn CaptureBackend> = match backend {
-            "fake" => Box::new(FakeBackend::default()),
-            "gpu-screen-recorder" => {
-                let engine = GsrRecorder::discover_with_resource_dir(resource_dir);
-                let status = engine.status();
-                if !status.available {
-                    return Err(status.note);
-                }
-                Box::new(engine)
-            }
-            _ => return Err("Backend no soportado".to_string()),
+        app_handle: Option<AppHandle>,
+    ) -> Self {
+        let fake = backends::fake::FakeBackend::new();
+        let initial_snapshot = CaptureSnapshot {
+            revision: 0,
+            phase: CapturePhase::Idle,
+            backend: fake.descriptor(),
+            config: None,
+            session: None,
+            saved_clips: 0,
+            last_clip: None,
+            last_error: None,
         };
+        let snapshot = Arc::new(Mutex::new(initial_snapshot));
+        let (commands, receiver) = sync_channel(64);
+        let actor_snapshot = Arc::clone(&snapshot);
+        let join = thread::Builder::new()
+            .name("moonlit-recorder".to_string())
+            .spawn(move || {
+                actor_loop(
+                    receiver,
+                    actor_snapshot,
+                    output_dir,
+                    resource_dir,
+                    app_handle,
+                )
+            })
+            .expect("failed to start MoonLit recorder actor");
 
-        controller.runtime.backend = engine.name().to_string();
-        controller.runtime.message = format!("Backend seleccionado: {}.", engine.name());
-        controller.engine = engine;
-        Ok(controller.runtime.clone())
+        Self {
+            commands,
+            snapshot,
+            join: Mutex::new(Some(join)),
+        }
     }
 
-    fn select_external_backend(&self, path: PathBuf) -> Result<RuntimeSnapshot, String> {
-        let mut controller = self.lock()?;
-        if matches!(controller.runtime.status, CaptureStatus::Buffering) {
-            return Err("Detén el buffer antes de cambiar de backend".to_string());
-        }
+    #[cfg(test)]
+    pub fn new_for_test(output_dir: PathBuf) -> Self {
+        Self::new(output_dir, None, None)
+    }
 
-        let engine = GsrRecorder::from_external_path(path)?;
-        let status = engine.status();
-        if !status.available {
-            return Err(status.note);
+    fn disconnected<T>() -> Result<T, BackendError> {
+        Err(BackendError::new(
+            BackendErrorCode::Internal,
+            "El actor de captura ya no esta disponible",
+            true,
+        ))
+    }
+
+    fn request<T>(
+        &self,
+        command: RuntimeCommand,
+        receiver: Receiver<Result<T, BackendError>>,
+    ) -> Result<T, BackendError> {
+        if self.commands.send(command).is_err() {
+            return Self::disconnected();
         }
-        controller.runtime.backend = engine.name().to_string();
-        controller.runtime.message = format!("Backend externo seleccionado: {}.", engine.name());
-        controller.engine = Box::new(engine);
-        Ok(controller.runtime.clone())
+        receiver.recv().unwrap_or_else(|_| Self::disconnected())
+    }
+
+    pub fn snapshot(&self) -> Result<CaptureSnapshot, BackendError> {
+        self.snapshot
+            .lock()
+            .map(|snapshot| snapshot.clone())
+            .map_err(|_| {
+                BackendError::new(
+                    BackendErrorCode::Internal,
+                    "No se pudo leer el estado de captura",
+                    true,
+                )
+            })
+    }
+
+    pub fn list_backends(&self) -> Result<Vec<BackendDescriptor>, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::Backends { reply }, receiver)
+    }
+
+    pub fn list_sources(&self) -> Result<Vec<crate::traits::CaptureSource>, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::Sources { reply }, receiver)
+    }
+
+    pub fn select_backend(&self, id: BackendId) -> Result<CaptureSnapshot, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::SelectBackend { id, reply }, receiver)
+    }
+
+    pub fn start(&self, config: ReplayConfig) -> Result<CaptureSnapshot, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::Start { config, reply }, receiver)
+    }
+
+    pub fn save(&self) -> Result<CaptureSnapshot, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::Save { reply }, receiver)
+    }
+
+    pub fn stop(&self) -> Result<CaptureSnapshot, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::Stop { reply }, receiver)
     }
 }
 
-impl Drop for CaptureService {
+impl Drop for RecorderRuntime {
     fn drop(&mut self) {
-        if let Ok(mut controller) = self.controller.lock() {
-            let _ = controller.engine.stop();
+        let _ = self.commands.send(RuntimeCommand::Shutdown);
+        if let Ok(mut join) = self.join.lock() {
+            if let Some(handle) = join.take() {
+                let _ = handle.join();
+            }
         }
     }
 }
 
-impl CaptureBackend for FakeBackend {
-    fn name(&self) -> &'static str {
-        "fake"
-    }
+fn actor_loop(
+    receiver: Receiver<RuntimeCommand>,
+    snapshot_ref: Arc<Mutex<CaptureSnapshot>>,
+    output_dir: PathBuf,
+    resource_dir: Option<PathBuf>,
+    app_handle: Option<AppHandle>,
+) {
+    let mut backend: Box<dyn ReplayBackend> = Box::new(backends::fake::FakeBackend::new());
+    let mut snapshot = snapshot_ref
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or_else(|_| CaptureSnapshot {
+            revision: 0,
+            phase: CapturePhase::Faulted,
+            backend: backend.descriptor(),
+            config: None,
+            session: None,
+            saved_clips: 0,
+            last_clip: None,
+            last_error: Some(BackendError::new(
+                BackendErrorCode::Internal,
+                "No se pudo inicializar el estado de captura",
+                false,
+            )),
+        });
 
-    fn start(&mut self, profile: &CaptureProfile) -> Result<(), String> {
-        if self.profile.is_some() {
-            return Err("El buffer simulado ya está activo".to_string());
+    while let Ok(command) = receiver.recv() {
+        match command {
+            RuntimeCommand::Backends { reply } => {
+                let _ = reply.send(Ok(backends::descriptors(resource_dir.clone())));
+            }
+            RuntimeCommand::Sources { reply } => {
+                let _ = reply.send(backend.list_sources());
+            }
+            RuntimeCommand::SelectBackend { id, reply } => {
+                let result = select_backend(
+                    &mut backend,
+                    &mut snapshot,
+                    id,
+                    resource_dir.clone(),
+                    &snapshot_ref,
+                    &app_handle,
+                );
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::Start { config, reply } => {
+                let result = actor_start_capture(
+                    &mut backend,
+                    &mut snapshot,
+                    config,
+                    &output_dir,
+                    &snapshot_ref,
+                    &app_handle,
+                );
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::Save { reply } => {
+                let result =
+                    actor_save_clip(&mut backend, &mut snapshot, &snapshot_ref, &app_handle);
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::Stop { reply } => {
+                let result =
+                    actor_stop_capture(&mut backend, &mut snapshot, &snapshot_ref, &app_handle);
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::Shutdown => {
+                let _ = backend.stop();
+                break;
+            }
         }
-        self.profile = Some(profile.clone());
-        Ok(())
+    }
+}
+
+fn select_backend(
+    backend: &mut Box<dyn ReplayBackend>,
+    snapshot: &mut CaptureSnapshot,
+    id: BackendId,
+    resource_dir: Option<PathBuf>,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+) -> Result<CaptureSnapshot, BackendError> {
+    if snapshot.phase != CapturePhase::Idle {
+        return Err(BackendError::invalid_state(
+            "Deten el buffer antes de cambiar de backend",
+        ));
     }
 
-    fn save_clip(&mut self) -> Result<CapturedClip, String> {
-        let profile = self
-            .profile
-            .as_ref()
-            .ok_or_else(|| "Inicia el buffer antes de guardar un clip".to_string())?;
-        let id = unique_id("sim");
-        let created_at = now_seconds();
-        let clips_dir = profile.output_dir.join("simulated-clips");
-        fs::create_dir_all(&clips_dir)
-            .map_err(|error| format!("No se pudo crear el directorio de clips: {error}"))?;
+    let candidate = backends::create(id, resource_dir)?;
+    let descriptor = candidate.descriptor();
+    if !descriptor.available {
+        return Err(BackendError::backend_unavailable(
+            descriptor
+                .note
+                .clone()
+                .unwrap_or_else(|| "El backend no esta disponible".to_string()),
+        ));
+    }
+    *backend = candidate;
+    snapshot.backend = descriptor;
+    snapshot.last_error = None;
+    commit_state(snapshot, snapshot_ref, app_handle);
+    Ok(snapshot.clone())
+}
 
-        let manifest_path = clips_dir.join(format!("{id}.json"));
-        let manifest = SimulationManifest {
-            id: &id,
-            created_at,
-            duration_seconds: profile.buffer_seconds,
-            backend: "fake",
-            note: "Manifest generado por FakeBackend; todavía no contiene vídeo real.",
-        };
-        let contents = serde_json::to_vec_pretty(&manifest)
-            .map_err(|error| format!("No se pudo serializar el manifest: {error}"))?;
-        write_atomic(&manifest_path, &contents)?;
-
-        Ok(CapturedClip {
-            path: manifest_path,
-            duration_seconds: profile.buffer_seconds,
-            kind: "simulation".to_string(),
-        })
+fn actor_start_capture(
+    backend: &mut Box<dyn ReplayBackend>,
+    snapshot: &mut CaptureSnapshot,
+    config: ReplayConfig,
+    output_dir: &Path,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+) -> Result<CaptureSnapshot, BackendError> {
+    if snapshot.phase != CapturePhase::Idle {
+        return fail_with_state(
+            snapshot,
+            snapshot_ref,
+            app_handle,
+            BackendError::invalid_state("El buffer no esta en reposo"),
+        );
+    }
+    let sources = backend.list_sources()?;
+    config.validate(&sources)?;
+    if !backend.descriptor().available {
+        return fail_with_state(
+            snapshot,
+            snapshot_ref,
+            app_handle,
+            BackendError::backend_unavailable("El backend seleccionado no esta disponible"),
+        );
     }
 
-    fn stop(&mut self) -> Result<(), String> {
-        self.profile = None;
-        Ok(())
+    snapshot.phase = CapturePhase::Starting;
+    snapshot.config = Some(config.clone());
+    snapshot.last_error = None;
+    commit_state(snapshot, snapshot_ref, app_handle);
+
+    if let Err(error) = backend.start(&config, output_dir) {
+        return fail_with_state(snapshot, snapshot_ref, app_handle, error);
     }
+
+    let source_label = sources
+        .iter()
+        .find(|source| source.id == config.source_id)
+        .map(|source| source.label.clone())
+        .unwrap_or_else(|| config.source_id.clone());
+    snapshot.phase = CapturePhase::Buffering;
+    snapshot.session = Some(SessionSnapshot {
+        id: unique_id("session"),
+        source_id: config.source_id,
+        source_label,
+        started_at_ms: now_millis(),
+    });
+    snapshot.last_error = None;
+    commit_state(snapshot, snapshot_ref, app_handle);
+    Ok(snapshot.clone())
+}
+
+fn actor_save_clip(
+    backend: &mut Box<dyn ReplayBackend>,
+    snapshot: &mut CaptureSnapshot,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+) -> Result<CaptureSnapshot, BackendError> {
+    if snapshot.phase != CapturePhase::Buffering {
+        return fail_with_state(
+            snapshot,
+            snapshot_ref,
+            app_handle,
+            BackendError::invalid_state("Inicia el buffer antes de guardar"),
+        );
+    }
+    snapshot.phase = CapturePhase::Saving;
+    commit_state(snapshot, snapshot_ref, app_handle);
+
+    match backend.save_replay() {
+        Ok(artifact) => {
+            let clip = clip_record(artifact);
+            snapshot.saved_clips = snapshot.saved_clips.saturating_add(1);
+            snapshot.last_clip = Some(clip.clone());
+            snapshot.phase = CapturePhase::Buffering;
+            snapshot.last_error = None;
+            commit_state(snapshot, snapshot_ref, app_handle);
+            emit_event(
+                app_handle,
+                RecorderEvent::ClipSaved {
+                    snapshot: snapshot.clone(),
+                    clip,
+                },
+            );
+            Ok(snapshot.clone())
+        }
+        Err(error) => {
+            let result = fail_with_state(snapshot, snapshot_ref, app_handle, error.clone());
+            emit_event(
+                app_handle,
+                RecorderEvent::ErrorOccurred {
+                    snapshot: snapshot.clone(),
+                    error,
+                },
+            );
+            result
+        }
+    }
+}
+
+fn actor_stop_capture(
+    backend: &mut Box<dyn ReplayBackend>,
+    snapshot: &mut CaptureSnapshot,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+) -> Result<CaptureSnapshot, BackendError> {
+    if snapshot.phase == CapturePhase::Idle {
+        return Ok(snapshot.clone());
+    }
+    snapshot.phase = CapturePhase::Stopping;
+    commit_state(snapshot, snapshot_ref, app_handle);
+    if let Err(error) = backend.stop() {
+        return fail_with_state(snapshot, snapshot_ref, app_handle, error);
+    }
+    snapshot.phase = CapturePhase::Idle;
+    snapshot.config = None;
+    snapshot.session = None;
+    snapshot.last_error = None;
+    commit_state(snapshot, snapshot_ref, app_handle);
+    Ok(snapshot.clone())
+}
+
+fn fail_with_state(
+    snapshot: &mut CaptureSnapshot,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+    error: BackendError,
+) -> Result<CaptureSnapshot, BackendError> {
+    if snapshot.phase == CapturePhase::Starting || snapshot.phase == CapturePhase::Stopping {
+        snapshot.phase = CapturePhase::Faulted;
+    }
+    snapshot.last_error = Some(error.clone());
+    commit_state(snapshot, snapshot_ref, app_handle);
+    Err(error)
+}
+
+fn commit_state(
+    snapshot: &mut CaptureSnapshot,
+    snapshot_ref: &Arc<Mutex<CaptureSnapshot>>,
+    app_handle: &Option<AppHandle>,
+) {
+    snapshot.revision = snapshot.revision.saturating_add(1);
+    if let Ok(mut state) = snapshot_ref.lock() {
+        *state = snapshot.clone();
+    }
+    emit_event(
+        app_handle,
+        RecorderEvent::StateChanged {
+            snapshot: snapshot.clone(),
+        },
+    );
+}
+
+fn emit_event(app_handle: &Option<AppHandle>, event: RecorderEvent) {
+    if let Some(app_handle) = app_handle {
+        let _ = app_handle.emit("moonlit://recorder", event);
+    }
+}
+
+fn clip_record(artifact: ClipArtifact) -> ClipRecord {
+    ClipRecord {
+        id: unique_id("clip"),
+        path: artifact.path.to_string_lossy().into_owned(),
+        created_at_ms: now_millis(),
+        duration_seconds: artifact.duration_seconds,
+        kind: match artifact.kind {
+            crate::traits::ClipKind::Simulation => "simulation".to_string(),
+            crate::traits::ClipKind::Media => "media".to_string(),
+        },
+    }
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn unique_id(prefix: &str) -> String {
+    format!("{prefix}-{}", now_millis())
 }
 
 #[tauri::command]
-pub fn get_runtime_snapshot(service: State<'_, CaptureService>) -> Result<RuntimeSnapshot, String> {
-    service.snapshot()
+pub fn get_capture_snapshot(
+    runtime: State<'_, RecorderRuntime>,
+) -> Result<CaptureSnapshot, BackendError> {
+    runtime.snapshot()
+}
+
+#[tauri::command]
+pub fn list_capture_backends(
+    runtime: State<'_, RecorderRuntime>,
+) -> Result<Vec<BackendDescriptor>, BackendError> {
+    runtime.list_backends()
+}
+
+#[tauri::command]
+pub fn list_capture_sources(
+    runtime: State<'_, RecorderRuntime>,
+) -> Result<Vec<crate::traits::CaptureSource>, BackendError> {
+    runtime.list_sources()
+}
+
+#[tauri::command]
+pub fn select_capture_backend(
+    runtime: State<'_, RecorderRuntime>,
+    backend: BackendId,
+) -> Result<CaptureSnapshot, BackendError> {
+    runtime.select_backend(backend)
 }
 
 #[tauri::command]
 pub fn start_capture(
-    app: AppHandle,
-    service: State<'_, CaptureService>,
-    buffer_seconds: u32,
-) -> Result<RuntimeSnapshot, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("No se pudo resolver el directorio de datos: {error}"))?;
-    service.start(data_dir, buffer_seconds)
+    runtime: State<'_, RecorderRuntime>,
+    config: ReplayConfig,
+) -> Result<CaptureSnapshot, BackendError> {
+    runtime.start(config)
 }
 
 #[tauri::command]
-pub fn save_clip(service: State<'_, CaptureService>) -> Result<RuntimeSnapshot, String> {
-    service.save_clip()
+pub fn save_clip(runtime: State<'_, RecorderRuntime>) -> Result<CaptureSnapshot, BackendError> {
+    runtime.save()
 }
 
 #[tauri::command]
-pub fn stop_capture(service: State<'_, CaptureService>) -> Result<RuntimeSnapshot, String> {
-    service.stop()
-}
-
-#[tauri::command]
-pub fn set_capture_backend(
-    app: AppHandle,
-    service: State<'_, CaptureService>,
-    backend: String,
-) -> Result<RuntimeSnapshot, String> {
-    let resource_dir = app.path().resource_dir().ok();
-    service.select_backend(&backend, resource_dir)
-}
-
-#[tauri::command]
-pub fn set_external_capture_backend(
-    service: State<'_, CaptureService>,
-    path: String,
-) -> Result<RuntimeSnapshot, String> {
-    service.select_external_backend(PathBuf::from(path))
-}
-
-fn clip_record(captured: CapturedClip) -> ClipRecord {
-    ClipRecord {
-        id: unique_id("clip"),
-        path: captured.path.to_string_lossy().into_owned(),
-        created_at: now_seconds(),
-        duration_seconds: captured.duration_seconds,
-        kind: captured.kind,
-    }
-}
-
-fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
-    let temporary_path = path.with_extension("json.tmp");
-    fs::write(&temporary_path, contents)
-        .map_err(|error| format!("No se pudo escribir el manifest temporal: {error}"))?;
-    if let Err(error) = fs::rename(&temporary_path, path) {
-        let _ = fs::remove_file(&temporary_path);
-        return Err(format!("No se pudo finalizar el manifest: {error}"));
-    }
-    Ok(())
-}
-
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-fn unique_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let sequence = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}-{millis}-{sequence}")
+pub fn stop_capture(runtime: State<'_, RecorderRuntime>) -> Result<CaptureSnapshot, BackendError> {
+    runtime.stop()
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
 
-    use super::{CaptureService, FakeBackend};
-    use crate::capture::{CaptureBackend, CaptureProfile};
-    use crate::state::CaptureStatus;
+    use super::RecorderRuntime;
+    use crate::state::CapturePhase;
+    use crate::traits::ReplayConfig;
 
-    fn temporary_directory() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("moonlit-test-{}", super::unique_id("dir")));
+    fn temporary_directory() -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("moonlit-runtime-{}", super::unique_id("dir")));
         fs::create_dir_all(&path).expect("temporary directory");
         path
     }
 
     #[test]
-    fn fake_backend_writes_a_manifest_atomically() {
+    fn runtime_serializes_fake_start_save_stop() {
         let directory = temporary_directory();
-        let profile = CaptureProfile {
-            output_dir: directory.clone(),
-            buffer_seconds: 10,
-            ..CaptureProfile::default()
-        };
-        let mut backend = FakeBackend::default();
-        backend.start(&profile).expect("start fake backend");
-        let clip = backend.save_clip().expect("save fake clip");
-        let contents = fs::read_to_string(&clip.path).expect("manifest exists");
-        assert!(contents.contains("FakeBackend"));
-        let temporary_manifest = clip.path.with_extension("json.tmp");
-        assert!(!temporary_manifest.exists());
-        backend.stop().expect("stop fake backend");
+        let runtime = RecorderRuntime::new_for_test(directory.clone());
+        let started = runtime.start(ReplayConfig::default()).expect("start");
+        assert_eq!(started.phase, CapturePhase::Buffering);
+        let saved = runtime.save().expect("save");
+        assert_eq!(saved.saved_clips, 1);
+        assert_eq!(saved.phase, CapturePhase::Buffering);
+        let stopped = runtime.stop().expect("stop");
+        assert_eq!(stopped.phase, CapturePhase::Idle);
         fs::remove_dir_all(directory).expect("remove temporary directory");
     }
 
     #[test]
-    fn fake_backend_rejects_save_before_start() {
-        let mut backend = FakeBackend::default();
-        assert!(backend.save_clip().is_err());
-    }
-
-    #[test]
-    fn service_starts_with_fake_backend() {
+    fn snapshot_is_available_without_waiting_for_actor() {
         let directory = temporary_directory();
-        let service = CaptureService::default();
-        let snapshot = service.start(directory.clone(), 10).expect("start service");
-        assert_eq!(snapshot.status, CaptureStatus::Buffering);
-        let saved = service.save_clip().expect("save service clip");
-        assert_eq!(saved.saved_clips, 1);
-        assert!(saved.last_clip.is_some());
-        service.stop().expect("stop service");
+        let runtime = RecorderRuntime::new_for_test(directory.clone());
+        let snapshot = runtime.snapshot().expect("snapshot");
+        assert_eq!(snapshot.phase, CapturePhase::Idle);
         fs::remove_dir_all(directory).expect("remove temporary directory");
     }
 }

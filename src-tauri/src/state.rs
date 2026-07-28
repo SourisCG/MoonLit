@@ -1,50 +1,62 @@
 use serde::Serialize;
 
+use crate::traits::{BackendDescriptor, BackendError, ReplayConfig};
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CaptureStatus {
+#[serde(rename_all = "camelCase")]
+pub enum CapturePhase {
     Idle,
+    Starting,
     Buffering,
-    #[allow(dead_code)]
-    Error,
+    Saving,
+    Stopping,
+    Faulted,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipRecord {
     pub id: String,
     pub path: String,
-    pub created_at: u64,
+    pub created_at_ms: u64,
     pub duration_seconds: u32,
     pub kind: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeSnapshot {
-    pub status: CaptureStatus,
-    pub backend: String,
-    pub session_id: Option<String>,
-    pub game_label: Option<String>,
-    pub started_at: Option<u64>,
-    pub buffer_seconds: u32,
-    pub saved_clips: u32,
-    pub last_clip: Option<ClipRecord>,
-    pub message: String,
+pub struct SessionSnapshot {
+    pub id: String,
+    pub source_id: String,
+    pub source_label: String,
+    pub started_at_ms: u64,
 }
 
-impl Default for RuntimeSnapshot {
-    fn default() -> Self {
-        Self {
-            status: CaptureStatus::Idle,
-            backend: "fake".to_string(),
-            session_id: None,
-            game_label: None,
-            started_at: None,
-            buffer_seconds: 30,
-            saved_clips: 0,
-            last_clip: None,
-            message: "Listo para iniciar una prueba.".to_string(),
-        }
-    }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureSnapshot {
+    pub revision: u64,
+    pub phase: CapturePhase,
+    pub backend: BackendDescriptor,
+    pub config: Option<ReplayConfig>,
+    pub session: Option<SessionSnapshot>,
+    pub saved_clips: u32,
+    pub last_clip: Option<ClipRecord>,
+    pub last_error: Option<BackendError>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum RecorderEvent {
+    StateChanged {
+        snapshot: CaptureSnapshot,
+    },
+    ClipSaved {
+        snapshot: CaptureSnapshot,
+        clip: ClipRecord,
+    },
+    ErrorOccurred {
+        snapshot: CaptureSnapshot,
+        error: BackendError,
+    },
 }

@@ -19,20 +19,18 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [x] Add WebView2 runtime handling configuration
 
 ### Portable Architecture
-- [x] Design trait-based architecture (CaptureService, AudioMixerService, HotkeyService, GameDetector)
-- [x] Create `src-tauri/src/traits.rs` with complete trait definitions
-- [x] Define error types (CaptureError, AudioError, HotkeyError, GameDetectorError)
-- [x] Define configuration types (CaptureConfig, EncodingConfig, AudioSource, Hotkey)
-- [x] Define data types (CaptureSession, BackendCapabilities, MixerState)
+- [x] Define the canonical `ReplayBackend` contract
+- [x] Define serializable backend, source, config and error DTOs
+- [x] Create the recorder actor and revisioned snapshot model
+- [x] Keep encoded frame data and native handles outside IPC
+- [ ] Add audio, hotkey, game detector and library contracts when implemented
 
 ### Backend Implementations
 - [x] Create `src-tauri/src/backends/` module structure
-- [x] Implement FakeBackend (complete implementation for development/testing)
-- [x] Implement FakeAudioMixer (complete implementation)
-- [x] Implement FakeHotkeyService (complete implementation)
-- [x] Create Windows backend stubs (WindowsCaptureBackend, WindowsAudioMixer, WindowsHotkeyService)
-- [x] Create Linux backend stubs (LinuxCaptureBackend, LinuxAudioMixer, LinuxHotkeyService)
-- [x] Set up conditional compilation for platform-specific backends
+- [x] Implement the connected FakeBackend
+- [x] Add the unavailable Windows native boundary
+- [x] Move GSR to a Linux-only legacy adapter
+- [x] Set up the platform backend factory
 
 ### Documentation
 - [x] Update docs/PLAN.md with MoonLit implementation plan
@@ -47,7 +45,9 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 ### Code Quality
 - [x] Windows target compiles without errors
 - [x] Code formatted with `cargo fmt`
-- [x] Automated checks pass (`npm run check`, `npm run build`, `cargo test`, strict clippy)
+- [x] Frontend checks pass (`npm run check`, `npm test`, `npm run build`)
+- [x] Strict clippy passes
+- [ ] Rust test harness executes on this workstation (`0xC0000139` DLL entrypoint issue)
 
 ### Windows Bootstrap Evidence
 - [x] `npm run tauri -- info` recognizes the Windows toolchain

@@ -1,23 +1,76 @@
-//! Platform-specific backend implementations
-//!
-//! This module contains implementations of the portable traits defined in `crate::traits`.
-//! Each backend is conditionally compiled based on the target platform.
+//! Backend implementations and platform factory.
+
+use std::path::PathBuf;
+
+use crate::traits::{BackendDescriptor, BackendError, BackendId, ReplayBackend};
 
 pub mod fake;
+
+#[cfg(target_os = "linux")]
+pub mod gsr;
 
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-#[cfg(target_os = "linux")]
-pub mod linux;
+pub fn descriptors(resource_dir: Option<PathBuf>) -> Vec<BackendDescriptor> {
+    let mut descriptors = vec![fake::FakeBackend::new().descriptor()];
 
-// Re-export the appropriate backend based on platform
-#[cfg(target_os = "windows")]
-#[allow(unused_imports)]
-pub use windows::WindowsCaptureBackend;
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    let _ = resource_dir;
+    #[cfg(target_os = "windows")]
+    let _ = &resource_dir;
 
-#[cfg(target_os = "linux")]
-pub use linux::LinuxCaptureBackend;
+    #[cfg(target_os = "windows")]
+    {
+        descriptors.push(windows::WindowsNativeBackend::new().descriptor());
+    }
 
-#[allow(unused_imports)]
-pub use fake::FakeBackend;
+    #[cfg(target_os = "linux")]
+    {
+        descriptors
+            .push(gsr::LegacyGsrBackend::discover_with_resource_dir(resource_dir).descriptor());
+    }
+
+    descriptors
+}
+
+pub fn create(
+    id: BackendId,
+    resource_dir: Option<PathBuf>,
+) -> Result<Box<dyn ReplayBackend>, BackendError> {
+    match id {
+        BackendId::Fake => Ok(Box::new(fake::FakeBackend::new())),
+        BackendId::WindowsNative => {
+            #[cfg(target_os = "windows")]
+            {
+                Ok(Box::new(windows::WindowsNativeBackend::new()))
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = resource_dir;
+                Err(BackendError::new(
+                    crate::traits::BackendErrorCode::Unsupported,
+                    "El backend Windows no esta disponible en esta plataforma",
+                    false,
+                ))
+            }
+        }
+        BackendId::LegacyGsr => {
+            #[cfg(target_os = "linux")]
+            {
+                Ok(Box::new(gsr::LegacyGsrBackend::discover_with_resource_dir(
+                    resource_dir,
+                )))
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = resource_dir;
+                Err(BackendError::new(
+                    crate::traits::BackendErrorCode::Unsupported,
+                    "GSR legacy solo esta disponible en Linux",
+                    false,
+                ))
+            }
+        }
+    }
+}

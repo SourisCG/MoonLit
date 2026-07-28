@@ -100,15 +100,17 @@ moonlit/
 ├── src/                    # Frontend (Svelte 5)
 │   ├── App.svelte         # Main application component
 │   ├── main.ts            # Application entry point
-│   └── app.css            # Global styles
+│   ├── app.css             # Global styles
+│   └── lib/capture/        # Typed capture IPC client and tests
 ├── src-tauri/             # Backend (Rust)
 │   ├── src/
 │   │   ├── lib.rs         # Library entry point
 │   │   ├── main.rs        # Application entry point
-│   │   ├── capture.rs     # Capture service (portable)
-│   │   ├── recorder.rs    # Recording service
-│   │   ├── doctor.rs      # Diagnostic service
-│   │   └── state.rs       # Application state
+│   │   ├── backends/       # Fake, Windows boundary and Linux GSR adapter
+│   │   ├── recorder.rs     # Runtime actor and Tauri commands
+│   │   ├── traits.rs       # Canonical ReplayBackend contract
+│   │   ├── doctor.rs       # Diagnostic service
+│   │   └── state.rs        # Snapshot and recorder events
 │   ├── Cargo.toml         # Rust dependencies
 │   └── tauri.conf.json    # Tauri configuration
 ├── docs/                  # Documentation
@@ -123,26 +125,25 @@ moonlit/
 
 ### Backend Architecture
 
-The backend uses a **portable trait-based architecture**:
+The current backend uses one **portable replay contract**:
 
 ```rust
-pub trait CaptureService {
-    fn start_replay(&mut self, config: CaptureConfig) -> Result<()>;
-    fn save_clip(&mut self) -> Result<PathBuf>;
-    fn stop(&mut self) -> Result<()>;
-}
-
-pub trait AudioMixerService {
-    fn add_source(&mut self, source: AudioSource) -> Result<()>;
-    fn set_volume(&mut self, source_id: &str, volume: f32) -> Result<()>;
-    fn mix(&mut self, buffer: &mut AudioBuffer) -> Result<()>;
+pub trait ReplayBackend: Send {
+    fn descriptor(&self) -> BackendDescriptor;
+    fn list_sources(&self) -> Result<Vec<CaptureSource>, BackendError>;
+    fn start(&mut self, config: &ReplayConfig, output_dir: &Path) -> Result<(), BackendError>;
+    fn save_replay(&mut self) -> Result<ClipArtifact, BackendError>;
+    fn stop(&mut self) -> Result<(), BackendError>;
 }
 ```
 
 Platform-specific implementations:
-- **Windows**: `WindowsCaptureBackend`, `WindowsAudioMixer`, `NvencEncoder`
-- **Linux (Future)**: `LinuxCaptureBackend`, `LinuxAudioMixer`
-- **Development**: `FakeBackend`, `FakeAudioMixer`
+- **Windows**: `WindowsNativeBackend` boundary; WGC/NVENC is the next spike
+- **Linux**: `LegacyGsrBackend` behind the same contract
+- **Development**: `FakeBackend`, usable without a recorder or GPU
+
+Encoded frames, textures and native handles remain inside the backend. Tauri
+transports only descriptors, snapshots, errors and completed clip metadata.
 
 ### Setup Development Environment
 
