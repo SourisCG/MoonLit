@@ -42,7 +42,7 @@ Use the `windows` crate with the following features:
 
 ```toml
 [dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Graphics_Capture",
     "Graphics_DirectX",
     "Graphics_DirectX_Direct3D11",
@@ -256,7 +256,7 @@ Use the `windows` crate with the following features:
 
 ```toml
 [dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Media_Audio",
     "Media_Capture",
     "Media_Devices",
@@ -491,8 +491,8 @@ NVENC is NVIDIA's hardware-accelerated video encoding technology built into NVID
 
 - **GPU**: NVIDIA GeForce (GTX 600+), Quadro, or Tesla with NVENC support
 - **Driver**: NVIDIA driver 334.89 or later
-- **SDK**: NVIDIA Video Codec SDK (included with CUDA toolkit)
-- **Runtime**: No additional runtime required
+- **SDK**: NVIDIA Video Codec SDK runtime exposed by the installed driver
+- **Runtime**: `nvEncodeAPI64.dll` is loaded dynamically; CUDA headers and the CUDA toolkit are not required by the current spike
 
 ### Key Features
 
@@ -508,19 +508,22 @@ NVENC is NVIDIA's hardware-accelerated video encoding technology built into NVID
 
 ```toml
 [dependencies]
-# Option 1: Use nvenc-sys crate
-nvenc-sys = "0.3"
-
-# Option 2: Use windows crate with DirectX
-windows = { version = "0.58", features = [
+# Current MoonLit spike
+nvenc = "0.1.0"
+windows = { version = "0.62", features = [
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
     "Graphics_DirectX_Direct3D11",
 ] }
 
-# Option 3: Use FFmpeg bindings
+# Alternative: Use FFmpeg bindings for final container output
 ffmpeg-next = "6.0"
 ```
+
+The current implementation is in `src-tauri/native/windows-native`. It opens a
+D3D11 NVENC session, uses the low-latency P4 preset and emits synchronous H.264
+Annex B packets. The generic initialization example below describes the NVENC
+concepts; it is not the exact safe wrapper API used by the spike.
 
 ### Encoder Initialization
 
@@ -638,7 +641,7 @@ AMF is AMD's hardware-accelerated media framework for encoding and decoding vide
 # Use AMF bindings (if available)
 # Otherwise, use raw FFI
 
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
 ] }
@@ -729,7 +732,7 @@ Intel Quick Sync Video is Intel's hardware-accelerated video encoding/decoding t
 # Use Intel Media SDK bindings (if available)
 # Otherwise, use MediaFoundation with Intel encoder
 
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Media_MediaProperties",
     "Media_Transcoding",
 ] }
@@ -766,7 +769,7 @@ The Win32 Hotkey API allows applications to register global hotkeys that work sy
 
 ```toml
 [dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
@@ -894,7 +897,7 @@ Windows Toast Notifications are modern notifications introduced in Windows 8 tha
 
 ```toml
 [dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "UI_Notifications",
     "Data_Xml_Dom",
     "Foundation",

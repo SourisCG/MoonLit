@@ -1,6 +1,6 @@
 # MoonLit AI Context
 
-Updated: 2026-07-28 (ReplayBackend v1 portable core)
+Updated: 2026-07-28 (Windows native WGC/NVENC spike)
 
 ## Project Overview
 
@@ -8,25 +8,28 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ## Current State
 
-### Phase: ReplayBackend v1
+### Phase: Windows Native Capture Spike
 
 **Foundation and bootstrap status**:
 - Canonical `ReplayBackend` contract is connected to Tauri runtime
 - FakeBackend covers sources, capabilities and start/save/stop without hardware
-- Windows backend is an explicit unavailable boundary until WGC/NVENC
+- Windows backend is a monitor-first native boundary and reports unavailable when WGC or NVENC is missing
+- Native WGC, D3D11 and direct NVENC H.264 code is isolated in `src-tauri/native/windows-native`
+- Native output is raw H.264 Annex B packets kept inside Rust; the final MP4/MKV container is not implemented
 - Comprehensive documentation created (7 documents)
 - NSIS installer configuration is not yet verified
 - Windows baseline remains compilable and launch-tested on the RTX 3060 workstation
 
-**⏳ Phase 1 Pending (Windows Required)**:
-- Implement WindowsCaptureBackend (Windows.Graphics.Capture)
+**Phase 1 In Progress (Windows Required)**:
+- Monitor-first WindowsCaptureBackend spike (Windows.Graphics.Capture + D3D11 + NVENC H.264) is validated
+- Expand capture to windows, permissions and source lifecycle changes
 - Implement WindowsAudioMixer (WASAPI)
-- Implement GPU encoders (NVENC/AMF/QuickSync)
+- Finalize GPU encoder output and add AMF/QuickSync
 - Implement HotkeyService (Win32 API)
 - Implement GameDetector (process/window enumeration)
 - Testing and validation on Windows 10/11
 
-**Status**: Contract, fake flow and portable GOP replay core migrated; native capture implementation has not started
+**Status**: Contract, fake flow, portable GOP replay core and a working Windows monitor capture/NVENC spike are implemented; audio, window capture and final media containers remain pending
 
 ### ReplayBackend v1 Changes (2026-07-28)
 
@@ -34,11 +37,22 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - `recorder.rs` owns a bounded actor, snapshots, transitions and events.
 - `backends/fake.rs` is the only fake capture implementation and writes an explicit simulation manifest.
 - `backends/gsr.rs` is compiled only on Linux and uses the same contract.
-- `backends/windows.rs` exposes an unavailable native boundary without false capabilities.
+- `backends/windows.rs` integrates the native monitor capture boundary with the portable replay buffer and atomic raw `.h264` output.
 - `replay.rs` owns a GOP-aware encoded packet window and only saves clips from a decodable keyframe.
 - Tauri no longer registers GSR-specific or external executable commands.
 - `src/lib/capture/client.ts` centralizes capture IPC and Vitest covers its command payloads.
-- No encoded frame data crosses Tauri IPC; WGC/NVENC remains next.
+- No encoded frame data crosses Tauri IPC; native packets are collected into the Rust replay buffer.
+
+### Windows Native Spike Changes (2026-07-28)
+
+- Added `src-tauri/native/windows-native`, a small unsafe-isolated crate using `windows 0.62` and `nvenc 0.1.0`.
+- Enumerates physical monitors and creates monitor-first `GraphicsCaptureItem` instances.
+- Creates a BGRA D3D11 device, a free-threaded WGC frame pool and a persistent encoder texture.
+- Copies captured textures on the GPU with `CopyResource` and encodes H.264 through the dynamically loaded `nvEncodeAPI64.dll`.
+- Uses low-latency NVENC P4 settings, no B-frames, a two-second GOP and Annex B packet delivery.
+- Hardware probe on the RTX 3060 reports WGC support, NVENC H.264 support, two monitors, and a 1920x1080 maximum source on the default monitor.
+- A five-second monitor smoke capture completed with 104 packets, one keyframe and 2,960,586 encoded bytes.
+- The first spike deliberately keeps `finish()` as a no-op because the available SDK wrapper faults on EOS submission after synchronous packet locking; orderly resource shutdown is validated.
 
 ### Windows Bootstrap Verification (2026-07-28)
 
@@ -49,7 +63,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - `npm run tauri -- info` passes
 - `npm run tauri -- build --no-bundle` produces `moonlit.exe`
 - The executable starts successfully with the current FakeBackend
-- No Windows.Graphics.Capture, WASAPI or NVENC path is implemented yet
+- Monitor-first Windows.Graphics.Capture, D3D11 and direct NVENC H.264 are implemented as a spike; WASAPI, window capture and final containers are not implemented yet
 
 ### What Exists (Linux Implementation)
 
@@ -63,9 +77,9 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ### What Needs Windows Implementation
 
-- Windows.Graphics.Capture API integration
+- Expand Windows.Graphics.Capture from the monitor-first spike to window capture, permission handling and source lifecycle changes
 - WASAPI audio capture and mixing
-- NVENC/AMF/QuickSync GPU encoding
+- Finalize media-container output and add other GPU encoders (AMF/QuickSync)
 - Hotkey registration (WinAPI)
 - Process/game detection (Windows)
 - Real capture and encoding
@@ -161,8 +175,8 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ### Backend (Windows-Specific)
 - **Capture**: Windows.Graphics.Capture API via `windows` crate
 - **Audio**: WASAPI via `wasapi` crate
-- **Encoding**: 
-  - NVENC via `nvenc-sys` or direct API
+- **Encoding**:
+  - NVENC via the `nvenc` crate and dynamically loaded `nvEncodeAPI64.dll` for the current spike
   - AMF via `amf-sys` or direct API
   - QuickSync via `qsv` or Intel Media SDK
 - **Hotkeys**: Win32 API via `windows` crate
@@ -193,7 +207,8 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - `src-tauri/src/replay.rs` - GOP-aware encoded packet buffer with synthetic H.264 tests
 - `src-tauri/src/backends/mod.rs` - Backend module structure
 - `src-tauri/src/backends/fake.rs` - Complete FakeBackend implementation for development/testing
-- `src-tauri/src/backends/windows.rs` - Windows backend stubs (ready for implementation)
+- `src-tauri/src/backends/windows.rs` - Windows native backend and replay-buffer integration
+- `src-tauri/native/windows-native/` - WGC, D3D11, monitor enumeration and NVENC H.264 spike
 - `src-tauri/src/backends/gsr.rs` - Linux-only legacy backend adapter
 - `src-tauri/src/recorder.rs` - Bounded recorder actor and state transitions
 - `docs/PLAN.md` - Complete implementation plan for MoonLit
@@ -207,15 +222,16 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 **Can do on Linux**: Replay core, fake flows, IPC client and frontend; native Windows verification remains here
 
 ### Phase 1: Windows Backend Implementation (Windows Required)
-**Status**: Pending
+**Status**: In progress; monitor-first WGC/D3D11/NVENC H.264 spike validated on Windows 11
 
-1. Implement WindowsCaptureBackend (Windows.Graphics.Capture)
-2. Implement WindowsAudioMixer (WASAPI)
-3. Implement GpuEncoder (NVENC/AMF/QuickSync)
-4. Implement HotkeyService (WinAPI)
-5. Implement GameDetector (process/window scanning)
-6. Testing on Windows 10 and Windows 11
-7. Testing with NVIDIA, AMD, Intel GPUs
+1. Implement monitor-first WindowsCaptureBackend (Windows.Graphics.Capture) and direct NVENC H.264 spike
+2. Expand capture to windows, permissions, resizing and source lifecycle changes
+3. Implement WindowsAudioMixer (WASAPI)
+4. Finalize GpuEncoder output and add AMF/QuickSync support
+5. Implement HotkeyService (WinAPI)
+6. Implement GameDetector (process/window scanning)
+7. Testing on Windows 10 and Windows 11
+8. Testing with NVIDIA, AMD, Intel GPUs
 
 **Requires Windows**: All of Phase 1
 
@@ -272,7 +288,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ### Current: Contract and Windows Preparation
 - **Environment**: Windows 11 Pro x64 with RTX 3060 12 GB
 - **Tools**: Rust MSVC, Visual Studio Build Tools, Windows SDK, WebView2 and Tauri CLI
-- **Limitations**: Native capture, audio and encoder paths are still stubs; Rust test execution is blocked by a local DLL entrypoint issue
+- **Limitations**: Native capture is monitor-first and raw Annex B only; audio, final containers and broader source support are pending; Rust test execution is blocked by a local DLL entrypoint issue
 - **Focus**: WGC/NVENC spike and native validation
 
 ### Parallel Linux Work
@@ -320,9 +336,10 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ## Next Steps
 
 ### Immediate
-1. Implement the Windows.Graphics.Capture and D3D11 capture boundary.
-2. Add the direct NVENC H.264 Annex B spike without changing the IPC contract.
-3. Validate the native path on Windows hardware and keep the FakeBackend flow green.
+1. Integrate the validated native packet path through `WindowsNativeBackend::start`, `save_replay` and `stop`.
+2. Convert raw Annex B output into the planned MP4/MKV artifact without moving frames across Tauri IPC.
+3. Add WASAPI capture and audio/video synchronization.
+4. Expand source support and validate on additional Windows versions and GPU vendors.
 
 ## Important Notes
 

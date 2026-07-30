@@ -28,7 +28,7 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 ### Backend Implementations
 - [x] Create `src-tauri/src/backends/` module structure
 - [x] Implement the connected FakeBackend
-- [x] Add the unavailable Windows native boundary
+- [x] Add the Windows native boundary with monitor-first WGC/D3D11/NVENC H.264 support
 - [x] Move GSR to a Linux-only legacy adapter
 - [x] Set up the platform backend factory
 
@@ -54,20 +54,33 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [x] `npm run tauri -- build --no-bundle` produces `moonlit.exe`
 - [x] Release executable starts successfully with FakeBackend
 - [ ] Manual Tauri UI start/save/stop interaction
-- [ ] Native Windows.Graphics.Capture capture
+- [x] Native Windows.Graphics.Capture monitor capture on the RTX 3060 workstation
 - [ ] Native WASAPI capture
-- [ ] Direct NVENC encoding
+- [x] Direct NVENC H.264 Annex B encoding on the RTX 3060 workstation
+
+## Windows Native Capture Spike (2026-07-28)
+
+- [x] Enumerate two physical monitor sources
+- [x] Detect WGC support and NVENC H.264 capability
+- [x] Capture the default monitor through a free-threaded WGC frame pool
+- [x] Copy captured D3D11 textures to a persistent encoder texture on the GPU
+- [x] Encode synchronous H.264 Annex B packets with one initial IDR keyframe
+- [x] Complete orderly capture shutdown without a native crash
+- [ ] Exercise `WindowsNativeBackend::start`, `save_replay` and `stop` through the Tauri runtime
+- [ ] Produce the final MP4/MKV media artifact
+- [ ] Validate 720p30, 1080p60, long-running capture and performance budgets
+- [ ] Validate window capture, permission handling and display changes
 
 ## Windows API Validation
 
 ### Windows.Graphics.Capture
 - [ ] Basic monitor capture on Windows 10 1903+
-- [ ] Basic monitor capture on Windows 11
+- [x] Basic monitor capture on Windows 11
 - [ ] Window capture (specific application window)
 - [ ] Full screen capture (entire monitor)
 - [ ] Permission popup handling (first-time use)
 - [ ] Permission persistence (subsequent uses)
-- [ ] Multi-monitor enumeration
+- [x] Multi-monitor enumeration
 - [ ] Monitor configuration changes during capture
 - [ ] Window resize/move during capture
 - [ ] Window close during capture
@@ -92,8 +105,9 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [ ] Audio mixing (system + mic + apps)
 
 ### GPU Encoding
-- [ ] NVENC detection (NVIDIA)
+- [x] NVENC detection (NVIDIA)
 - [ ] NVENC H.264 encoding (720p30)
+- [x] NVENC H.264 encoding (1080p30)
 - [ ] NVENC H.264 encoding (1080p60)
 - [ ] NVENC H.264 encoding (1440p60)
 - [ ] NVENC H.265 encoding (1080p60)

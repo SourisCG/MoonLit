@@ -47,9 +47,11 @@ The project is designed as a Windows-first application with portable architectur
 - ⏳ Prepare NSIS/WiX installer configuration
 
 **Phase 1: Windows Backend Implementation (Windows Required)**
-- ⏳ Implement WindowsCaptureBackend (Windows.Graphics.Capture)
+- ✅ Implement monitor-first WindowsCaptureBackend spike (Windows.Graphics.Capture + D3D11)
+- ⏳ Expand capture to windows, permissions, resizing and source lifecycle changes
 - ⏳ Implement WindowsAudioMixer (WASAPI loopback + capture)
-- ⏳ Implement GpuEncoder (NVENC/AMF/QuickSync)
+- ✅ Implement direct NVENC H.264 Annex B spike
+- ⏳ Finalize media-container output and add AMF/QuickSync support
 - ⏳ Implement HotkeyService (WinAPI global hotkeys)
 - ⏳ Implement GameDetector (process/window scanning)
 - ⏳ Testing on Windows 10 and Windows 11
@@ -62,7 +64,8 @@ The project is designed as a Windows-first application with portable architectur
 - ✅ GSR quarantined as a Linux-only legacy adapter
 - ✅ Frontend IPC client and source/backend selection flow
 - ✅ GOP-aware encoded replay core
-- ⏳ Windows.Graphics.Capture + direct NVENC H.264 spike
+- ✅ Windows.Graphics.Capture + D3D11 + direct NVENC H.264 monitor-first spike; raw Annex B output is validated on Windows 11
+- ⏳ Integrate final MP4/MKV output and the complete Windows backend flow
 
 **Phase 2: Frontend Adaptation (Linux - Current)**
 - ⏳ Redesign UI for Windows (Fluent Design-inspired)
