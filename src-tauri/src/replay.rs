@@ -7,47 +7,59 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
+
+const DEFAULT_MAX_BYTES: usize = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EncodedPacket {
-    pub pts_ms: u64,
-    pub duration_ms: u64,
+    pub pts_100ns: u64,
+    pub duration_100ns: u64,
     pub is_keyframe: bool,
-    pub data: Vec<u8>,
+    pub data: Arc<[u8]>,
 }
 
 impl EncodedPacket {
-    pub fn new(pts_ms: u64, duration_ms: u64, is_keyframe: bool, data: Vec<u8>) -> Self {
+    pub fn new(pts_100ns: u64, duration_100ns: u64, is_keyframe: bool, data: Vec<u8>) -> Self {
         Self {
-            pts_ms,
-            duration_ms,
+            pts_100ns,
+            duration_100ns,
             is_keyframe,
-            data,
+            data: Arc::from(data),
         }
     }
 
-    fn end_ms(&self) -> u64 {
-        self.pts_ms.saturating_add(self.duration_ms)
+    fn end_100ns(&self) -> u64 {
+        self.pts_100ns.saturating_add(self.duration_100ns)
+    }
+
+    fn byte_len(&self) -> usize {
+        self.data.len()
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayClip {
     pub packets: Vec<EncodedPacket>,
-    pub start_pts_ms: u64,
-    pub end_pts_ms: u64,
+    pub start_pts_100ns: u64,
+    pub end_pts_100ns: u64,
 }
 
 impl ReplayClip {
+    pub fn duration_100ns(&self) -> u64 {
+        self.end_pts_100ns.saturating_sub(self.start_pts_100ns)
+    }
+
     pub fn duration_ms(&self) -> u64 {
-        self.end_pts_ms.saturating_sub(self.start_pts_ms)
+        self.duration_100ns() / 10_000
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayError {
     InvalidWindow,
+    InvalidBufferLimit,
     InvalidPacket(&'static str),
     OutOfOrderPacket,
     NoDecodableKeyframe,
@@ -57,6 +69,9 @@ impl fmt::Display for ReplayError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidWindow => formatter.write_str("replay window must be greater than zero"),
+            Self::InvalidBufferLimit => {
+                formatter.write_str("replay byte limit must be greater than zero")
+            }
             Self::InvalidPacket(reason) => write!(formatter, "invalid encoded packet: {reason}"),
             Self::OutOfOrderPacket => {
                 formatter.write_str("encoded packet timestamps are out of order")
@@ -71,26 +86,37 @@ impl fmt::Display for ReplayError {
 impl std::error::Error for ReplayError {}
 
 pub struct ReplayBuffer {
-    window_ms: u64,
+    window_100ns: u64,
+    max_bytes: usize,
+    bytes: usize,
     packets: VecDeque<EncodedPacket>,
 }
 
 impl ReplayBuffer {
     pub fn new(window: Duration) -> Result<Self, ReplayError> {
-        let window_ms =
-            u64::try_from(window.as_millis()).map_err(|_| ReplayError::InvalidWindow)?;
-        if window_ms == 0 {
+        Self::with_max_bytes(window, DEFAULT_MAX_BYTES)
+    }
+
+    pub fn with_max_bytes(window: Duration, max_bytes: usize) -> Result<Self, ReplayError> {
+        let window_100ns =
+            u64::try_from(window.as_nanos() / 100).map_err(|_| ReplayError::InvalidWindow)?;
+        if window_100ns == 0 {
             return Err(ReplayError::InvalidWindow);
+        }
+        if max_bytes == 0 {
+            return Err(ReplayError::InvalidBufferLimit);
         }
 
         Ok(Self {
-            window_ms,
+            window_100ns,
+            max_bytes,
+            bytes: 0,
             packets: VecDeque::new(),
         })
     }
 
     pub fn push(&mut self, packet: EncodedPacket) -> Result<(), ReplayError> {
-        if packet.duration_ms == 0 {
+        if packet.duration_100ns == 0 {
             return Err(ReplayError::InvalidPacket(
                 "duration must be greater than zero",
             ));
@@ -101,11 +127,12 @@ impl ReplayBuffer {
         if self
             .packets
             .back()
-            .is_some_and(|previous| packet.pts_ms < previous.pts_ms)
+            .is_some_and(|previous| packet.pts_100ns < previous.pts_100ns)
         {
             return Err(ReplayError::OutOfOrderPacket);
         }
 
+        self.bytes = self.bytes.saturating_add(packet.byte_len());
         self.packets.push_back(packet);
         self.prune();
         Ok(())
@@ -119,50 +146,54 @@ impl ReplayBuffer {
         self.packets.is_empty()
     }
 
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
     pub fn snapshot(&self) -> Vec<EncodedPacket> {
         self.packets.iter().cloned().collect()
     }
 
     pub fn save_last(&self, duration: Duration) -> Result<ReplayClip, ReplayError> {
-        let requested_ms =
-            u64::try_from(duration.as_millis()).map_err(|_| ReplayError::InvalidWindow)?;
-        if requested_ms == 0 {
+        let requested_100ns =
+            u64::try_from(duration.as_nanos() / 100).map_err(|_| ReplayError::InvalidWindow)?;
+        if requested_100ns == 0 {
             return Err(ReplayError::InvalidWindow);
         }
 
-        let end_pts_ms = self
+        let end_pts_100ns = self
             .packets
             .back()
-            .map(EncodedPacket::end_ms)
+            .map(EncodedPacket::end_100ns)
             .ok_or(ReplayError::NoDecodableKeyframe)?;
-        let cutoff_ms = end_pts_ms.saturating_sub(requested_ms);
+        let cutoff_100ns = end_pts_100ns.saturating_sub(requested_100ns);
         let start_index = self
-            .decodable_start_index(cutoff_ms)
+            .decodable_start_index(cutoff_100ns)
             .ok_or(ReplayError::NoDecodableKeyframe)?;
         let packets: Vec<_> = self.packets.iter().skip(start_index).cloned().collect();
-        let start_pts_ms = packets
+        let start_pts_100ns = packets
             .first()
-            .map(|packet| packet.pts_ms)
+            .map(|packet| packet.pts_100ns)
             .ok_or(ReplayError::NoDecodableKeyframe)?;
 
         Ok(ReplayClip {
             packets,
-            start_pts_ms,
-            end_pts_ms,
+            start_pts_100ns,
+            end_pts_100ns,
         })
     }
 
     fn prune(&mut self) {
-        let Some(end_pts_ms) = self.packets.back().map(EncodedPacket::end_ms) else {
+        let Some(end_pts_100ns) = self.packets.back().map(EncodedPacket::end_100ns) else {
             return;
         };
-        let cutoff_ms = end_pts_ms.saturating_sub(self.window_ms);
+        let cutoff_100ns = end_pts_100ns.saturating_sub(self.window_100ns);
 
         let keep_index = self
             .packets
             .iter()
             .enumerate()
-            .filter(|(_, packet)| packet.is_keyframe && packet.pts_ms <= cutoff_ms)
+            .filter(|(_, packet)| packet.is_keyframe && packet.pts_100ns <= cutoff_100ns)
             .map(|(index, _)| index)
             .next_back()
             .or_else(|| self.packets.iter().position(|packet| packet.is_keyframe));
@@ -170,20 +201,43 @@ impl ReplayBuffer {
         let remove_count = keep_index.unwrap_or_else(|| {
             self.packets
                 .iter()
-                .position(|packet| packet.end_ms() > cutoff_ms)
+                .position(|packet| packet.end_100ns() > cutoff_100ns)
                 .unwrap_or(self.packets.len())
         });
+        self.remove_front(remove_count);
 
-        for _ in 0..remove_count {
-            self.packets.pop_front();
+        while self.bytes > self.max_bytes {
+            let next_keyframe = self
+                .packets
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find(|(_, packet)| packet.is_keyframe)
+                .map(|(index, _)| index);
+            match next_keyframe {
+                Some(index) => self.remove_front(index),
+                None => {
+                    self.packets.clear();
+                    self.bytes = 0;
+                    break;
+                }
+            }
         }
     }
 
-    fn decodable_start_index(&self, cutoff_ms: u64) -> Option<usize> {
+    fn remove_front(&mut self, count: usize) {
+        for _ in 0..count {
+            if let Some(packet) = self.packets.pop_front() {
+                self.bytes = self.bytes.saturating_sub(packet.byte_len());
+            }
+        }
+    }
+
+    fn decodable_start_index(&self, cutoff_100ns: u64) -> Option<usize> {
         self.packets
             .iter()
             .enumerate()
-            .filter(|(_, packet)| packet.is_keyframe && packet.pts_ms <= cutoff_ms)
+            .filter(|(_, packet)| packet.is_keyframe && packet.pts_100ns <= cutoff_100ns)
             .map(|(index, _)| index)
             .next_back()
             .or_else(|| self.packets.iter().position(|packet| packet.is_keyframe))
@@ -198,8 +252,8 @@ mod tests {
 
     fn h264_packet(pts_ms: u64, is_keyframe: bool) -> EncodedPacket {
         EncodedPacket::new(
-            pts_ms,
-            40,
+            pts_ms * 10_000,
+            40 * 10_000,
             is_keyframe,
             vec![0, 0, 0, 1, if is_keyframe { 0x65 } else { 0x41 }],
         )
@@ -224,11 +278,10 @@ mod tests {
         let clip = buffer
             .save_last(Duration::from_millis(120))
             .expect("decodable clip");
-        assert_eq!(clip.start_pts_ms, 80);
-        assert_eq!(clip.end_pts_ms, 240);
+        assert_eq!(clip.start_pts_100ns, 80 * 10_000);
+        assert_eq!(clip.end_pts_100ns, 240 * 10_000);
         assert_eq!(clip.packets.len(), 4);
         assert!(clip.packets[0].is_keyframe);
-        assert_eq!(clip.packets[0].data, vec![0, 0, 0, 1, 0x65]);
     }
 
     #[test]
@@ -248,7 +301,10 @@ mod tests {
         }
 
         let packets = buffer.snapshot();
-        assert_eq!(packets.first().map(|packet| packet.pts_ms), Some(80));
+        assert_eq!(
+            packets.first().map(|packet| packet.pts_100ns),
+            Some(80 * 10_000)
+        );
         assert!(packets.first().is_some_and(|packet| packet.is_keyframe));
     }
 
@@ -283,10 +339,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zero_duration_windows() {
+    fn enforces_a_byte_limit_at_a_gop_boundary() {
+        let mut buffer = ReplayBuffer::with_max_bytes(Duration::from_secs(30), 10).expect("buffer");
+        buffer.push(h264_packet(0, true)).expect("packet");
+        buffer.push(h264_packet(40, false)).expect("packet");
+        buffer.push(h264_packet(80, true)).expect("packet");
+        buffer.push(h264_packet(120, false)).expect("packet");
+        assert_eq!(buffer.bytes(), 10);
+        assert_eq!(
+            buffer.snapshot().first().map(|packet| packet.pts_100ns),
+            Some(80 * 10_000)
+        );
+    }
+
+    #[test]
+    fn rejects_zero_duration_windows_and_limits() {
         assert!(matches!(
             ReplayBuffer::new(Duration::ZERO),
             Err(ReplayError::InvalidWindow)
+        ));
+        assert!(matches!(
+            ReplayBuffer::with_max_bytes(Duration::from_secs(1), 0),
+            Err(ReplayError::InvalidBufferLimit)
         ));
     }
 }

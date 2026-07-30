@@ -52,8 +52,9 @@ See [Development](#development) section below.
 ### Current Development Status
 
 The Windows bootstrap is verified: the Tauri application builds and launches
-with the simulated backend. Native Windows.Graphics.Capture, WASAPI, NVENC,
-the persistent library and the installer are still under development.
+with the simulated backend. The direct WGC/D3D11/NVENC path is a validated raw
+Annex B benchmark. The production libobs sidecar, WASAPI integration, final
+containers, persistent library and release installer remain under development.
 
 ## Usage
 
@@ -138,7 +139,8 @@ pub trait ReplayBackend: Send {
 ```
 
 Platform-specific implementations:
-- **Windows**: `WindowsNativeBackend` boundary; WGC/NVENC is the next spike
+- **Windows production**: `LibobsSidecarBackend`; libobs owns capture, audio, encoding, replay and muxing in a supervised process
+- **Windows benchmark**: `WindowsNativeBackend` boundary with raw WGC/NVENC Annex B output
 - **Linux**: `LegacyGsrBackend` behind the same contract
 - **Development**: `FakeBackend`, usable without a recorder or GPU
 
@@ -194,12 +196,14 @@ transports only descriptors, snapshots, errors and completed clip metadata.
 npm run tauri dev
 ```
 
-#### Production Build (Windows)
+#### Production Build (Windows, not yet release-ready)
 ```bash
-npm run tauri build
+npm run tauri -- build --config src-tauri/tauri.windows.release.conf.json
 ```
 
-Output: `src-tauri/target/release/bundle/nsis/MoonLit_0.1.0_x64-setup.exe`
+This requires an approved staged libobs runtime under
+`src-tauri/target/package-stage/windows-x86_64/runtime/obs/`. Ordinary
+development builds use `npm run tauri build -- --no-bundle`.
 
 ### Testing
 
@@ -275,10 +279,12 @@ MoonLit will fall back to CPU encoding (x264/x265). This works but uses more CPU
 - ⏳ Portable backend structure
 - ⏳ Windows API documentation
 
-### Phase 1: Windows Backend (Next)
-- ⏳ Windows.Graphics.Capture integration
+### Phase 1: Windows Backend (In progress)
+- ✅ Direct WGC/D3D11/NVENC monitor benchmark
+- ✅ Process-isolated sidecar protocol and backend contract
+- ⏳ libobs bridge and custom WGC source
 - ⏳ WASAPI audio capture
-- ⏳ GPU encoding (NVENC/AMF/QuickSync)
+- ⏳ GPU encoding (NVENC/AMF/QuickSync/x264)
 - ⏳ Hotkey service
 - ⏳ Game detector
 

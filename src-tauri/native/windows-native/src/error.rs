@@ -11,6 +11,7 @@ pub enum NativeError {
     EncoderUnavailable(String),
     InvalidConfig(&'static str),
     ChannelClosed,
+    WorkerPanicked,
     Io(String),
 }
 
@@ -37,6 +38,7 @@ impl fmt::Display for NativeError {
             Self::EncoderUnavailable(message) => formatter.write_str(message),
             Self::InvalidConfig(message) => formatter.write_str(message),
             Self::ChannelClosed => formatter.write_str("native capture channel closed"),
+            Self::WorkerPanicked => formatter.write_str("native capture worker panicked"),
             Self::Io(message) => formatter.write_str(message),
         }
     }

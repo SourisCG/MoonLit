@@ -1,380 +1,122 @@
-# Windows Packaging Strategy
+# Windows Packaging
 
-## Overview
+## Status
 
-MoonLit will be distributed as a Windows installer (.exe) using NSIS as the primary installer. A Microsoft Store version (MSIX) is planned for future release when a developer account becomes available.
+NSIS is the planned Windows distribution format, but release bundling is not
+enabled in `src-tauri/tauri.conf.json`. The release-only configuration is
+`src-tauri/tauri.windows.release.conf.json` and must not be used until the
+libobs runtime lock has status `approved`.
 
-## Distribution Formats
+Ordinary development remains FakeBackend-first and does not require OBS,
+FFmpeg or a staged recorder.
 
-### Primary: NSIS Installer (.exe)
-- **Format**: Executable installer
-- **Target**: Windows 10 1903+ and Windows 11 x86_64
-- **Installation**: Current user (no admin required)
-- **Priority**: High (immediate)
+## Installed Layout
 
-### Secondary: MSIX (Microsoft Store)
-- **Format**: MSIX package
-- **Target**: Windows 10+ and Windows 11
-- **Installation**: Microsoft Store
-- **Priority**: Low (future, requires developer account)
+The installer places application-local runtime resources below the Tauri
+resource directory:
 
-### Future: Portable Version
-- **Format**: ZIP archive with executable
-- **Target**: Windows 10+ and Windows 11
-- **Installation**: No installation required
-- **Priority**: Medium (if requested)
-
-## NSIS Installer Configuration
-
-### Installation Requirements
-- No administrator privileges required
-- Current user installation
-- Automatic WebView2 installation (if needed)
-- Create Start Menu shortcuts
-- Create Desktop shortcut (optional)
-- Create Uninstall entry
-
-### Installation Paths
-```
-Default: %LOCALAPPDATA%\MoonLit
-Executables: %LOCALAPPDATA%\MoonLit\MoonLit.exe
-Data: %APPDATA%\com.souriscg.moonlit
+```text
+MoonLit/
+  MoonLit.exe
+  runtime/obs/
+    runtime-manifest.json
+    THIRD_PARTY_NOTICES.txt
+    bin/64bit/
+      moonlit-recorder.exe
+      moonlit-obs-bridge.dll
+      obs.dll
+      libobs-d3d11.dll
+      libobs-winrt.dll
+      obs-ffmpeg-mux.exe
+      <allowlisted dependency DLLs>
+    obs-plugins/64bit/
+      <allowlisted modules only>
+    data/libobs/
+    data/obs-plugins/
+    licenses/
 ```
 
-### Installer Features
-- Customizable installation directory
-- Optional Desktop shortcut
-- Optional Start Menu shortcut
-- Silent installation mode
-- Uninstaller with clean removal
+The recorder is a resource rather than a Tauri `externalBin`. This preserves
+its DLL/plugin/data closure and avoids flattening the OBS runtime beside the
+main executable. Trusted Rust code launches the absolute path directly; the
+frontend receives no shell permission.
 
-### Installer Assets
-- Installer icon (icon.ico)
-- Uninstaller icon (icon.ico)
-- Installer banner (164x314 bitmap)
-- Installer wizard (164x314 bitmap)
-- License agreement (GPL-3.0)
+## Runtime Inputs
 
-### Installer Script Structure
-```nsis
-!define PRODUCT_NAME "MoonLit"
-!define PRODUCT_VERSION "0.1.0"
-!define PRODUCT_PUBLISHER "SourisCG"
-!define PRODUCT_WEB_SITE "https://github.com/SourisCG/MoonLit"
+The current design lock is `packaging/windows/obs-runtime.lock.json`:
 
-Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "MoonLit_${PRODUCT_VERSION}_x64-setup.exe"
-InstallDir "$LOCALAPPDATA\${PRODUCT_NAME}"
-RequestExecutionLevel user
+* OBS Studio `32.2.1`, commit `0052d024fd6a5ff1aa04c76cbdffd3085a5dfacc`.
+* Source archive and portable reference SHA-256 values are recorded there.
+* The lock is currently `design-only`; it is not a release input.
+* The release pipeline must reject `latest`, mutable unverified archives,
+  missing hashes and non-approved manifests.
 
-Section "Install"
-  ; Install files
-  ; Create shortcuts
-  ; Register uninstaller
-SectionEnd
+`runtime.allowlist.json` is authoritative. The denylist is defense in depth
+and includes `win-capture`, graphics hooks, injectors, Game Capture helpers,
+OBS Studio, browser, websocket and virtual-camera files.
 
-Section "Uninstall"
-  ; Remove files
-  ; Remove shortcuts
-  ; Remove registry entries
-SectionEnd
+The staging process must reject unknown files, wrong PE architecture, duplicate
+DLL basenames, reparse points, archive traversal, unresolved imports and
+components without license records. GPU driver DLLs such as
+`nvEncodeAPI64.dll` are not bundled.
+
+## Build Order
+
+1. Require a clean, exact Git commit and locked Rust/npm dependencies.
+2. Fetch the exact OBS source/dependency archives and verify SHA-256.
+3. Build only the no-frontend libobs targets and the MoonLit recorder/bridge.
+4. Recreate `target/package-stage/windows-x86_64` from empty.
+5. Run `packaging/windows/Stage-Runtime.ps1` with the approved manifests.
+6. Inspect PE architecture/import closure and run recorder `--self-test --json`.
+7. Generate the unsigned runtime manifest and SBOM.
+8. Sign the staged MoonLit recorder, bridge and runtime DLLs in a protected
+   signing environment.
+9. Generate the signed manifest and include license/source notices.
+10. Build NSIS with the release configuration and verify the installed tree.
+
+The build scripts must invoke tools with executable paths and argument arrays.
+They must not use `Invoke-Expression`, `cmd /c`, user-provided command strings,
+`build.rs` downloads or runtime downloads.
+
+## WebView2
+
+The primary installer uses Tauri's `downloadBootstrapper` mode. A future
+offline installer may use WebView2's offline installer and will be a separate
+artifact because of its size. MoonLit does not use a fixed WebView2 runtime.
+
+## Launch Rules
+
+Release code resolves exactly:
+
+```text
+resource_dir/runtime/obs/bin/64bit/moonlit-recorder.exe
 ```
 
-## Tauri Bundle Configuration
+It does not search `PATH`, Program Files OBS, the registry, current directory,
+or user plugin directories. The sidecar receives `--stdio`, an absolute
+runtime root and the parent PID. The process supervisor enforces request
+deadlines, drains stderr into a bounded ring, kills/reaps on timeout and
+detects EOF/nonzero exit.
 
-### Current Configuration (tauri.conf.json)
-```json
-{
-  "bundle": {
-    "active": true,
-    "targets": ["nsis"],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.ico"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "languages": ["English", "Spanish"],
-        "displayLanguageSelector": true
-      }
-    }
-  }
-}
-```
+## Verification
 
-### Build Command
-```bash
-npm run tauri build
-```
+Before enabling release bundling, test on clean standard-user Windows 10 and
+Windows 11 machines with:
 
-### Output
-```
-src-tauri/target/release/bundle/nsis/MoonLit_0.1.0_x64-setup.exe
-```
+* no OBS or FFmpeg installation;
+* a conflicting OBS installation and hostile `PATH` entries;
+* no NVIDIA GPU and an NVIDIA driver below the NVENC requirement;
+* NVIDIA hardware with a current driver;
+* Unicode and space-containing installation paths;
+* online and offline WebView2 conditions;
+* upgrade, uninstall, reinstall and low-disk-space scenarios.
 
-## Microsoft Store (Future)
+The uninstaller removes application/runtime files but never deletes clips or
+user settings without an explicit future user-data flow.
 
-### Requirements
-- Microsoft Store Developer Account ($19 one-time)
-- MSIX packaging
-- Code signing certificate
-- Store listing assets
-- Privacy policy
+## Licensing
 
-### MSIX Configuration
-```json
-{
-  "bundle": {
-    "targets": ["msi", "nsis"],
-    "windows": {
-      "msi": {
-        "upgradeCode": "GUID-HERE"
-      }
-    }
-  }
-}
-```
-
-### Store Limitations
-- More restrictive sandbox
-- May limit some Windows API access
-- Automatic updates through Store
-- Requires regular updates to maintain listing
-
-## Code Signing (Optional)
-
-### Self-Signed Certificate (Development)
-```powershell
-# Create self-signed certificate
-New-SelfSignedCertificate -Type Custom -Subject "CN=MoonLit, O=SourisCG" -KeyUsage DigitalSignature -FriendlyName "MoonLit Code Signing" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-
-# Export certificate
-$cert = Get-ChildItem "Cert:\CurrentUser\My\<thumbprint>"
-Export-PfxCertificate -Cert $cert -FilePath "certificate.pfx" -Password (ConvertTo-SecureString -String "password" -Force -AsPlainText)
-```
-
-### Commercial Certificate (Production)
-- Purchase from Certificate Authority (DigiCert, Sectigo, etc.)
-- Cost: $200-$400/year
-- Required for Microsoft Store
-- Prevents "Unknown Publisher" warnings
-
-### Signing Process
-```bash
-# Sign executable
-signtool sign /f certificate.pfx /p password /tr http://timestamp.digicert.com /td sha256 /fd sha256 MoonLit.exe
-
-# Sign installer
-signtool sign /f certificate.pfx /p password /tr http://timestamp.digicert.com /td sha256 /fd sha256 MoonLit-setup.exe
-```
-
-## Release Process
-
-### Development Release
-1. Update version in `package.json` and `tauri.conf.json`
-2. Update `Cargo.toml` version
-3. Run automated tests
-4. Build installer: `npm run tauri build`
-5. Test installer on clean Windows
-6. Create GitHub release with installer
-
-### Production Release
-1. Update version and changelog
-2. Run all automated tests
-3. Run manual tests on Windows
-4. Build signed installer
-5. Test signed installer
-6. Create GitHub release
-7. Upload to Microsoft Store (future)
-8. Announce release
-
-### Version Numbering
-- **Format**: MAJOR.MINOR.PATCH
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes
-
-Example: `0.1.0` → `0.2.0` → `1.0.0`
-
-## Assets Required
-
-### Icons
-- [ ] Application icon (ICO format, multiple sizes)
-- [ ] Installer icon (ICO format)
-- [ ] Uninstaller icon (ICO format)
-- [ ] Store icon (PNG, 300x300)
-- [ ] Favicon (ICO format)
-
-### Installer Images
-- [ ] Banner image (164x314 bitmap)
-- [ ] Wizard image (164x314 bitmap)
-- [ ] Welcome image (optional)
-
-### Store Assets (Future)
-- [ ] Store logo (PNG, multiple sizes)
-- [ ] Screenshots (multiple, 1920x1080)
-- [ ] Description (English)
-- [ ] Keywords
-- [ ] Privacy policy
-- [ ] Support information
-
-## File Structure
-
-### Installed Files
-```
-%LOCALAPPDATA%\MoonLit\
-├── MoonLit.exe                 # Main executable
-├── WebView2Loader.dll          # WebView2 runtime
-├── resources/                  # Application resources
-│   ├── icons/                  # Application icons
-│   └── config/                 # Default configuration
-└── uninstall.exe               # Uninstaller
-```
-
-### User Data
-```
-%APPDATA%\com.souriscg.moonlit\
-├── config.json                 # User configuration
-├── library.db                  # SQLite database
-├── logs/                       # Log files
-└── temp/                       # Temporary files
-```
-
-### Clip Storage
-```
-%USERPROFILE%\Videos\MoonLit\
-├── 2026-07-23_14-30-45.mp4    # Clip files
-├── 2026-07-23_14-35-12.mp4
-└── ...
-```
-
-## Update Mechanism
-
-### Manual Updates (Current)
-1. Check GitHub releases page
-2. Download new installer
-3. Run installer (overwrites previous version)
-4. Configuration and library preserved
-
-### Automatic Updates (Future)
-- Check for updates on startup
-- Download update in background
-- Install update on next restart
-- Preserve configuration and library
-
-### Update Notification
-- Toast notification when update available
-- Link to download page
-- Optional: automatic download
-
-## Uninstallation
-
-### Uninstaller Features
-- Remove all installed files
-- Remove Start Menu shortcuts
-- Remove Desktop shortcuts (if created)
-- Remove registry entries
-- Optional: Keep user data
-- Optional: Delete clips
-
-### Uninstaller Script
-```nsis
-Section "Uninstall"
-  ; Remove files
-  RMDir /r "$INSTDIR"
-  
-  ; Remove shortcuts
-  Delete "$SMPROGRAMS\MoonLit.lnk"
-  Delete "$DESKTOP\MoonLit.lnk"
-  
-  ; Remove registry
-  DeleteRegKey HKCU "Software\SourisCG\MoonLit"
-  
-  ; Ask to delete user data
-  MessageBox MB_YESNO "Delete user data and clips?" IDYES deleteData IDNO keepData
-  deleteData:
-    RMDir /r "$APPDATA\com.souriscg.moonlit"
-    RMDir /r "$USERPROFILE\Videos\MoonLit"
-  keepData:
-SectionEnd
-```
-
-## Dependencies
-
-### WebView2 Runtime
-- **Requirement**: WebView2 runtime must be installed
-- **Windows 10/11**: Usually pre-installed
-- **Installation**: Automatic if missing (NSIS can install)
-- **Size**: ~180 MB
-
-### GPU Drivers (Optional)
-- **NVIDIA**: Latest drivers for NVENC
-- **AMD**: Latest drivers for AMF
-- **Intel**: Latest drivers for QuickSync
-- **Note**: Software encoding works without GPU drivers
-
-### Windows Runtime
-- **Requirement**: Windows 10 1903+ or Windows 11
-- **Runtime**: Built into Windows
-- **No additional installation required**
-
-## Security Considerations
-
-### Code Signing
-- Sign all executables and DLLs
-- Sign installer
-- Prevents "Unknown Publisher" warnings
-- Required for Microsoft Store
-
-### Permissions
-- No administrator privileges required
-- Current user installation only
-- No system-wide changes
-- No service installation
-
-### Privacy
-- No data collection
-- No telemetry
-- No network requests (except for updates)
-- Local storage only
-
-### Sandboxing (Future - Microsoft Store)
-- MSIX sandboxing
-- Limited file system access
-- Limited registry access
-- Limited network access
-
-## Troubleshooting
-
-### Common Issues
-
-#### "Unknown Publisher" Warning
-- **Cause**: Unsigned installer
-- **Solution**: Sign installer with code signing certificate
-- **Workaround**: Click "More info" → "Run anyway"
-
-#### WebView2 Not Installed
-- **Cause**: Old Windows 10 version
-- **Solution**: Installer will install WebView2 automatically
-- **Manual**: Download from https://developer.microsoft.com/en-us/microsoft-edge/webview2/
-
-#### Installation Blocked by Antivirus
-- **Cause**: Unsigned or new software
-- **Solution**: Add to antivirus exclusions or whitelist
-- **Long-term**: Sign installer with commercial certificate
-
-#### Cannot Uninstall
-- **Cause**: Files in use or permissions
-- **Solution**: Close MoonLit, run as administrator
-- **Manual**: Delete installation folder
-
-## References
-
-- [Tauri Bundler Documentation](https://v2.tauri.app/distribute/)
-- [NSIS Documentation](https://nsis.sourceforge.io/Docs/)
-- [Microsoft Store Documentation](https://docs.microsoft.com/windows/uwp/publish/)
-- [Code Signing Best Practices](https://docs.microsoft.com/windows-hardware/drivers/dashboard/code-signing-best-practices)
-- [WebView2 Distribution](https://docs.microsoft.com/microsoft-edge/webview2/concepts/distribution)
+`LICENSE`, `THIRD_PARTY_NOTICES.txt`, `packaging/windows/licenses.lock.json`,
+the runtime manifest and the SBOM must ship with every release. The exact
+FFmpeg configuration, x264 build, OBS source and all selected redistribution
+terms must be audited before changing the lock to `approved`.

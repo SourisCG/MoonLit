@@ -30,6 +30,7 @@ describe('captureClient', () => {
     await captureClient.listBackends();
     await captureClient.listSources();
     await captureClient.selectBackend('fake');
+    await captureClient.selectBackend('libobsSidecar');
     await captureClient.start(config);
     await captureClient.save();
     await captureClient.stop();
@@ -39,6 +40,7 @@ describe('captureClient', () => {
       ['list_capture_backends'],
       ['list_capture_sources'],
       ['select_capture_backend', { backend: 'fake' }],
+      ['select_capture_backend', { backend: 'libobsSidecar' }],
       ['start_capture', { config }],
       ['save_clip'],
       ['stop_capture'],

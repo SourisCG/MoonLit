@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, State};
 
@@ -52,10 +52,19 @@ impl RecorderRuntime {
         app_handle: Option<AppHandle>,
     ) -> Self {
         let fake = backends::fake::FakeBackend::new();
+        Self::new_with_backend(output_dir, resource_dir, app_handle, Box::new(fake))
+    }
+
+    fn new_with_backend(
+        output_dir: PathBuf,
+        resource_dir: Option<PathBuf>,
+        app_handle: Option<AppHandle>,
+        initial_backend: Box<dyn ReplayBackend>,
+    ) -> Self {
         let initial_snapshot = CaptureSnapshot {
             revision: 0,
             phase: CapturePhase::Idle,
-            backend: fake.descriptor(),
+            backend: initial_backend.descriptor(),
             config: None,
             session: None,
             saved_clips: 0,
@@ -74,6 +83,7 @@ impl RecorderRuntime {
                     output_dir,
                     resource_dir,
                     app_handle,
+                    initial_backend,
                 )
             })
             .expect("failed to start MoonLit recorder actor");
@@ -88,6 +98,11 @@ impl RecorderRuntime {
     #[cfg(test)]
     pub fn new_for_test(output_dir: PathBuf) -> Self {
         Self::new(output_dir, None, None)
+    }
+
+    #[cfg(test)]
+    fn new_for_test_with_backend(output_dir: PathBuf, backend: Box<dyn ReplayBackend>) -> Self {
+        Self::new_with_backend(output_dir, None, None, backend)
     }
 
     fn disconnected<T>() -> Result<T, BackendError> {
@@ -170,8 +185,9 @@ fn actor_loop(
     output_dir: PathBuf,
     resource_dir: Option<PathBuf>,
     app_handle: Option<AppHandle>,
+    initial_backend: Box<dyn ReplayBackend>,
 ) {
-    let mut backend: Box<dyn ReplayBackend> = Box::new(backends::fake::FakeBackend::new());
+    let mut backend = initial_backend;
     let mut snapshot = snapshot_ref
         .lock()
         .map(|state| state.clone())
@@ -190,7 +206,19 @@ fn actor_loop(
             )),
         });
 
-    while let Ok(command) = receiver.recv() {
+    loop {
+        let command = match receiver.recv_timeout(Duration::from_millis(250)) {
+            Ok(command) => command,
+            Err(RecvTimeoutError::Timeout) => {
+                if snapshot.phase == CapturePhase::Buffering {
+                    if let Err(error) = backend.poll_health() {
+                        let _ = fail_with_state(&mut snapshot, &snapshot_ref, &app_handle, error);
+                    }
+                }
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         match command {
             RuntimeCommand::Backends { reply } => {
                 let _ = reply.send(Ok(backends::descriptors(resource_dir.clone())));
@@ -285,8 +313,13 @@ fn actor_start_capture(
             BackendError::invalid_state("El buffer no esta en reposo"),
         );
     }
-    let sources = backend.list_sources()?;
-    config.validate(&sources)?;
+    let sources = match backend.list_sources() {
+        Ok(sources) => sources,
+        Err(error) => return fail_with_state(snapshot, snapshot_ref, app_handle, error),
+    };
+    if let Err(error) = config.validate(&sources) {
+        return fail_with_state(snapshot, snapshot_ref, app_handle, error);
+    }
     if !backend.descriptor().available {
         return fail_with_state(
             snapshot,
@@ -357,15 +390,21 @@ fn actor_save_clip(
             Ok(snapshot.clone())
         }
         Err(error) => {
-            let result = fail_with_state(snapshot, snapshot_ref, app_handle, error.clone());
-            emit_event(
-                app_handle,
-                RecorderEvent::ErrorOccurred {
-                    snapshot: snapshot.clone(),
-                    error,
-                },
-            );
-            result
+            if backend.poll_health().is_ok() {
+                snapshot.phase = CapturePhase::Buffering;
+                snapshot.last_error = Some(error.clone());
+                commit_state(snapshot, snapshot_ref, app_handle);
+                emit_event(
+                    app_handle,
+                    RecorderEvent::ErrorOccurred {
+                        snapshot: snapshot.clone(),
+                        error: error.clone(),
+                    },
+                );
+                Err(error)
+            } else {
+                fail_with_state(snapshot, snapshot_ref, app_handle, error)
+            }
         }
     }
 }
@@ -379,9 +418,18 @@ fn actor_stop_capture(
     if snapshot.phase == CapturePhase::Idle {
         return Ok(snapshot.clone());
     }
+    let was_faulted = snapshot.phase == CapturePhase::Faulted;
     snapshot.phase = CapturePhase::Stopping;
     commit_state(snapshot, snapshot_ref, app_handle);
     if let Err(error) = backend.stop() {
+        if was_faulted {
+            snapshot.phase = CapturePhase::Idle;
+            snapshot.config = None;
+            snapshot.session = None;
+            snapshot.last_error = Some(error);
+            commit_state(snapshot, snapshot_ref, app_handle);
+            return Ok(snapshot.clone());
+        }
         return fail_with_state(snapshot, snapshot_ref, app_handle, error);
     }
     snapshot.phase = CapturePhase::Idle;
@@ -398,11 +446,24 @@ fn fail_with_state(
     app_handle: &Option<AppHandle>,
     error: BackendError,
 ) -> Result<CaptureSnapshot, BackendError> {
-    if snapshot.phase == CapturePhase::Starting || snapshot.phase == CapturePhase::Stopping {
+    if matches!(
+        snapshot.phase,
+        CapturePhase::Starting
+            | CapturePhase::Saving
+            | CapturePhase::Stopping
+            | CapturePhase::Buffering
+    ) {
         snapshot.phase = CapturePhase::Faulted;
     }
     snapshot.last_error = Some(error.clone());
     commit_state(snapshot, snapshot_ref, app_handle);
+    emit_event(
+        app_handle,
+        RecorderEvent::ErrorOccurred {
+            snapshot: snapshot.clone(),
+            error: error.clone(),
+        },
+    );
     Err(error)
 }
 
@@ -505,8 +566,58 @@ mod tests {
     use std::fs;
 
     use super::RecorderRuntime;
+    use crate::backends::fake::FakeBackend;
     use crate::state::CapturePhase;
-    use crate::traits::ReplayConfig;
+    use crate::traits::{BackendError, ReplayBackend, ReplayConfig};
+
+    struct FailingBackend {
+        health_fails: bool,
+        active: bool,
+    }
+
+    impl ReplayBackend for FailingBackend {
+        fn descriptor(&self) -> crate::traits::BackendDescriptor {
+            FakeBackend::new().descriptor()
+        }
+
+        fn list_sources(&self) -> Result<Vec<crate::traits::CaptureSource>, BackendError> {
+            FakeBackend::new().list_sources()
+        }
+
+        fn start(
+            &mut self,
+            config: &ReplayConfig,
+            _output_dir: &std::path::Path,
+        ) -> Result<(), BackendError> {
+            config.validate(&self.list_sources()?)?;
+            self.active = true;
+            Ok(())
+        }
+
+        fn save_replay(&mut self) -> Result<crate::traits::ClipArtifact, BackendError> {
+            if !self.active {
+                return Err(BackendError::invalid_state("inactive"));
+            }
+            Err(BackendError::io("synthetic save failure"))
+        }
+
+        fn stop(&mut self) -> Result<(), BackendError> {
+            self.active = false;
+            Ok(())
+        }
+
+        fn poll_health(&mut self) -> Result<(), BackendError> {
+            if self.health_fails {
+                Err(BackendError::new(
+                    crate::traits::BackendErrorCode::BackendExited,
+                    "synthetic worker exit",
+                    true,
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
 
     fn temporary_directory() -> std::path::PathBuf {
         let path =
@@ -535,6 +646,46 @@ mod tests {
         let runtime = RecorderRuntime::new_for_test(directory.clone());
         let snapshot = runtime.snapshot().expect("snapshot");
         assert_eq!(snapshot.phase, CapturePhase::Idle);
+        fs::remove_dir_all(directory).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn recoverable_save_failure_keeps_buffering() {
+        let directory = temporary_directory();
+        let runtime = RecorderRuntime::new_for_test_with_backend(
+            directory.clone(),
+            Box::new(FailingBackend {
+                health_fails: false,
+                active: false,
+            }),
+        );
+        runtime.start(ReplayConfig::default()).expect("start");
+        assert!(runtime.save().is_err());
+        assert_eq!(
+            runtime.snapshot().expect("snapshot").phase,
+            CapturePhase::Buffering
+        );
+        runtime.stop().expect("stop");
+        fs::remove_dir_all(directory).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn dead_backend_enters_faulted_and_can_be_reset() {
+        let directory = temporary_directory();
+        let runtime = RecorderRuntime::new_for_test_with_backend(
+            directory.clone(),
+            Box::new(FailingBackend {
+                health_fails: true,
+                active: false,
+            }),
+        );
+        runtime.start(ReplayConfig::default()).expect("start");
+        assert!(runtime.save().is_err());
+        assert_eq!(
+            runtime.snapshot().expect("snapshot").phase,
+            CapturePhase::Faulted
+        );
+        assert_eq!(runtime.stop().expect("reset").phase, CapturePhase::Idle);
         fs::remove_dir_all(directory).expect("remove temporary directory");
     }
 }

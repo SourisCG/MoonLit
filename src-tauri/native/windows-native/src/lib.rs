@@ -44,28 +44,33 @@ pub struct NativeConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EncodedPacket {
-    pub pts_ms: u64,
-    pub duration_ms: u64,
+    pub pts_100ns: u64,
+    pub duration_100ns: u64,
     pub is_keyframe: bool,
+    pub codec_config: Option<Vec<u8>>,
     pub data: Vec<u8>,
 }
 
 pub struct CaptureHandle {
-    stop: Option<Box<dyn FnOnce() + Send + 'static>>,
+    stop: Option<Box<dyn FnOnce() -> Result<(), NativeError> + Send + 'static>>,
 }
 
 impl CaptureHandle {
-    pub(crate) fn new(stop: impl FnOnce() + Send + 'static) -> Self {
+    pub(crate) fn new(stop: impl FnOnce() -> Result<(), NativeError> + Send + 'static) -> Self {
         Self {
             stop: Some(Box::new(stop)),
         }
+    }
+
+    pub fn stop(mut self) -> Result<(), NativeError> {
+        self.stop.take().map(|stop| stop()).unwrap_or(Ok(()))
     }
 }
 
 impl Drop for CaptureHandle {
     fn drop(&mut self) {
         if let Some(stop) = self.stop.take() {
-            stop();
+            let _ = stop();
         }
     }
 }

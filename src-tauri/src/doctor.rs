@@ -248,7 +248,7 @@ pub fn run_doctor() -> DoctorReport {
     {
         capabilities.push("windows".to_string());
         notes.push(
-            "La captura Windows.Graphics.Capture y el encoder NVENC aún requieren implementación nativa."
+            "La captura WGC/NVENC nativa esta validada como benchmark; el runtime libobs sidecar aun requiere bridge y empaquetado."
                 .to_string(),
         );
         if commands

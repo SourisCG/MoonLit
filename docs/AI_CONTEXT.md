@@ -1,6 +1,6 @@
 # MoonLit AI Context
 
-Updated: 2026-07-28 (Windows native WGC/NVENC spike)
+Updated: 2026-07-29 (libobs sidecar architecture and protocol scaffold)
 
 ## Project Overview
 
@@ -8,7 +8,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ## Current State
 
-### Phase: Windows Native Capture Spike
+### Phase: Process-Isolated libobs Transition
 
 **Foundation and bootstrap status**:
 - Canonical `ReplayBackend` contract is connected to Tauri runtime
@@ -16,12 +16,18 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - Windows backend is a monitor-first native boundary and reports unavailable when WGC or NVENC is missing
 - Native WGC, D3D11 and direct NVENC H.264 code is isolated in `src-tauri/native/windows-native`
 - Native output is raw H.264 Annex B packets kept inside Rust; the final MP4/MKV container is not implemented
+- A versioned, bounded control protocol exists at `src-tauri/native/libobs-protocol`
+- `src-tauri/native/moonlit-recorder` is a fail-closed sidecar scaffold; it reports unavailable until the libobs bridge/runtime is staged
+- `src-tauri/src/sidecar.rs` supervises the future process with absolute paths, request deadlines, bounded stderr and kill/reap behavior
+- `src-tauri/src/backends/libobs.rs` maps the sidecar to the existing `ReplayBackend` without transporting media data
+- The libobs bridge, custom WGC source and curated runtime are not built yet
 - Comprehensive documentation created (7 documents)
 - NSIS installer configuration is not yet verified
 - Windows baseline remains compilable and launch-tested on the RTX 3060 workstation
 
 **Phase 1 In Progress (Windows Required)**:
 - Monitor-first WindowsCaptureBackend spike (Windows.Graphics.Capture + D3D11 + NVENC H.264) is validated
+- Process-isolated `LibobsSidecarBackend` contract and fail-closed discovery are implemented
 - Expand capture to windows, permissions and source lifecycle changes
 - Implement WindowsAudioMixer (WASAPI)
 - Finalize GPU encoder output and add AMF/QuickSync
@@ -54,6 +60,16 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - A five-second monitor smoke capture completed with 104 packets, one keyframe and 2,960,586 encoded bytes.
 - The first spike deliberately keeps `finish()` as a no-op because the available SDK wrapper faults on EOS submission after synchronous packet locking; orderly resource shutdown is validated.
 
+### libobs Sidecar Decision (2026-07-29)
+
+- Production architecture is `Tauri -> LibobsSidecarBackend -> moonlit-recorder.exe -> moonlit-obs-bridge.dll -> libobs`.
+- OBS Studio is not installed or launched as a user-facing application.
+- Runtime lookup is absolute and app-local. No PATH, registry, user plugin directory or system OBS installation is consulted.
+- The first real slice is monitor WGC, H.264, MP4 and video-only. The sidecar owns replay buffering and muxing.
+- The runtime allowlist excludes `win-capture`, graphics hooks, Game Capture, injectors, browser, websocket and virtual-camera components.
+- OBS 32.2.1 commit `0052d024fd6a5ff1aa04c76cbdffd3085a5dfacc` is recorded as a design-only candidate in `packaging/windows/obs-runtime.lock.json`; it is not release-approved.
+- Media Foundation output in the interrupted native worktree was removed. The direct native backend now remains a raw Annex B benchmark path.
+
 ### Windows Bootstrap Verification (2026-07-28)
 
 - Environment: Windows 11 Pro x64, Rust 1.97.1 MSVC, WebView2, RTX 3060 12 GB
@@ -77,6 +93,9 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 
 ### What Needs Windows Implementation
 
+- Build and validate the pinned libobs bridge and custom WGC source without hooks
+- Build and stage the allowlisted libobs runtime and recorder sidecar
+- Integrate the first real sidecar monitor/H.264/MP4 vertical slice
 - Expand Windows.Graphics.Capture from the monitor-first spike to window capture, permission handling and source lifecycle changes
 - WASAPI audio capture and mixing
 - Finalize media-container output and add other GPU encoders (AMF/QuickSync)
@@ -114,48 +133,25 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Svelte 5)                   │
-│  - Dashboard, Capture, AudioMixer, Library, Settings    │
-└─────────────────────────────────────────────────────────┘
-                          ↓ IPC (Tauri)
-┌─────────────────────────────────────────────────────────┐
-│              Backend Rust (Portable Core)                │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ CaptureService (trait)                           │  │
-│  │ ├─ WindowsCaptureBackend (Windows.Graphics.Capture)│ │
-│  │ ├─ LinuxCaptureBackend (future)                  │  │
-│  │ └─ FakeBackend (development/testing)             │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ AudioMixerService                                │  │
-│  │ ├─ WindowsAudioMixer (WASAPI loopback + capture) │  │
-│  │ ├─ LinuxAudioMixer (future: PipeWire)            │  │
-│  │ └─ FakeAudioMixer (development/testing)          │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ EncodingService                                  │  │
-│  │ ├─ NvencEncoder (NVIDIA)                         │  │
-│  │ ├─ AmfEncoder (AMD)                              │  │
-│  │ ├─ QuickSyncEncoder (Intel)                      │  │
-│  │ └─ SoftwareEncoder (x264/x265 CPU fallback)      │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ GameDetector                                     │  │
-│  │ ├─ ProcessScanner (detects game processes)       │  │
-│  │ └─ WindowMatcher (detects game windows)          │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ LibraryService (SQLite)                          │  │
-│  │ - Clip metadata, tags, favorites, search         │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ HotkeyService                                    │  │
-│  │ - Global hotkey registration (WinAPI)            │  │
-│  │ - Persistent configuration                       │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+Frontend (Svelte 5)
+        |
+        | Tauri IPC: state, capabilities, errors, clip metadata only
+        v
+Portable Rust core / RecorderRuntime
+        |
+        +-- FakeBackend
+        +-- LibobsSidecarBackend (Windows production candidate)
+        |      |
+        |      +-- moonlit-recorder.exe
+        |      +-- moonlit-obs-bridge.dll
+        |      +-- pinned libobs runtime and custom WGC source
+        |      +-- WASAPI, encoders, replay and muxing
+        +-- WindowsNativeBackend (raw benchmark)
+        +-- LegacyGsrBackend (Linux-only legacy adapter)
 ```
+
+The sidecar owns capture, audio, encoding, replay and containerization. The
+Tauri process never receives frames, audio samples or encoded packets.
 
 ## Technical Stack
 
@@ -179,6 +175,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
   - NVENC via the `nvenc` crate and dynamically loaded `nvEncodeAPI64.dll` for the current spike
   - AMF via `amf-sys` or direct API
   - QuickSync via `qsv` or Intel Media SDK
+- **Production recorder**: pinned libobs runtime behind `LibobsSidecarBackend`; the direct Rust path is benchmark-only
 - **Hotkeys**: Win32 API via `windows` crate
 - **Notifications**: Windows Toast Notifications via `windows` crate
 
@@ -336,10 +333,10 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ## Next Steps
 
 ### Immediate
-1. Integrate the validated native packet path through `WindowsNativeBackend::start`, `save_replay` and `stop`.
-2. Convert raw Annex B output into the planned MP4/MKV artifact without moving frames across Tauri IPC.
-3. Add WASAPI capture and audio/video synchronization.
-4. Expand source support and validate on additional Windows versions and GPU vendors.
+1. Build the pinned `moonlit-obs-bridge` and custom WGC source against libobs 32.2.1.
+2. Replace the fail-closed sidecar engine with the real monitor/H.264/MP4 pipeline.
+3. Stage and audit the exact runtime closure, licenses and dependency imports.
+4. Validate sidecar crash recovery, repeated saves, clean-machine packaging and x264 fallback.
 
 ## Important Notes
 

@@ -16,6 +16,7 @@ pub(crate) struct NvencEncoder {
     height: u32,
     fps: u32,
     frame_index: usize,
+    codec_config: Option<Vec<u8>>,
 }
 
 impl NvencEncoder {
@@ -108,6 +109,7 @@ impl NvencEncoder {
             height,
             fps,
             frame_index: 0,
+            codec_config: None,
         })
     }
 
@@ -115,23 +117,18 @@ impl NvencEncoder {
         &mut self,
         context: &D3d11Context,
         texture: &ID3D11Texture2D,
-        pts_ms: u64,
+        pts_100ns: u64,
     ) -> Result<Option<EncodedPacket>, NativeError> {
         context.copy_resource(&self.input_texture, texture)?;
-        let picture_type = if self.frame_index == 0 {
-            NVencPicType::IDR
-        } else {
-            NVencPicType::P
-        };
         self.encoder
             .encode_picture(
                 &self.input_resource,
                 &self.bitstream,
                 self.frame_index,
-                pts_ms,
+                pts_100ns,
                 NVencBufferFormat::ARGB,
                 NVencPicStruct::Frame,
-                picture_type,
+                NVencPicType::UNKNOWN,
                 None,
             )
             .map_err(|error| {
@@ -148,10 +145,14 @@ impl NvencEncoder {
 
         let data = lock.as_slice().to_vec();
         let is_keyframe = contains_idr_nal(&data);
+        if let Some(parameter_sets) = extract_parameter_sets(&data) {
+            self.codec_config = Some(parameter_sets);
+        }
         Ok(Some(EncodedPacket {
-            pts_ms,
-            duration_ms: 1000 / self.fps.max(1) as u64,
+            pts_100ns,
+            duration_100ns: 10_000_000 / self.fps.max(1) as u64,
             is_keyframe,
+            codec_config: is_keyframe.then(|| self.codec_config.clone()).flatten(),
             data,
         }))
     }
@@ -183,8 +184,33 @@ fn open_session(
 }
 
 fn contains_idr_nal(data: &[u8]) -> bool {
+    for_each_nal(data, |nal| {
+        nal.first().is_some_and(|header| header & 0x1f == 5)
+    })
+}
+
+fn extract_parameter_sets(data: &[u8]) -> Option<Vec<u8>> {
+    let mut parameter_sets = Vec::new();
+    let mut has_sps = false;
+    let mut has_pps = false;
+    for_each_nal(data, |nal| {
+        if let Some(header) = nal.first() {
+            match header & 0x1f {
+                7 => has_sps = true,
+                8 => has_pps = true,
+                _ => return false,
+            }
+            parameter_sets.extend_from_slice(&[0, 0, 0, 1]);
+            parameter_sets.extend_from_slice(nal);
+        }
+        false
+    });
+    (has_sps && has_pps).then_some(parameter_sets)
+}
+
+fn for_each_nal(data: &[u8], mut visit: impl FnMut(&[u8]) -> bool) -> bool {
     let mut index = 0;
-    while index + 4 <= data.len() {
+    while index + 3 < data.len() {
         let (start, next) = if data[index..].starts_with(&[0, 0, 0, 1]) {
             (index + 4, index + 4)
         } else if data[index..].starts_with(&[0, 0, 1]) {
@@ -193,22 +219,39 @@ fn contains_idr_nal(data: &[u8]) -> bool {
             index += 1;
             continue;
         };
-        if start < data.len() && data[start] & 0x1f == 5 {
+        let end = (next..data.len())
+            .find(|offset| {
+                data[*offset..].starts_with(&[0, 0, 0, 1])
+                    || data[*offset..].starts_with(&[0, 0, 1])
+            })
+            .unwrap_or(data.len());
+        if start < end && visit(&data[start..end]) {
             return true;
         }
-        index = next;
+        index = end;
     }
     false
 }
 
 #[cfg(test)]
 mod tests {
-    use super::contains_idr_nal;
+    use super::{contains_idr_nal, extract_parameter_sets};
 
     #[test]
     fn detects_annex_b_idr_nal() {
         assert!(contains_idr_nal(&[0, 0, 0, 1, 0x65, 1, 2]));
         assert!(contains_idr_nal(&[0, 0, 1, 0x65]));
         assert!(!contains_idr_nal(&[0, 0, 0, 1, 0x41]));
+    }
+
+    #[test]
+    fn extracts_h264_parameter_sets() {
+        let data = [
+            0, 0, 0, 1, 0x67, 1, 2, 0, 0, 1, 0x68, 3, 4, 0, 0, 0, 1, 0x65, 5,
+        ];
+        assert_eq!(
+            extract_parameter_sets(&data),
+            Some(vec![0, 0, 0, 1, 0x67, 1, 2, 0, 0, 0, 1, 0x68, 3, 4])
+        );
     }
 }

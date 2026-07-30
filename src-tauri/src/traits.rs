@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum BackendId {
     Fake,
+    #[serde(rename = "libobsSidecar")]
+    LibobsSidecar,
     #[serde(rename = "windowsNative")]
     WindowsNative,
     #[serde(rename = "legacyGsr")]
@@ -237,11 +239,15 @@ pub trait ReplayBackend: Send {
     fn start(&mut self, config: &ReplayConfig, output_dir: &Path) -> Result<(), BackendError>;
     fn save_replay(&mut self) -> Result<ClipArtifact, BackendError>;
     fn stop(&mut self) -> Result<(), BackendError>;
+
+    fn poll_health(&mut self) -> Result<(), BackendError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CaptureSource, CaptureSourceKind, ReplayConfig};
+    use super::{BackendId, CaptureSource, CaptureSourceKind, ReplayConfig};
 
     fn sources() -> Vec<CaptureSource> {
         vec![CaptureSource {
@@ -267,5 +273,15 @@ mod tests {
             .validate(&sources())
             .expect_err("unknown source must be rejected");
         assert_eq!(error.code, super::BackendErrorCode::SourceNotFound);
+    }
+
+    #[test]
+    fn sidecar_backend_id_has_a_stable_wire_name() {
+        let json = serde_json::to_string(&BackendId::LibobsSidecar).expect("serialize backend id");
+        assert_eq!(json, "\"libobsSidecar\"");
+        assert_eq!(
+            serde_json::from_str::<BackendId>(&json).expect("deserialize backend id"),
+            BackendId::LibobsSidecar
+        );
     }
 }

@@ -10,6 +10,9 @@ pub mod fake;
 pub mod gsr;
 
 #[cfg(target_os = "windows")]
+pub mod libobs;
+
+#[cfg(target_os = "windows")]
 pub mod windows;
 
 pub fn descriptors(resource_dir: Option<PathBuf>) -> Vec<BackendDescriptor> {
@@ -22,6 +25,10 @@ pub fn descriptors(resource_dir: Option<PathBuf>) -> Vec<BackendDescriptor> {
 
     #[cfg(target_os = "windows")]
     {
+        descriptors.push(
+            libobs::LibobsSidecarBackend::discover_with_resource_dir(resource_dir.clone())
+                .descriptor(),
+        );
         descriptors.push(windows::WindowsNativeBackend::new().descriptor());
     }
 
@@ -40,6 +47,23 @@ pub fn create(
 ) -> Result<Box<dyn ReplayBackend>, BackendError> {
     match id {
         BackendId::Fake => Ok(Box::new(fake::FakeBackend::new())),
+        BackendId::LibobsSidecar => {
+            #[cfg(target_os = "windows")]
+            {
+                Ok(Box::new(
+                    libobs::LibobsSidecarBackend::discover_with_resource_dir(resource_dir),
+                ))
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = resource_dir;
+                Err(BackendError::new(
+                    crate::traits::BackendErrorCode::Unsupported,
+                    "El backend libobs sidecar solo esta disponible en Windows por ahora",
+                    false,
+                ))
+            }
+        }
         BackendId::WindowsNative => {
             #[cfg(target_os = "windows")]
             {

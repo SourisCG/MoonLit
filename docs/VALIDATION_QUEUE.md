@@ -15,8 +15,8 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [x] Add Windows-specific dependencies to Cargo.toml
 - [x] Configure Windows crate features for WinRT APIs
 - [x] Set up platform-conditional compilation
-- [x] Configure tauri.conf.json for Windows NSIS installer
-- [x] Add WebView2 runtime handling configuration
+- [ ] Configure and verify the release-only Tauri NSIS installer
+- [ ] Verify WebView2 online and offline handling on clean Windows
 
 ### Portable Architecture
 - [x] Define the canonical `ReplayBackend` contract
@@ -57,6 +57,19 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [x] Native Windows.Graphics.Capture monitor capture on the RTX 3060 workstation
 - [ ] Native WASAPI capture
 - [x] Direct NVENC H.264 Annex B encoding on the RTX 3060 workstation
+
+## libobs Sidecar Transition (2026-07-29)
+
+- [x] Accept the process-isolated libobs architecture decision
+- [x] Add bounded versioned sidecar protocol
+- [x] Add fail-closed recorder process scaffold
+- [x] Add host-side supervised sidecar transport
+- [x] Add `LibobsSidecarBackend` behind the existing contract
+- [ ] Build the pinned libobs bridge and custom WGC source
+- [ ] Build and audit the allowlisted libobs runtime
+- [ ] Validate software x264 fallback without NVIDIA
+- [ ] Validate real MP4/MKV output and repeated sidecar saves
+- [ ] Validate clean-machine NSIS installation without OBS Studio
 
 ## Windows Native Capture Spike (2026-07-28)
 

@@ -22,6 +22,19 @@ MoonLit is a Windows-first, local-first desktop application for saving game clip
 - CPU fallback: x264/x265 software encoding.
 - No game injection, anti-cheat hooks or in-game overlays.
 
+### Runtime Architecture Decision (2026-07-29)
+- Production Windows capture will run in a supervised `moonlit-recorder.exe`
+  sidecar using a pinned, curated libobs runtime.
+- The Tauri process exchanges only bounded control messages, capabilities,
+  errors and completed clip metadata. Frames, audio and encoded packets never
+  cross Tauri IPC.
+- The first real vertical slice is monitor WGC, H.264, MP4 and video-only.
+  Audio, window capture and MKV are later contract increments.
+- The stock OBS `win-capture` plugin, graphics hooks, Game Capture and helper
+  injectors are prohibited. MoonLit will register its own WGC source.
+- The direct WGC/D3D11/NVENC implementation remains an explicit benchmark
+  path until libobs has release evidence; it is not a silent fallback.
+
 ### Features
 - Replay buffer with 30 seconds default (configurable 10s - 5min).
 - Hotkey: F8 default (configurable).
@@ -44,14 +57,17 @@ The project is designed as a Windows-first application with portable architectur
 - ✅ Configure Tauri/Rust for Windows and verify the MSVC build
 - ✅ Unify the portable runtime contract with the connected FakeBackend
 - ✅ Document Windows APIs (Windows.Graphics.Capture, WASAPI)
-- ⏳ Prepare NSIS/WiX installer configuration
+- ⏳ Prepare and verify release-only NSIS configuration with the bundled
+  libobs runtime
 
 **Phase 1: Windows Backend Implementation (Windows Required)**
 - ✅ Implement monitor-first WindowsCaptureBackend spike (Windows.Graphics.Capture + D3D11)
 - ⏳ Expand capture to windows, permissions, resizing and source lifecycle changes
 - ⏳ Implement WindowsAudioMixer (WASAPI loopback + capture)
 - ✅ Implement direct NVENC H.264 Annex B spike
-- ⏳ Finalize media-container output and add AMF/QuickSync support
+- ⏳ Integrate the libobs sidecar, custom WGC source and replay output
+- ⏳ Add WASAPI audio through the curated libobs runtime
+- ⏳ Validate AMF/QuickSync/NVENC and x264 fallback
 - ⏳ Implement HotkeyService (WinAPI global hotkeys)
 - ⏳ Implement GameDetector (process/window scanning)
 - ⏳ Testing on Windows 10 and Windows 11
@@ -65,7 +81,7 @@ The project is designed as a Windows-first application with portable architectur
 - ✅ Frontend IPC client and source/backend selection flow
 - ✅ GOP-aware encoded replay core
 - ✅ Windows.Graphics.Capture + D3D11 + direct NVENC H.264 monitor-first spike; raw Annex B output is validated on Windows 11
-- ⏳ Integrate final MP4/MKV output and the complete Windows backend flow
+- ⏳ Integrate the process-isolated libobs backend and final MP4/MKV output
 
 **Phase 2: Frontend Adaptation (Linux - Current)**
 - ⏳ Redesign UI for Windows (Fluent Design-inspired)
@@ -125,57 +141,32 @@ The project is designed as a Windows-first application with portable architectur
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Svelte 5)                   │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ Views:                                           │  │
-│  │ - Dashboard (status, quick access)               │  │
-│  │ - Capture (monitors, windows, apps)              │  │
-│  │ - AudioMixer (system, mic, apps)                 │  │
-│  │ - Library (saved clips)                          │  │
-│  │ - Settings (configuration)                       │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-                          ↓ IPC (Tauri)
-┌─────────────────────────────────────────────────────────┐
-│              Backend Rust (Portable Core)                │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ CaptureService (trait)                           │  │
-│  │ ├─ WindowsCaptureBackend (Windows.Graphics.Capture)│ │
-│  │ ├─ LinuxCaptureBackend (future: PipeWire + X11/Wayland)│ │
-│  │ └─ FakeBackend (development/testing)             │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ AudioMixerService                                │  │
-│  │ ├─ WindowsAudioMixer (WASAPI loopback + capture) │  │
-│  │ ├─ LinuxAudioMixer (future: PipeWire)            │  │
-│  │ └─ FakeAudioMixer (development/testing)          │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ EncodingService                                  │  │
-│  │ ├─ NvencEncoder (NVIDIA)                         │  │
-│  │ ├─ AmfEncoder (AMD)                              │  │
-│  │ ├─ QuickSyncEncoder (Intel)                      │  │
-│  │ └─ SoftwareEncoder (x264/x265 CPU fallback)      │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ GameDetector                                     │  │
-│  │ ├─ ProcessScanner (detects game processes)       │  │
-│  │ └─ WindowMatcher (detects game windows)          │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ LibraryService (SQLite)                          │  │
-│  │ - Clip metadata, tags, favorites, search         │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ HotkeyService                                    │  │
-│  │ - Global hotkey registration (WinAPI)            │  │
-│  │ - Persistent configuration                       │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+Frontend (Svelte 5)
+        |
+        | Tauri IPC: state, capabilities, errors, clip metadata only
+        v
+Portable Rust core / RecorderRuntime
+        |
+        +-- FakeBackend (development and UI tests)
+        +-- LibobsSidecarBackend (Windows production candidate)
+        |      |
+        |      +-- bounded framed control protocol
+        |      v
+        |   moonlit-recorder.exe
+        |      +-- moonlit-obs-bridge.dll
+        |      +-- libobs + custom WGC source + WASAPI
+        |      +-- NVENC / AMF / QuickSync / x264
+        |      +-- replay_buffer + MP4/MKV muxing
+        |
+        +-- WindowsNativeBackend (raw WGC/NVENC benchmark)
+        +-- LegacyGsrBackend (Linux-only legacy adapter)
 ```
 
-`CaptureService`, `AudioMixerService`, and other services use traits to enable platform-specific implementations while maintaining a portable core. The `FakeBackend` implementations are supported development tools, not temporary hacks. No frame data should cross Tauri IPC.
+`LibobsSidecarBackend` owns the process session but not its media buffers.
+The sidecar owns capture, audio, encoding, replay and containerization. The
+direct native backend remains available for benchmark evidence. No frame,
+audio sample or encoded packet crosses Tauri IPC. `FakeBackend` is a supported
+development tool, not a temporary fallback.
 
 ## Adaptive Testing
 

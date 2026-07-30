@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "design-only",
+  "components": [
+    {
+      "name": "obs-studio",
+      "version": "32.2.1",
+      "license": "GPL-2.0-or-later",
+      "source": "https://github.com/obsproject/obs-studio/tree/0052d024fd6a5ff1aa04c76cbdffd3085a5dfacc"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "62.x",
+      "license": "REQUIRES-CONFIGURE-AUDIT",
+      "source": "https://ffmpeg.org/"
+    },
+    {
+      "name": "x264",
+      "version": "runtime-selected",
+      "license": "GPL-2.0-or-later",
+      "source": "https://code.videolan.org/videolan/x264"
+    },
+    {
+      "name": "msvc-redist-x64",
+      "version": "runtime-selected",
+      "license": "Microsoft redistribution terms",
+      "source": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist"
+    }
+  ],
+  "releaseBlockers": [
+    "Replace runtime-selected entries with exact versions and hashes.",
+    "Publish complete license texts and source-offer information.",
+    "Reject nonfree FFmpeg configurations and unresolved patent-sensitive codecs."
+  ]
+}

@@ -1762,12 +1762,21 @@ dependencies = [
 name = "moonlit"
 version = "0.1.0"
 dependencies = [
+ "moonlit-libobs-protocol",
  "moonlit-windows-native",
  "nix",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+]
+
+[[package]]
+name = "moonlit-libobs-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -2,6 +2,8 @@ mod backends;
 mod doctor;
 mod recorder;
 pub(crate) mod replay;
+#[cfg(target_os = "windows")]
+mod sidecar;
 mod state;
 mod traits;
 

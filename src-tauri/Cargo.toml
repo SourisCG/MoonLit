@@ -3,6 +3,9 @@ name = "moonlit"
 version = "0.1.0"
 description = "Windows-first game clip recorder with GPU acceleration and advanced audio mixing"
 authors = ["SourisCG"]
+license = "GPL-3.0-only"
+repository = "https://github.com/SourisCG/MoonLit"
+homepage = "https://github.com/SourisCG/MoonLit"
 edition = "2021"
 rust-version = "1.88"
 
@@ -14,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+moonlit-libobs-protocol = { path = "native/libobs-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }

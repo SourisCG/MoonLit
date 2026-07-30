@@ -1,5 +1,5 @@
 export type CapturePhase = 'idle' | 'starting' | 'buffering' | 'saving' | 'stopping' | 'faulted';
-export type BackendId = 'fake' | 'windowsNative' | 'legacyGsr';
+export type BackendId = 'fake' | 'libobsSidecar' | 'windowsNative' | 'legacyGsr';
 export type SourceKind = 'monitor' | 'window';
 export type EncoderId = 'auto' | 'nvenc' | 'amf' | 'quickSync' | 'software';
 

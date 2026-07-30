@@ -296,6 +296,7 @@
             if (!active) return;
             if (payload.type === 'stateChanged' || payload.type === 'clipSaved' || payload.type === 'errorOccurred') {
               applySnapshot(payload.snapshot);
+              if (payload.type === 'errorOccurred') notice = payload.error.message;
             }
           });
         }
@@ -407,6 +408,9 @@
             {#if snapshot.phase === 'buffering'}
               <button class="primary-button" on:click={saveClip} disabled={busy}><span>●</span> Guardar clip</button>
               <button class="secondary-button" on:click={stopCapture} disabled={busy}>Detener</button>
+            {:else if snapshot.phase === 'faulted'}
+              <button class="primary-button" on:click={stopCapture} disabled={busy}>Restablecer</button>
+              <button class="secondary-button" on:click={runDoctor} disabled={busy}>Diagnóstico</button>
             {:else}
               <button class="primary-button" on:click={startCapture} disabled={busy || !selectedSourceId || !snapshot.backend.available}><span>▶</span> Iniciar buffer</button>
               <button class="secondary-button" on:click={runDoctor} disabled={busy}>Diagnóstico</button>

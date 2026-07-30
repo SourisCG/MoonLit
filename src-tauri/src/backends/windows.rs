@@ -206,13 +206,13 @@ impl ReplayBackend for WindowsNativeBackend {
             BackendError::io(format!("No se pudo crear el directorio nativo: {error}"))
         })?;
 
-        let id = unique_id("native");
-        let path = output_dir.join(format!("{id}.h264"));
         let contents: Vec<u8> = clip
             .packets
             .iter()
             .flat_map(|packet| packet.data.iter().copied())
             .collect();
+        let id = unique_id("native");
+        let path = output_dir.join(format!("{id}.h264"));
         write_atomic(&path, &contents)?;
         let duration_seconds = clip
             .duration_ms()
@@ -229,20 +229,29 @@ impl ReplayBackend for WindowsNativeBackend {
     }
 
     fn stop(&mut self) -> Result<(), BackendError> {
-        drop(self.capture.take());
+        let mut first_error = None;
+        if let Some(capture) = self.capture.take() {
+            if let Err(error) = capture.stop() {
+                first_error = Some(map_native_error(error));
+            }
+        }
         if let Some(collector) = self.collector.take() {
-            collector.join().map_err(|_| {
-                BackendError::new(
+            if collector.join().is_err() && first_error.is_none() {
+                first_error = Some(BackendError::new(
                     BackendErrorCode::BackendExited,
                     "El collector nativo termino abruptamente",
                     true,
-                )
-            })?;
+                ));
+            }
         }
         self.replay = None;
         self.output_dir = None;
         self.buffer_seconds = 0;
-        Ok(())
+        first_error.map_or(Ok(()), Err)
+    }
+
+    fn poll_health(&mut self) -> Result<(), BackendError> {
+        self.current_error().map_or(Ok(()), Err)
     }
 }
 
@@ -304,8 +313,8 @@ fn collect_packets(
         match result {
             Ok(packet) => {
                 let packet = EncodedPacket::new(
-                    packet.pts_ms,
-                    packet.duration_ms,
+                    packet.pts_100ns,
+                    packet.duration_100ns,
                     packet.is_keyframe,
                     packet.data,
                 );
@@ -330,6 +339,20 @@ fn collect_packets(
             }
         }
     }
+}
+
+fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), BackendError> {
+    let temporary_path = path.with_extension("h264.tmp");
+    fs::write(&temporary_path, contents).map_err(|error| {
+        BackendError::io(format!("No se pudo escribir el clip temporal: {error}"))
+    })?;
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(BackendError::io(format!(
+            "No se pudo finalizar el clip nativo: {error}"
+        )));
+    }
+    Ok(())
 }
 
 fn map_native_error(error: native::NativeError) -> BackendError {
@@ -366,6 +389,11 @@ fn map_native_error(error: native::NativeError) -> BackendError {
             "El worker nativo termino",
             true,
         ),
+        native::NativeError::WorkerPanicked => BackendError::new(
+            BackendErrorCode::BackendExited,
+            "El worker nativo termino abruptamente",
+            true,
+        ),
     }
 }
 
@@ -374,6 +402,9 @@ fn map_replay_error(error: ReplayError) -> BackendError {
     match error {
         ReplayError::InvalidWindow | ReplayError::InvalidPacket(_) => {
             BackendError::invalid_config(message)
+        }
+        ReplayError::InvalidBufferLimit => {
+            BackendError::new(BackendErrorCode::Internal, message, false)
         }
         ReplayError::OutOfOrderPacket => {
             BackendError::new(BackendErrorCode::Internal, message, true)
@@ -384,20 +415,6 @@ fn map_replay_error(error: ReplayError) -> BackendError {
             true,
         ),
     }
-}
-
-fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), BackendError> {
-    let temporary_path = path.with_extension("h264.tmp");
-    fs::write(&temporary_path, contents).map_err(|error| {
-        BackendError::io(format!("No se pudo escribir el clip temporal: {error}"))
-    })?;
-    if let Err(error) = fs::rename(&temporary_path, path) {
-        let _ = fs::remove_file(&temporary_path);
-        return Err(BackendError::io(format!(
-            "No se pudo finalizar el clip nativo: {error}"
-        )));
-    }
-    Ok(())
 }
 
 fn now_millis() -> u64 {
