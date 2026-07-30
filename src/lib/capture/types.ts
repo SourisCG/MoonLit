@@ -2,15 +2,60 @@ export type CapturePhase = 'idle' | 'starting' | 'buffering' | 'saving' | 'stopp
 export type BackendId = 'fake' | 'libobsSidecar' | 'windowsNative' | 'legacyGsr';
 export type SourceKind = 'monitor' | 'window';
 export type EncoderId = 'auto' | 'nvenc' | 'amf' | 'quickSync' | 'software';
+export type VideoCodec = 'h264' | 'hevc';
+export type ContainerFormat = 'mp4' | 'mkv';
+export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 
 export type CaptureSource = {
   id: string;
   kind: SourceKind;
   label: string;
   isDefault: boolean;
+  width: number | null;
+  height: number | null;
+  processName: string | null;
+  available: boolean;
 };
 
 export type VideoResolution = { width: number; height: number };
+
+export type AudioConfig = {
+  systemEnabled: boolean;
+  microphoneEnabled: boolean;
+  systemDeviceId: string | null;
+  microphoneDeviceId: string | null;
+  systemGain: number;
+  microphoneGain: number;
+  systemMuted: boolean;
+  microphoneMuted: boolean;
+  bitrateKbps: number;
+};
+
+export type AudioCapabilities = {
+  available: boolean;
+  systemAudio: boolean;
+  microphone: boolean;
+  applicationAudio: boolean;
+  note: string | null;
+};
+
+export type AudioDevice = {
+  id: string;
+  kind: 'system' | 'microphone';
+  label: string;
+  isDefault: boolean;
+  available: boolean;
+};
+
+export type AudioMixerSnapshot = {
+  revision: number;
+  devices: AudioDevice[];
+  config: AudioConfig;
+  systemLevel: number;
+  microphoneLevel: number;
+  syncDriftMs: number | null;
+  status: string;
+};
 
 export type EncoderCapability = {
   id: EncoderId;
@@ -28,6 +73,9 @@ export type BackendDescriptor = {
     maxResolution: VideoResolution | null;
     maxFps: number | null;
     encoders: EncoderCapability[];
+    codecs: VideoCodec[];
+    formats: ContainerFormat[];
+    audio: AudioCapabilities;
   };
   note: string | null;
 };
@@ -38,7 +86,11 @@ export type ReplayConfig = {
   resolution: VideoResolution | null;
   fps: number | null;
   encoder: EncoderId;
-  codec: 'h264' | 'hevc';
+  codec: VideoCodec;
+  format: ContainerFormat;
+  quality: QualityPreset;
+  bitrateKbps: number | null;
+  audio: AudioConfig;
 };
 
 export type CaptureError = {
@@ -53,6 +105,15 @@ export type ClipRecord = {
   createdAtMs: number;
   durationSeconds: number;
   kind: string;
+  sizeBytes: number;
+  codec: VideoCodec;
+  format: ContainerFormat;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  hasAudio: boolean;
+  proxyPath: string | null;
+  proxyStatus: string;
 };
 
 export type CaptureSnapshot = {
@@ -69,6 +130,38 @@ export type CaptureSnapshot = {
   savedClips: number;
   lastClip: ClipRecord | null;
   lastError: CaptureError | null;
+};
+
+export type AppConfig = {
+  schemaVersion: number;
+  backend: BackendId;
+  replay: ReplayConfig;
+  storageDir: string | null;
+  hotkeys: { saveClip: string };
+  minimizeToTray: boolean;
+  startMinimized: boolean;
+  notificationsEnabled: boolean;
+  onboardingVersion: number;
+};
+
+export type ClipMetadata = ClipRecord & {
+  title: string;
+  tags: string[];
+  favorite: boolean;
+  fileStatus: string;
+};
+
+export type ClipUpdate = {
+  title?: string;
+  tags?: string[];
+  favorite?: boolean;
+};
+
+export type StorageStats = {
+  root: string;
+  clipCount: number;
+  bytesUsed: number;
+  availableBytes: number | null;
 };
 
 export type RecorderEvent =

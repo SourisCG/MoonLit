@@ -24,6 +24,20 @@ describe('captureClient', () => {
       fps: null,
       encoder: 'auto' as const,
       codec: 'h264' as const,
+      format: 'mp4' as const,
+      quality: 'medium' as const,
+      bitrateKbps: null,
+      audio: {
+        systemEnabled: true,
+        microphoneEnabled: false,
+        systemDeviceId: null,
+        microphoneDeviceId: null,
+        systemGain: 1,
+        microphoneGain: 1,
+        systemMuted: false,
+        microphoneMuted: false,
+        bitrateKbps: 160,
+      },
     };
 
     await captureClient.getSnapshot();

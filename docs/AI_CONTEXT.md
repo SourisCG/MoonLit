@@ -1,6 +1,6 @@
 # MoonLit AI Context
 
-Updated: 2026-07-29 (libobs sidecar architecture and protocol scaffold)
+Updated: 2026-07-29 (v1 product lanes and codec/runtime integration)
 
 ## Project Overview
 
@@ -21,8 +21,13 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - `src-tauri/src/sidecar.rs` supervises the future process with absolute paths, request deadlines, bounded stderr and kill/reap behavior
 - `src-tauri/src/backends/libobs.rs` maps the sidecar to the existing `ReplayBackend` without transporting media data
 - The libobs bridge, custom WGC source and curated runtime are not built yet
+- The recorder dynamically loads the bridge ABI when staged and remains fail-closed when it is unavailable
+- V2 control metadata now includes H.264/H.265, MP4/MKV, quality, audio configuration and asynchronous sidecar events
+- Rust host services now include versioned config persistence, Videos/MoonLit storage management and SQLite clip metadata
+- The frontend now exercises capture, audio, quality, storage, library, proxy and onboarding flows through FakeBackend
+- Global F8, tray menu and Windows notification integrations are wired behind the Tauri host
 - Comprehensive documentation created (7 documents)
-- NSIS installer configuration is not yet verified
+- NSIS standard/offline configurations, runtime manifests, SBOM generation and signing scripts are present but not release-approved
 - Windows baseline remains compilable and launch-tested on the RTX 3060 workstation
 
 **Phase 1 In Progress (Windows Required)**:
@@ -354,3 +359,13 @@ Tauri process never receives frames, audio samples or encoded packets.
 - [NVENC](https://developer.nvidia.com/nvidia-video-codec-sdk)
 - [AMD AMF](https://gpuopen.com/advanced-media-framework/)
 - [Intel Quick Sync](https://software.intel.com/content/www/us/en/develop/documentation/video-tutorial/getting-started-with-intel-quick-sync-video.html)
+
+## V1 Execution Update (2026-07-29)
+
+- The first product implementation now treats H.264 and H.265 as mandatory v1 codecs.
+- `ReplayConfig` includes container, quality, bitrate and system/microphone audio controls.
+- Sidecar protocol version 2 carries codec/container/audio capabilities, rich clip metadata and unsolicited buffer/device events.
+- The recorder can dynamically load `moonlit-obs-bridge.dll`; the checked-in C++ bridge still returns unavailable until the pinned libobs/WGC implementation is built.
+- Host services include `ConfigStore`, `StorageManager`, `LibraryStore`, `MediaJobService`, `HotkeyState` and Tauri notification/tray integration.
+- H.265 library playback requests an H.264 proxy through the staged, fixed-path FFmpeg worker when WebView2 cannot play the original.
+- CI workflows, standard/offline NSIS configs, runtime manifest, SBOM and signing scripts are present. Runtime approval, clean-machine installation and hardware evidence remain release gates.

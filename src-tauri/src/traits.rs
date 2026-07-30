@@ -34,6 +34,10 @@ pub struct CaptureSource {
     pub kind: CaptureSourceKind,
     pub label: String,
     pub is_default: bool,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub process_name: Option<String>,
+    pub available: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,6 +51,65 @@ pub struct VideoResolution {
 pub enum VideoCodec {
     H264,
     Hevc,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContainerFormat {
+    #[default]
+    Mp4,
+    Mkv,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum QualityPreset {
+    Low,
+    #[default]
+    Medium,
+    High,
+    Ultra,
+    Custom,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioConfig {
+    pub system_enabled: bool,
+    pub microphone_enabled: bool,
+    pub system_device_id: Option<String>,
+    pub microphone_device_id: Option<String>,
+    pub system_gain: f32,
+    pub microphone_gain: f32,
+    pub system_muted: bool,
+    pub microphone_muted: bool,
+    pub bitrate_kbps: u32,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            system_enabled: true,
+            microphone_enabled: false,
+            system_device_id: None,
+            microphone_device_id: None,
+            system_gain: 1.0,
+            microphone_gain: 1.0,
+            system_muted: false,
+            microphone_muted: false,
+            bitrate_kbps: 160,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCapabilities {
+    pub available: bool,
+    pub system_audio: bool,
+    pub microphone: bool,
+    pub application_audio: bool,
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -74,6 +137,9 @@ pub struct BackendCapabilities {
     pub max_resolution: Option<VideoResolution>,
     pub max_fps: Option<u32>,
     pub encoders: Vec<EncoderCapability>,
+    pub codecs: Vec<VideoCodec>,
+    pub formats: Vec<ContainerFormat>,
+    pub audio: AudioCapabilities,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -87,7 +153,7 @@ pub struct BackendDescriptor {
     pub note: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplayConfig {
     pub source_id: String,
@@ -96,6 +162,10 @@ pub struct ReplayConfig {
     pub fps: Option<u32>,
     pub encoder: EncoderPreference,
     pub codec: VideoCodec,
+    pub format: ContainerFormat,
+    pub quality: QualityPreset,
+    pub bitrate_kbps: Option<u32>,
+    pub audio: AudioConfig,
 }
 
 impl Default for ReplayConfig {
@@ -107,6 +177,10 @@ impl Default for ReplayConfig {
             fps: None,
             encoder: EncoderPreference::Auto,
             codec: VideoCodec::H264,
+            format: ContainerFormat::Mp4,
+            quality: QualityPreset::Medium,
+            bitrate_kbps: None,
+            audio: AudioConfig::default(),
         }
     }
 }
@@ -140,6 +214,26 @@ impl ReplayConfig {
                 "La resolucion debe ser mayor que cero",
             ));
         }
+        if self
+            .bitrate_kbps
+            .is_some_and(|bitrate| !(100..=200_000).contains(&bitrate))
+        {
+            return Err(BackendError::invalid_config(
+                "El bitrate debe estar entre 100 y 200000 kbps",
+            ));
+        }
+        if !(0.0..=4.0).contains(&self.audio.system_gain)
+            || !(0.0..=4.0).contains(&self.audio.microphone_gain)
+        {
+            return Err(BackendError::invalid_config(
+                "La ganancia de audio debe estar entre 0 y 4",
+            ));
+        }
+        if !(32..=512).contains(&self.audio.bitrate_kbps) {
+            return Err(BackendError::invalid_config(
+                "El bitrate de audio debe estar entre 32 y 512 kbps",
+            ));
+        }
         Ok(())
     }
 }
@@ -157,6 +251,12 @@ pub struct ClipArtifact {
     pub path: PathBuf,
     pub duration_seconds: u32,
     pub kind: ClipKind,
+    pub codec: VideoCodec,
+    pub format: ContainerFormat,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub fps: Option<u32>,
+    pub has_audio: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -255,6 +355,10 @@ mod tests {
             kind: CaptureSourceKind::Monitor,
             label: "Monitor 1".to_string(),
             is_default: true,
+            width: Some(1920),
+            height: Some(1080),
+            process_name: None,
+            available: true,
         }]
     }
 

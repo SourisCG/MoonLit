@@ -21,6 +21,15 @@ pub struct ClipRecord {
     pub created_at_ms: u64,
     pub duration_seconds: u32,
     pub kind: String,
+    pub size_bytes: u64,
+    pub codec: String,
+    pub format: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub fps: Option<u32>,
+    pub has_audio: bool,
+    pub proxy_path: Option<String>,
+    pub proxy_status: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -32,7 +41,7 @@ pub struct SessionSnapshot {
     pub started_at_ms: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureSnapshot {
     pub revision: u64,

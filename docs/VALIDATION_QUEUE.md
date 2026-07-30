@@ -71,6 +71,19 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [ ] Validate real MP4/MKV output and repeated sidecar saves
 - [ ] Validate clean-machine NSIS installation without OBS Studio
 
+### Host V1 Implementation (development machine)
+
+- [x] Add versioned configuration persistence and migration hook
+- [x] Add configurable Videos/MoonLit storage root and partial cleanup
+- [x] Add SQLite clip metadata, search, update and delete commands
+- [x] Add H.264/H.265 and MP4/MKV fields to the v2 control contract
+- [x] Add system/microphone audio configuration and FakeMixer state
+- [x] Add H.264 proxy worker contract for H.265 WebView2 preview
+- [x] Add global F8, tray, notification and close-to-tray host integrations
+- [x] Add runtime manifest, SBOM and Authenticode script gates
+- [ ] Build the actual libobs bridge and runtime on the Windows toolchain workstation
+- [ ] Execute real WGC/WASAPI/encoder/proxy evidence with the exact release commit
+
 ## Windows Native Capture Spike (2026-07-28)
 
 - [x] Enumerate two physical monitor sources

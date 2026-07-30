@@ -15,9 +15,9 @@ use moonlit_windows_native as native;
 
 use crate::replay::{EncodedPacket, ReplayBuffer, ReplayError};
 use crate::traits::{
-    BackendCapabilities, BackendDescriptor, BackendError, BackendErrorCode, BackendId,
-    CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, EncoderCapability, EncoderPreference,
-    ReplayBackend, ReplayConfig, VideoCodec, VideoResolution,
+    AudioCapabilities, BackendCapabilities, BackendDescriptor, BackendError, BackendErrorCode,
+    BackendId, CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, ContainerFormat,
+    EncoderCapability, EncoderPreference, ReplayBackend, ReplayConfig, VideoCodec, VideoResolution,
 };
 
 pub struct WindowsNativeBackend {
@@ -75,6 +75,10 @@ impl ReplayBackend for WindowsNativeBackend {
                         },
                         label: source.label,
                         is_default: source.is_default,
+                        width: Some(source.width),
+                        height: Some(source.height),
+                        process_name: None,
+                        available: true,
                     })
                     .collect()
             })
@@ -225,6 +229,12 @@ impl ReplayBackend for WindowsNativeBackend {
             path,
             duration_seconds,
             kind: ClipKind::Media,
+            codec: VideoCodec::H264,
+            format: ContainerFormat::Mkv,
+            width: None,
+            height: None,
+            fps: None,
+            has_audio: false,
         })
     }
 
@@ -299,6 +309,9 @@ fn native_descriptor() -> BackendDescriptor {
                     Some("NVENC H.264 no esta disponible".to_string())
                 },
             }],
+            codecs: vec![VideoCodec::H264],
+            formats: vec![ContainerFormat::Mkv],
+            audio: AudioCapabilities::default(),
         },
         note,
     }

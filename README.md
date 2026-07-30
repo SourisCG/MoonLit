@@ -8,13 +8,13 @@ Windows with future Linux portability planned.
 
 - **GPU-Accelerated Capture**: Windows.Graphics.Capture API with NVENC/AMF/QuickSync encoding
 - **Replay Buffer**: 30 seconds default (configurable 10s - 5min)
-- **Advanced Audio Mixing**: System audio, microphone, and specific apps (OBS-style)
+- **Audio Mixing**: System audio and microphone with independent gain/mute
 - **Hotkey Save**: F8 by default (configurable)
-- **Game Detection**: Automatic + manual detection
+- **Codecs**: H.264 and H.265 with NVENC/AMF/QuickSync and x264/x265 fallback
 - **Local Library**: SQLite-based clip management with tags and search
-- **Multiple Formats**: MP4 (default) and MKV
+- **Multiple Formats**: MP4 (default) and MKV for both codecs
 - **Quality Presets**: Low/Medium/High/Ultra + advanced configuration
-- **Notifications**: Windows system notifications
+- **Notifications**: Windows system notifications and tray integration
 
 ## Requirements
 
@@ -51,10 +51,12 @@ See [Development](#development) section below.
 
 ### Current Development Status
 
-The Windows bootstrap is verified: the Tauri application builds and launches
-with the simulated backend. The direct WGC/D3D11/NVENC path is a validated raw
-Annex B benchmark. The production libobs sidecar, WASAPI integration, final
-containers, persistent library and release installer remain under development.
+The host-side v1 flows are implemented and verified with FakeBackend: settings,
+storage, SQLite metadata, H.264/H.265 configuration, audio controls, hotkey/tray
+events, notifications and H.265 proxy jobs. The direct WGC/D3D11/NVENC path is
+a validated raw Annex B benchmark. The production libobs bridge, WASAPI capture,
+real MP4/MKV muxing, runtime approval and release installer still require the
+Windows native build workstation and release validation matrix.
 
 ## Usage
 

@@ -1,0 +1,64 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          targets: x86_64-pc-windows-msvc
+      - run: npm ci
+      - run: cargo build --locked --release --manifest-path src-tauri/native/moonlit-recorder/Cargo.toml
+      - name: Stage approved runtime
+        shell: pwsh
+        run: >-
+          ./packaging/windows/Stage-Runtime.ps1
+          -RuntimeInput $env:OBS_RUNTIME_INPUT
+          -RecorderBinary src-tauri/native/moonlit-recorder/target/release/moonlit-recorder.exe
+          -OutputRoot target/package-stage/windows-x86_64
+        env:
+          OBS_RUNTIME_INPUT: ${{ vars.OBS_RUNTIME_INPUT }}
+      - name: Generate manifests
+        shell: pwsh
+        run: |
+          ./packaging/windows/Generate-RuntimeManifest.ps1 -StageRoot target/package-stage/windows-x86_64/runtime/obs -OutputFile target/package-stage/windows-x86_64/runtime-manifest.json
+          ./packaging/windows/Generate-Sbom.ps1 -StageRoot target/package-stage/windows-x86_64/runtime/obs -OutputFile target/package-stage/windows-x86_64/sbom.cdx.json
+          ./packaging/windows/Verify-Runtime.ps1 -StageRoot target/package-stage/windows-x86_64/runtime/obs -ManifestFile target/package-stage/windows-x86_64/runtime-manifest.json
+      - run: npm run tauri:build:windows
+      - name: Sign release artifacts
+        if: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT != '' }}
+        shell: pwsh
+        run: >-
+          ./packaging/windows/Sign-Release.ps1
+          -SignTool $env:SIGNTOOL
+          -CertificateThumbprint $env:CERTIFICATE_THUMBPRINT
+          -Files (Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -ExpandProperty FullName)
+        env:
+          SIGNTOOL: signtool.exe
+          CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moonlit-windows-${{ inputs.version }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            target/package-stage/windows-x86_64/runtime-manifest.json
+            target/package-stage/windows-x86_64/sbom.cdx.json

@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, sync_channel, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -5,8 +6,10 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::backends;
+use crate::library::LibraryState;
 use crate::state::{CapturePhase, CaptureSnapshot, ClipRecord, RecorderEvent, SessionSnapshot};
 use crate::traits::{
     BackendDescriptor, BackendError, BackendErrorCode, BackendId, ClipArtifact, ReplayBackend,
@@ -24,6 +27,10 @@ enum RuntimeCommand {
     },
     SelectBackend {
         id: BackendId,
+        reply: Reply<CaptureSnapshot>,
+    },
+    SetOutputDir {
+        path: PathBuf,
         reply: Reply<CaptureSnapshot>,
     },
     Start {
@@ -46,6 +53,7 @@ pub struct RecorderRuntime {
 }
 
 impl RecorderRuntime {
+    #[cfg(test)]
     pub fn new(
         output_dir: PathBuf,
         resource_dir: Option<PathBuf>,
@@ -55,7 +63,7 @@ impl RecorderRuntime {
         Self::new_with_backend(output_dir, resource_dir, app_handle, Box::new(fake))
     }
 
-    fn new_with_backend(
+    pub(crate) fn new_with_backend(
         output_dir: PathBuf,
         resource_dir: Option<PathBuf>,
         app_handle: Option<AppHandle>,
@@ -152,6 +160,11 @@ impl RecorderRuntime {
         self.request(RuntimeCommand::SelectBackend { id, reply }, receiver)
     }
 
+    pub fn set_output_dir(&self, path: PathBuf) -> Result<CaptureSnapshot, BackendError> {
+        let (reply, receiver) = channel();
+        self.request(RuntimeCommand::SetOutputDir { path, reply }, receiver)
+    }
+
     pub fn start(&self, config: ReplayConfig) -> Result<CaptureSnapshot, BackendError> {
         let (reply, receiver) = channel();
         self.request(RuntimeCommand::Start { config, reply }, receiver)
@@ -182,7 +195,7 @@ impl Drop for RecorderRuntime {
 fn actor_loop(
     receiver: Receiver<RuntimeCommand>,
     snapshot_ref: Arc<Mutex<CaptureSnapshot>>,
-    output_dir: PathBuf,
+    mut output_dir: PathBuf,
     resource_dir: Option<PathBuf>,
     app_handle: Option<AppHandle>,
     initial_backend: Box<dyn ReplayBackend>,
@@ -246,6 +259,19 @@ fn actor_loop(
                     &snapshot_ref,
                     &app_handle,
                 );
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::SetOutputDir { path, reply } => {
+                let result = if snapshot.phase != CapturePhase::Idle {
+                    Err(BackendError::invalid_state(
+                        "Deten el buffer antes de cambiar la carpeta",
+                    ))
+                } else if let Err(error) = std::fs::create_dir_all(&path) {
+                    Err(BackendError::io(error.to_string()))
+                } else {
+                    output_dir = path;
+                    Ok(snapshot.clone())
+                };
                 let _ = reply.send(result);
             }
             RuntimeCommand::Save { reply } => {
@@ -387,6 +413,14 @@ fn actor_save_clip(
                     clip,
                 },
             );
+            if let Some(app_handle) = app_handle {
+                let _ = app_handle
+                    .notification()
+                    .builder()
+                    .title("MoonLit")
+                    .body("Clip guardado en tu biblioteca")
+                    .show();
+            }
             Ok(snapshot.clone())
         }
         Err(error) => {
@@ -500,6 +534,23 @@ fn clip_record(artifact: ClipArtifact) -> ClipRecord {
             crate::traits::ClipKind::Simulation => "simulation".to_string(),
             crate::traits::ClipKind::Media => "media".to_string(),
         },
+        size_bytes: fs::metadata(&artifact.path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0),
+        codec: match artifact.codec {
+            crate::traits::VideoCodec::H264 => "h264".to_string(),
+            crate::traits::VideoCodec::Hevc => "hevc".to_string(),
+        },
+        format: match artifact.format {
+            crate::traits::ContainerFormat::Mp4 => "mp4".to_string(),
+            crate::traits::ContainerFormat::Mkv => "mkv".to_string(),
+        },
+        width: artifact.width,
+        height: artifact.height,
+        fps: artifact.fps,
+        has_audio: artifact.has_audio,
+        proxy_path: None,
+        proxy_status: "notNeeded".to_string(),
     }
 }
 
@@ -544,6 +595,14 @@ pub fn select_capture_backend(
 }
 
 #[tauri::command]
+pub fn set_capture_output_dir(
+    runtime: State<'_, RecorderRuntime>,
+    path: PathBuf,
+) -> Result<CaptureSnapshot, BackendError> {
+    runtime.set_output_dir(path)
+}
+
+#[tauri::command]
 pub fn start_capture(
     runtime: State<'_, RecorderRuntime>,
     config: ReplayConfig,
@@ -552,8 +611,20 @@ pub fn start_capture(
 }
 
 #[tauri::command]
-pub fn save_clip(runtime: State<'_, RecorderRuntime>) -> Result<CaptureSnapshot, BackendError> {
-    runtime.save()
+pub fn save_clip(
+    runtime: State<'_, RecorderRuntime>,
+    library: State<'_, LibraryState>,
+) -> Result<CaptureSnapshot, BackendError> {
+    let snapshot = runtime.save()?;
+    if let Some(clip) = snapshot.last_clip.as_ref() {
+        library
+            .0
+            .lock()
+            .map_err(|_| BackendError::io("La biblioteca esta bloqueada"))?
+            .insert_record(clip)
+            .map_err(BackendError::io)?;
+    }
+    Ok(snapshot)
 }
 
 #[tauri::command]

@@ -15,11 +15,13 @@ $ErrorActionPreference = "Stop"
 
 $lockPath = Join-Path $PSScriptRoot "obs-runtime.lock.json"
 $allowlistPath = Join-Path $PSScriptRoot "runtime.allowlist.json"
+$licensesPath = Join-Path $PSScriptRoot "licenses.lock.json"
 $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
 $allowlist = Get-Content -LiteralPath $allowlistPath -Raw | ConvertFrom-Json
+$licenses = Get-Content -LiteralPath $licensesPath -Raw | ConvertFrom-Json
 
-if ($lock.status -ne "approved" -or $allowlist.status -ne "approved") {
-    throw "The OBS runtime lock and allowlist must be approved before staging."
+if ($lock.status -ne "approved" -or $allowlist.status -ne "approved" -or $licenses.status -ne "approved") {
+    throw "The OBS runtime lock, allowlist and license lock must be approved before staging."
 }
 
 $inputRoot = (Resolve-Path -LiteralPath $RuntimeInput).Path
@@ -88,6 +90,9 @@ foreach ($relativePath in $allowlist.files) {
         if (Test-DeniedPath $relative -or -not (Test-AllowlistedPath $relative)) {
             throw "Runtime file is not allowed: $relative"
         }
+        if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Runtime file must not be a reparse point: $relative"
+        }
         $destination = Join-Path $stageRoot $relative
         $destinationDirectory = Split-Path -Parent $destination
         if (-not (Test-Path -LiteralPath $destinationDirectory)) {
@@ -97,12 +102,32 @@ foreach ($relativePath in $allowlist.files) {
     }
 }
 
+foreach ($required in $allowlist.requiredFiles) {
+    if ($required -eq "bin/64bit/moonlit-recorder.exe") {
+        continue
+    }
+    $requiredPath = Join-Path $inputRoot $required
+    if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+        throw "Required runtime file is missing: $required"
+    }
+}
+
 $recorderDestination = Join-Path $stageRoot "bin/64bit/moonlit-recorder.exe"
 $recorderDirectory = Split-Path -Parent $recorderDestination
 if (-not (Test-Path -LiteralPath $recorderDirectory)) {
     New-Item -ItemType Directory -Path $recorderDirectory -Force | Out-Null
 }
 Copy-Item -LiteralPath $recorderPath -Destination $recorderDestination -Force
+
+if (-not (Test-Path -LiteralPath $recorderDestination -PathType Leaf)) {
+    throw "Recorder was not copied to the staged runtime."
+}
+
+foreach ($required in $allowlist.requiredFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $stageRoot $required) -PathType Leaf)) {
+        throw "Required file is missing from the staged runtime: $required"
+    }
+}
 
 $stagedFiles = Get-ChildItem -LiteralPath $stageRoot -Recurse -File
 foreach ($file in $stagedFiles) {

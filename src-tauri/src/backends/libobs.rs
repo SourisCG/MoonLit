@@ -12,9 +12,10 @@ use protocol::{EncoderInfo, ProbeResult, Request, Response, SourceInfo, StartReq
 
 use crate::sidecar::{ProcessSidecarLauncher, SidecarError, SidecarLauncher, SidecarTransport};
 use crate::traits::{
-    BackendCapabilities, BackendDescriptor, BackendError, BackendErrorCode, BackendId,
-    CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, EncoderCapability, EncoderPreference,
-    ReplayBackend, ReplayConfig, VideoCodec, VideoResolution,
+    AudioCapabilities, AudioConfig, BackendCapabilities, BackendDescriptor, BackendError,
+    BackendErrorCode, BackendId, CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind,
+    ContainerFormat, EncoderCapability, EncoderPreference, QualityPreset, ReplayBackend,
+    ReplayConfig, VideoCodec, VideoResolution,
 };
 
 const RUNTIME_RELATIVE_PATH: &str = "runtime/obs";
@@ -178,13 +179,6 @@ impl ReplayBackend for LibobsSidecarBackend {
                 "El backend libobs ya esta capturando",
             ));
         }
-        if config.codec != VideoCodec::H264 {
-            return Err(BackendError::new(
-                BackendErrorCode::Unsupported,
-                "El primer corte libobs solo admite H.264",
-                false,
-            ));
-        }
         if !self
             .sources
             .iter()
@@ -235,8 +229,11 @@ impl ReplayBackend for LibobsSidecarBackend {
             height: config.resolution.as_ref().map(|value| value.height),
             fps: config.fps,
             encoder: encoder_name(&config.encoder).to_string(),
-            codec: "h264".to_string(),
-            format: "mp4".to_string(),
+            codec: codec_name(&config.codec).to_string(),
+            format: format_name(&config.format).to_string(),
+            quality: quality_name(&config.quality).to_string(),
+            bitrate_kbps: config.bitrate_kbps,
+            audio: audio_start(&config.audio),
             output_dir: output_root.to_string_lossy().into_owned(),
         };
         let response = session
@@ -263,6 +260,12 @@ impl ReplayBackend for LibobsSidecarBackend {
         let Response::ClipSaved {
             relative_path,
             duration_seconds,
+            codec,
+            format,
+            width,
+            height,
+            fps,
+            has_audio,
         } = response
         else {
             return Err(Self::response_error(response));
@@ -278,6 +281,12 @@ impl ReplayBackend for LibobsSidecarBackend {
             path,
             duration_seconds,
             kind: ClipKind::Media,
+            codec: parse_codec(&codec),
+            format: parse_format(&format),
+            width,
+            height,
+            fps,
+            has_audio,
         })
     }
 
@@ -300,6 +309,21 @@ impl ReplayBackend for LibobsSidecarBackend {
         let Some(session) = self.session.as_mut() else {
             return Ok(());
         };
+        for event in session.drain_events() {
+            match event {
+                protocol::Event::Fatal(error) => return Err(map_protocol_error(error)),
+                protocol::Event::SourceEnded { source_id } => {
+                    return Err(BackendError::new(
+                        BackendErrorCode::SourceEnded,
+                        format!("La fuente termino: {source_id}"),
+                        true,
+                    ));
+                }
+                protocol::Event::AudioDeviceChanged { .. }
+                | protocol::Event::BufferStatus { .. }
+                | protocol::Event::Heartbeat => {}
+            }
+        }
         match session.request(Request::Ping).map_err(map_sidecar_error)? {
             Response::Pong => Ok(()),
             response => Err(Self::response_error(response)),
@@ -317,10 +341,18 @@ fn descriptor_from_probe(probe: &ProbeResult) -> BackendDescriptor {
     let sources = map_sources(probe.sources.clone());
     let encoders = map_encoders(&probe.encoders);
     let encoder_available = encoders.iter().any(|encoder| encoder.available);
+    let codecs = map_codecs(&probe.codecs);
+    let formats = map_formats(&probe.formats);
     BackendDescriptor {
         id: BackendId::LibobsSidecar,
         display_name: "MoonLit Capture".to_string(),
-        available: probe.available && !sources.is_empty() && encoder_available,
+        available: probe.available
+            && !sources.is_empty()
+            && encoder_available
+            && codecs.contains(&VideoCodec::H264)
+            && codecs.contains(&VideoCodec::Hevc)
+            && formats.contains(&ContainerFormat::Mp4)
+            && formats.contains(&ContainerFormat::Mkv),
         simulated: false,
         capabilities: BackendCapabilities {
             source_kinds: sources
@@ -333,6 +365,15 @@ fn descriptor_from_probe(probe: &ProbeResult) -> BackendDescriptor {
                 .map(|(width, height)| VideoResolution { width, height }),
             max_fps: probe.max_fps,
             encoders,
+            codecs,
+            formats,
+            audio: AudioCapabilities {
+                available: probe.audio.available,
+                system_audio: probe.audio.system_audio,
+                microphone: probe.audio.microphone,
+                application_audio: probe.audio.application_audio,
+                note: probe.audio.note.clone(),
+            },
         },
         note: probe.note.clone(),
     }
@@ -363,6 +404,10 @@ fn map_sources(sources: Vec<SourceInfo>) -> Vec<CaptureSource> {
                 kind,
                 label: source.label,
                 is_default: source.is_default,
+                width: None,
+                height: None,
+                process_name: None,
+                available: true,
             })
         })
         .collect()
@@ -389,6 +434,28 @@ fn map_encoders(encoders: &[EncoderInfo]) -> Vec<EncoderCapability> {
         .collect()
 }
 
+fn map_codecs(codecs: &[String]) -> Vec<VideoCodec> {
+    codecs
+        .iter()
+        .filter_map(|codec| match codec.as_str() {
+            "h264" | "avc" => Some(VideoCodec::H264),
+            "hevc" | "h265" => Some(VideoCodec::Hevc),
+            _ => None,
+        })
+        .collect()
+}
+
+fn map_formats(formats: &[String]) -> Vec<ContainerFormat> {
+    formats
+        .iter()
+        .filter_map(|format| match format.as_str() {
+            "mp4" => Some(ContainerFormat::Mp4),
+            "mkv" => Some(ContainerFormat::Mkv),
+            _ => None,
+        })
+        .collect()
+}
+
 fn encoder_name(encoder: &EncoderPreference) -> &'static str {
     match encoder {
         EncoderPreference::Auto => "auto",
@@ -396,6 +463,60 @@ fn encoder_name(encoder: &EncoderPreference) -> &'static str {
         EncoderPreference::Amf => "amf",
         EncoderPreference::QuickSync => "quickSync",
         EncoderPreference::Software => "software",
+    }
+}
+
+fn codec_name(codec: &VideoCodec) -> &'static str {
+    match codec {
+        VideoCodec::H264 => "h264",
+        VideoCodec::Hevc => "hevc",
+    }
+}
+
+fn format_name(format: &ContainerFormat) -> &'static str {
+    match format {
+        ContainerFormat::Mp4 => "mp4",
+        ContainerFormat::Mkv => "mkv",
+    }
+}
+
+fn quality_name(quality: &QualityPreset) -> &'static str {
+    match quality {
+        QualityPreset::Low => "low",
+        QualityPreset::Medium => "medium",
+        QualityPreset::High => "high",
+        QualityPreset::Ultra => "ultra",
+        QualityPreset::Custom => "custom",
+    }
+}
+
+fn audio_start(audio: &AudioConfig) -> protocol::AudioStart {
+    protocol::AudioStart {
+        system_enabled: audio.system_enabled,
+        microphone_enabled: audio.microphone_enabled,
+        system_device_id: audio.system_device_id.clone(),
+        microphone_device_id: audio.microphone_device_id.clone(),
+        system_gain_milli: (audio.system_gain * 1000.0).round() as u32,
+        microphone_gain_milli: (audio.microphone_gain * 1000.0).round() as u32,
+        system_muted: audio.system_muted,
+        microphone_muted: audio.microphone_muted,
+        bitrate_kbps: audio.bitrate_kbps,
+    }
+}
+
+fn parse_codec(codec: &str) -> VideoCodec {
+    if codec.eq_ignore_ascii_case("hevc") || codec.eq_ignore_ascii_case("h265") {
+        VideoCodec::Hevc
+    } else {
+        VideoCodec::H264
+    }
+}
+
+fn parse_format(format: &str) -> ContainerFormat {
+    if format.eq_ignore_ascii_case("mkv") {
+        ContainerFormat::Mkv
+    } else {
+        ContainerFormat::Mp4
     }
 }
 
@@ -528,6 +649,12 @@ mod tests {
                 Ok(protocol::Response::ClipSaved {
                     relative_path: "clip.mp4".to_string(),
                     duration_seconds: 30,
+                    codec: "h264".to_string(),
+                    format: "mp4".to_string(),
+                    width: Some(1920),
+                    height: Some(1080),
+                    fps: Some(60),
+                    has_audio: false,
                 }),
                 Ok(protocol::Response::Stopped),
             ]])),
@@ -550,6 +677,9 @@ mod tests {
             max_height: Some(1080),
             max_fps: Some(60),
             note: None,
+            codecs: vec!["h264".to_string(), "hevc".to_string()],
+            formats: vec!["mp4".to_string(), "mkv".to_string()],
+            audio: protocol::AudioInfo::default(),
         });
         backend.sources = super::map_sources(vec![protocol::SourceInfo {
             id: "monitor-1".to_string(),

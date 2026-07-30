@@ -1,6 +1,6 @@
 //! Supervised control transport for the isolated recorder process.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -17,6 +17,8 @@ use protocol::{Payload, Request, Response};
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const STDERR_LINE_LIMIT: usize = 512;
 const STDERR_RING_LIMIT: usize = 128;
+
+type PendingReplies = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<protocol::Frame, SidecarError>>>>>;
 
 #[derive(Debug)]
 pub enum SidecarError {
@@ -45,6 +47,10 @@ impl std::error::Error for SidecarError {}
 
 pub trait SidecarTransport: Send {
     fn request(&mut self, request: Request) -> Result<Response, SidecarError>;
+
+    fn drain_events(&mut self) -> Vec<protocol::Event> {
+        Vec::new()
+    }
 
     fn terminate(&mut self);
 }
@@ -136,11 +142,35 @@ impl SidecarLauncher for ProcessSidecarLauncher {
         let stderr_ring = Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_LIMIT)));
         let stderr_join = spawn_stderr_reader(stderr, Arc::clone(&stderr_ring));
         let (requests, receiver) = sync_channel(8);
-        let worker_dead = Arc::clone(&dead);
-        let worker_child = Arc::clone(&child);
-        let worker = thread::Builder::new()
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let events = Arc::new(Mutex::new(VecDeque::new()));
+        let writer_dead = Arc::clone(&dead);
+        let writer_child = Arc::clone(&child);
+        let writer_pending = Arc::clone(&pending);
+        let writer = thread::Builder::new()
             .name("moonlit-sidecar-io".to_string())
-            .spawn(move || process_worker(stdin, stdout, receiver, worker_child, worker_dead))
+            .spawn(move || {
+                process_writer(stdin, receiver, writer_pending, writer_child, writer_dead)
+            })
+            .map_err(|error| {
+                terminate_child(&child);
+                SidecarError::Io(error.to_string())
+            })?;
+        let reader_dead = Arc::clone(&dead);
+        let reader_child = Arc::clone(&child);
+        let reader_pending = Arc::clone(&pending);
+        let reader_events = Arc::clone(&events);
+        let reader = thread::Builder::new()
+            .name("moonlit-sidecar-reader".to_string())
+            .spawn(move || {
+                process_reader(
+                    stdout,
+                    reader_pending,
+                    reader_events,
+                    reader_child,
+                    reader_dead,
+                )
+            })
             .map_err(|error| {
                 terminate_child(&child);
                 SidecarError::Io(error.to_string())
@@ -150,10 +180,12 @@ impl SidecarLauncher for ProcessSidecarLauncher {
             requests: Some(requests),
             child,
             dead,
-            worker: Some(worker),
+            writer: Some(writer),
+            reader: Some(reader),
             stderr_join: Some(stderr_join),
             next_request_id: 1,
             stderr_ring,
+            events,
         }))
     }
 }
@@ -162,10 +194,12 @@ struct ProcessSidecarTransport {
     requests: Option<SyncSender<WorkerRequest>>,
     child: Arc<Mutex<Child>>,
     dead: Arc<AtomicBool>,
-    worker: Option<JoinHandle<()>>,
+    writer: Option<JoinHandle<()>>,
+    reader: Option<JoinHandle<()>>,
     stderr_join: Option<JoinHandle<()>>,
     next_request_id: u64,
     stderr_ring: Arc<Mutex<VecDeque<String>>>,
+    events: Arc<Mutex<VecDeque<protocol::Event>>>,
 }
 
 struct WorkerRequest {
@@ -197,12 +231,19 @@ impl SidecarTransport for ProcessSidecarTransport {
         match frame.payload {
             Payload::Response(response) => Ok(response),
             Payload::Event(event) => Err(SidecarError::InvalidResponse(format!(
-                "evento inesperado despues de esperar respuesta: {event:?}"
+                "evento inesperado: {event:?}"
             ))),
             Payload::Request(_) => Err(SidecarError::InvalidResponse(
                 "el sidecar envio una solicitud al host".to_string(),
             )),
         }
+    }
+
+    fn drain_events(&mut self) -> Vec<protocol::Event> {
+        self.events
+            .lock()
+            .map(|mut events| events.drain(..).collect())
+            .unwrap_or_default()
     }
 
     fn terminate(&mut self) {
@@ -215,8 +256,11 @@ impl SidecarTransport for ProcessSidecarTransport {
 impl Drop for ProcessSidecarTransport {
     fn drop(&mut self) {
         self.terminate();
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
         }
         if let Some(stderr) = self.stderr_join.take() {
             let _ = stderr.join();
@@ -227,67 +271,89 @@ impl Drop for ProcessSidecarTransport {
     }
 }
 
-fn process_worker(
+fn process_writer(
     mut stdin: ChildStdin,
-    mut stdout: ChildStdout,
     receiver: Receiver<WorkerRequest>,
+    pending: PendingReplies,
     child: Arc<Mutex<Child>>,
     dead: Arc<AtomicBool>,
 ) {
     while let Ok(request) = receiver.recv() {
         let request_id = request.frame.request_id;
-        let result = write_and_read(&mut stdin, &mut stdout, &request.frame, request_id);
-        let terminal = result.is_err();
-        let _ = request.reply.send(result);
-        if terminal {
+        if let Ok(mut pending) = pending.lock() {
+            pending.insert(request_id, request.reply);
+        } else {
+            let _ = request.reply.send(Err(SidecarError::Protocol(
+                "la tabla de peticiones esta bloqueada".to_string(),
+            )));
+            dead.store(true, Ordering::Release);
+            terminate_child(&child);
+            break;
+        }
+        if let Err(error) =
+            protocol::write_frame(&mut stdin, &request.frame).map_err(protocol_error)
+        {
+            if let Ok(mut pending) = pending.lock() {
+                if let Some(reply) = pending.remove(&request_id) {
+                    let _ = reply.send(Err(error));
+                }
+            }
             dead.store(true, Ordering::Release);
             terminate_child(&child);
             break;
         }
     }
-    dead.store(true, Ordering::Release);
 }
 
-fn write_and_read(
-    stdin: &mut ChildStdin,
-    stdout: &mut ChildStdout,
-    request: &protocol::Frame,
-    request_id: u64,
-) -> Result<protocol::Frame, SidecarError> {
-    protocol::write_frame(stdin, request).map_err(protocol_error)?;
+fn process_reader(
+    mut stdout: ChildStdout,
+    pending: PendingReplies,
+    events: Arc<Mutex<VecDeque<protocol::Event>>>,
+    child: Arc<Mutex<Child>>,
+    dead: Arc<AtomicBool>,
+) {
     loop {
-        let frame = protocol::read_frame(stdout)
-            .map_err(protocol_error)?
-            .ok_or(SidecarError::Exited)?;
-        if frame.request_id != request_id {
-            return Err(SidecarError::Protocol(format!(
-                "request id inesperado: {}/{}",
-                frame.request_id, request_id
-            )));
-        }
+        let result = protocol::read_frame(&mut stdout);
+        let frame: Result<protocol::Frame, SidecarError> = match result {
+            Ok(Some(frame)) => Ok(frame),
+            Ok(None) => Err(SidecarError::Exited),
+            Err(error) => Err(protocol_error(error)),
+        };
+        let Ok(frame) = frame else {
+            let error = frame.expect_err("reader error");
+            dead.store(true, Ordering::Release);
+            if let Ok(mut pending) = pending.lock() {
+                for (_, reply) in pending.drain() {
+                    let _ = reply.send(Err(match &error {
+                        SidecarError::Exited => SidecarError::Exited,
+                        SidecarError::Protocol(message) => SidecarError::Protocol(message.clone()),
+                        _ => SidecarError::Exited,
+                    }));
+                }
+            }
+            terminate_child(&child);
+            break;
+        };
         match frame.payload {
-            Payload::Event(protocol::Event::Heartbeat) => continue,
-            Payload::Event(protocol::Event::SourceEnded { source_id }) => {
-                return Ok(protocol::Frame::response(
-                    request_id,
-                    Response::Error(protocol::SidecarError {
-                        code: "sourceEnded".to_string(),
-                        message: format!("la fuente termino: {source_id}"),
-                        retryable: true,
-                    }),
-                ));
+            Payload::Event(event) => {
+                if let Ok(mut queued) = events.lock() {
+                    if queued.len() >= 64 {
+                        queued.pop_front();
+                    }
+                    queued.push_back(event);
+                }
             }
-            Payload::Event(protocol::Event::Fatal(error)) => {
-                return Ok(protocol::Frame::response(
-                    request_id,
-                    Response::Error(error),
-                ));
+            Payload::Response(_) => {
+                if let Ok(mut pending) = pending.lock() {
+                    if let Some(reply) = pending.remove(&frame.request_id) {
+                        let _ = reply.send(Ok(frame));
+                    }
+                }
             }
-            Payload::Response(_) => return Ok(frame),
             Payload::Request(_) => {
-                return Err(SidecarError::InvalidResponse(
-                    "el sidecar envio una solicitud al host".to_string(),
-                ));
+                dead.store(true, Ordering::Release);
+                terminate_child(&child);
+                break;
             }
         }
     }

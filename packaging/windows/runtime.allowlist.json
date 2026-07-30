@@ -14,6 +14,7 @@
     "bin/64bit/obs-qsv-test.exe",
     "bin/64bit/obs-ffmpeg.dll",
     "bin/64bit/obs-x264.dll",
+    "bin/64bit/obs-x265.dll",
     "bin/64bit/obs-nvenc.dll",
     "bin/64bit/obs-qsv11.dll",
     "bin/64bit/win-wasapi.dll",
@@ -24,6 +25,8 @@
     "bin/64bit/avutil-60.dll",
     "bin/64bit/librist.dll",
     "bin/64bit/libx264-164.dll",
+    "bin/64bit/libx265.dll",
+    "bin/64bit/ffmpeg.exe",
     "bin/64bit/srt.dll",
     "bin/64bit/swresample-6.dll",
     "bin/64bit/swscale-9.dll",
@@ -49,5 +52,18 @@
     "obs-websocket.dll",
     "*virtualcam*.dll"
   ],
-  "denyExtensions": [".sys", ".msi", ".bat", ".cmd", ".ps1", ".pdb", ".lib", ".h"]
+  "denyExtensions": [".sys", ".msi", ".bat", ".cmd", ".ps1", ".pdb", ".lib", ".h"],
+  "requiredFiles": [
+    "bin/64bit/moonlit-recorder.exe",
+    "bin/64bit/moonlit-obs-bridge.dll",
+    "bin/64bit/obs.dll",
+    "bin/64bit/libobs-d3d11.dll",
+    "bin/64bit/libobs-winrt.dll",
+    "bin/64bit/obs-ffmpeg-mux.exe",
+    "bin/64bit/obs-x264.dll",
+    "bin/64bit/obs-x265.dll",
+    "bin/64bit/libx264-164.dll",
+    "bin/64bit/libx265.dll",
+    "bin/64bit/ffmpeg.exe"
+  ]
 }

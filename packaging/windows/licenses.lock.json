@@ -21,6 +21,18 @@
       "source": "https://code.videolan.org/videolan/x264"
     },
     {
+      "name": "x265",
+      "version": "runtime-selected",
+      "license": "GPL-2.0-or-later",
+      "source": "https://bitbucket.org/multicoreware/x265_git"
+    },
+    {
+      "name": "MoonLit H.264 proxy worker",
+      "version": "runtime-selected",
+      "license": "REQUIRES-CONFIGURE-AUDIT",
+      "source": "packaging/windows/media-runtime"
+    },
+    {
       "name": "msvc-redist-x64",
       "version": "runtime-selected",
       "license": "Microsoft redistribution terms",

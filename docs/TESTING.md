@@ -402,3 +402,11 @@ jobs:
 - GPU testing requires compatible hardware
 - Multi-monitor testing requires multiple monitors
 - Long stability tests (24h+) require dedicated machine
+
+## Executable CI
+
+The checked-in workflows are `.github/workflows/ci.yml` and
+`.github/workflows/release.yml`. The CI workflow runs frontend checks, locked
+portable crates, Windows clippy and the Windows test harness. The release
+workflow remains intentionally gated by approved runtime/license manifests and
+the real recorder self-test.

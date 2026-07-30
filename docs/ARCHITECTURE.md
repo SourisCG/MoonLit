@@ -8,6 +8,13 @@
 > mentioning the retired `CaptureService` contract are historical until those
 > services are implemented.
 
+> **V1 update (2026-07-29):** The host implementation now includes
+> `ConfigStore`, `StorageManager`, `LibraryStore`, `MediaJobService`, global
+> hotkey/tray services and system notifications. The recorder boundary is
+> protocol v2 and carries H.264/H.265, MP4/MKV, quality and audio metadata;
+> media samples remain inside the sidecar. The service examples below are
+> target interfaces and must not move audio or video buffers across IPC.
+
 ## Current Runtime Contract
 
 The current runtime has one backend factory and exposes only metadata over

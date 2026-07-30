@@ -8,6 +8,8 @@ use std::env;
 use std::io::{stdin, stdout, BufReader, BufWriter};
 use std::path::PathBuf;
 
+mod bridge;
+
 use moonlit_libobs_protocol as protocol;
 use protocol::{Frame, Payload, ProbeResult, Request, Response, SidecarError, StartRequest};
 use serde::Serialize;
@@ -36,7 +38,7 @@ fn run() -> Result<(), String> {
         return Err("--runtime-root debe ser un directorio absoluto existente".to_string());
     }
 
-    let engine = UnavailableEngine::new(runtime_root);
+    let engine = Engine::new(runtime_root);
     let input = stdin();
     let output = stdout();
     run_server(
@@ -51,7 +53,7 @@ fn run_self_test(arguments: &[String]) -> Result<(), String> {
     let runtime_root = argument_value(arguments, "--runtime-root")
         .map(PathBuf::from)
         .unwrap_or_default();
-    let report = UnavailableEngine::new(runtime_root).self_test();
+    let report = Engine::new(runtime_root).self_test();
     let json = serde_json::to_string(&report).map_err(|error| error.to_string())?;
     println!("{json}");
     Ok(())
@@ -70,6 +72,87 @@ trait ReplayEngine {
     fn save_replay(&mut self) -> Result<Response, SidecarError>;
     fn stop(&mut self) -> Result<Response, SidecarError>;
     fn self_test(&self) -> SelfTestReport;
+}
+
+enum Engine {
+    Bridge(bridge::BridgeEngine),
+    Unavailable(UnavailableEngine),
+}
+
+impl Engine {
+    fn new(runtime_root: PathBuf) -> Self {
+        match bridge::BridgeEngine::new(&runtime_root) {
+            Ok(engine) => Self::Bridge(engine),
+            Err(error) => Self::Unavailable(UnavailableEngine::with_note(runtime_root, error)),
+        }
+    }
+}
+
+impl ReplayEngine for Engine {
+    fn probe(&self) -> ProbeResult {
+        match self {
+            Self::Bridge(engine) => engine.probe().unwrap_or_else(|error| ProbeResult {
+                available: false,
+                sources: Vec::new(),
+                encoders: Vec::new(),
+                max_width: None,
+                max_height: None,
+                max_fps: None,
+                note: Some(error.message),
+                codecs: vec!["h264".to_string(), "hevc".to_string()],
+                formats: vec!["mp4".to_string(), "mkv".to_string()],
+                audio: protocol::AudioInfo::default(),
+            }),
+            Self::Unavailable(engine) => engine.probe(),
+        }
+    }
+
+    fn start(&mut self, request: StartRequest) -> Result<Response, SidecarError> {
+        match self {
+            Self::Bridge(engine) => engine.start(&request),
+            Self::Unavailable(engine) => engine.start(request),
+        }
+    }
+
+    fn save_replay(&mut self) -> Result<Response, SidecarError> {
+        match self {
+            Self::Bridge(engine) => engine.save(),
+            Self::Unavailable(engine) => engine.save_replay(),
+        }
+    }
+
+    fn stop(&mut self) -> Result<Response, SidecarError> {
+        match self {
+            Self::Bridge(engine) => engine.stop().map(|_| Response::Stopped),
+            Self::Unavailable(engine) => engine.stop(),
+        }
+    }
+
+    fn self_test(&self) -> SelfTestReport {
+        match self {
+            Self::Bridge(engine) => match engine.probe() {
+                Ok(probe) => SelfTestReport {
+                    version: VERSION.to_string(),
+                    protocol_version: protocol::PROTOCOL_VERSION,
+                    runtime_root: engine.runtime_root().to_path_buf(),
+                    ready: probe.available && !probe.sources.is_empty(),
+                    missing: Vec::new(),
+                    note: probe
+                        .note
+                        .unwrap_or_else(|| "Bridge inicializado".to_string()),
+                },
+                Err(error) => SelfTestReport {
+                    version: VERSION.to_string(),
+                    protocol_version: protocol::PROTOCOL_VERSION,
+                    runtime_root: engine.runtime_root().to_path_buf(),
+                    ready: false,
+                    missing: Vec::new(),
+                    note: error.message,
+                },
+            },
+            Self::Unavailable(engine) => engine.self_test(),
+        }
+    }
 }
 
 fn run_server<E: ReplayEngine, R: std::io::Read, W: std::io::Write>(
@@ -120,11 +203,21 @@ fn response_or_error(result: Result<Response, SidecarError>) -> Response {
 
 struct UnavailableEngine {
     runtime_root: PathBuf,
+    note: Option<String>,
 }
 
 impl UnavailableEngine {
-    fn new(runtime_root: PathBuf) -> Self {
-        Self { runtime_root }
+    fn with_note(runtime_root: PathBuf, note: String) -> Self {
+        Self {
+            runtime_root,
+            note: Some(note),
+        }
+    }
+
+    fn note(&self) -> String {
+        self.note
+            .clone()
+            .unwrap_or_else(|| "El bridge libobs no esta disponible".to_string())
     }
 
     fn required_runtime_files(&self) -> Vec<String> {
@@ -158,10 +251,23 @@ impl ReplayEngine for UnavailableEngine {
             max_height: None,
             max_fps: None,
             note: Some(if missing.is_empty() {
-                "El bridge libobs aun no esta habilitado en este build".to_string()
+                self.note()
             } else {
-                format!("Faltan componentes del runtime: {}", missing.join(", "))
+                format!(
+                    "{}; faltan componentes: {}",
+                    self.note(),
+                    missing.join(", ")
+                )
             }),
+            codecs: vec!["h264".to_string(), "hevc".to_string()],
+            formats: vec!["mp4".to_string(), "mkv".to_string()],
+            audio: protocol::AudioInfo {
+                available: false,
+                system_audio: false,
+                microphone: false,
+                application_audio: false,
+                note: Some("WASAPI aun no esta habilitado en este build".to_string()),
+            },
         }
     }
 
@@ -191,10 +297,9 @@ impl ReplayEngine for UnavailableEngine {
             version: VERSION.to_string(),
             protocol_version: protocol::PROTOCOL_VERSION,
             runtime_root: self.runtime_root.clone(),
-            ready: missing.is_empty(),
+            ready: false,
             missing,
-            note: "El build actual contiene solo el contrato; falta compilar el bridge libobs"
-                .to_string(),
+            note: self.note(),
         }
     }
 }

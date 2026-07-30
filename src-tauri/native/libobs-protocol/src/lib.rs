@@ -8,7 +8,7 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_STRING_BYTES: usize = 16 * 1024;
 
@@ -68,7 +68,24 @@ pub struct StartRequest {
     pub encoder: String,
     pub codec: String,
     pub format: String,
+    pub quality: String,
+    pub bitrate_kbps: Option<u32>,
+    pub audio: AudioStart,
     pub output_dir: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioStart {
+    pub system_enabled: bool,
+    pub microphone_enabled: bool,
+    pub system_device_id: Option<String>,
+    pub microphone_device_id: Option<String>,
+    pub system_gain_milli: u32,
+    pub microphone_gain_milli: u32,
+    pub system_muted: bool,
+    pub microphone_muted: bool,
+    pub bitrate_kbps: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -86,6 +103,12 @@ pub enum Response {
     ClipSaved {
         relative_path: String,
         duration_seconds: u32,
+        codec: String,
+        format: String,
+        width: Option<u32>,
+        height: Option<u32>,
+        fps: Option<u32>,
+        has_audio: bool,
     },
     Stopped,
     Pong,
@@ -101,6 +124,19 @@ pub struct ProbeResult {
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,
     pub max_fps: Option<u32>,
+    pub note: Option<String>,
+    pub codecs: Vec<String>,
+    pub formats: Vec<String>,
+    pub audio: AudioInfo,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioInfo {
+    pub available: bool,
+    pub system_audio: bool,
+    pub microphone: bool,
+    pub application_audio: bool,
     pub note: Option<String>,
 }
 
@@ -133,7 +169,18 @@ pub struct SidecarError {
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum Event {
     Heartbeat,
-    SourceEnded { source_id: String },
+    SourceEnded {
+        source_id: String,
+    },
+    BufferStatus {
+        buffered_seconds: u32,
+        can_save: bool,
+        dropped_frames: u64,
+    },
+    AudioDeviceChanged {
+        device_id: String,
+        available: bool,
+    },
     Fatal(SidecarError),
 }
 
@@ -175,7 +222,9 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<(), Protoc
     if frame.protocol_version != PROTOCOL_VERSION {
         return Err(ProtocolError::VersionMismatch(frame.protocol_version));
     }
-    let bytes = serde_json::to_vec(frame).map_err(ProtocolError::InvalidJson)?;
+    let value = serde_json::to_value(frame).map_err(ProtocolError::InvalidJson)?;
+    validate_value(&value)?;
+    let bytes = serde_json::to_vec(&value).map_err(ProtocolError::InvalidJson)?;
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(ProtocolError::InvalidLength(bytes.len()));
     }
@@ -203,11 +252,30 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Frame>, ProtocolErro
     }
     let mut bytes = vec![0_u8; length];
     reader.read_exact(&mut bytes)?;
-    let frame = serde_json::from_slice::<Frame>(&bytes).map_err(ProtocolError::InvalidJson)?;
+    let value =
+        serde_json::from_slice::<serde_json::Value>(&bytes).map_err(ProtocolError::InvalidJson)?;
+    validate_value(&value)?;
+    let frame = serde_json::from_value::<Frame>(value).map_err(ProtocolError::InvalidJson)?;
     if frame.protocol_version != PROTOCOL_VERSION {
         return Err(ProtocolError::VersionMismatch(frame.protocol_version));
     }
     Ok(Some(frame))
+}
+
+fn validate_value(value: &serde_json::Value) -> Result<(), ProtocolError> {
+    match value {
+        serde_json::Value::String(value) if value.len() > MAX_STRING_BYTES => {
+            Err(ProtocolError::InvalidLength(value.len()))
+        }
+        serde_json::Value::Array(values) => {
+            if values.len() > 4096 {
+                return Err(ProtocolError::InvalidLength(values.len()));
+            }
+            values.iter().try_for_each(validate_value)
+        }
+        serde_json::Value::Object(values) => values.values().try_for_each(validate_value),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -239,6 +307,9 @@ mod tests {
                 max_height: Some(1080),
                 max_fps: Some(60),
                 note: None,
+                codecs: vec!["h264".to_string(), "hevc".to_string()],
+                formats: vec!["mp4".to_string(), "mkv".to_string()],
+                audio: super::AudioInfo::default(),
             }),
         );
         let mut bytes = Vec::new();
@@ -256,6 +327,9 @@ mod tests {
                 max_height: Some(1080),
                 max_fps: Some(60),
                 note: None,
+                codecs: vec!["h264".to_string(), "hevc".to_string()],
+                formats: vec!["mp4".to_string(), "mkv".to_string()],
+                audio: super::AudioInfo::default(),
             }))
         );
     }
@@ -276,5 +350,20 @@ mod tests {
     fn rejects_a_truncated_length_prefix() {
         let error = read_frame(&mut Cursor::new(vec![1, 2])).expect_err("truncated prefix");
         assert!(matches!(error, super::ProtocolError::Io(_)));
+    }
+
+    #[test]
+    fn rejects_an_oversized_string_field() {
+        let frame = Frame::request(1, Request::Hello { parent_pid: None });
+        let mut bytes = Vec::new();
+        write_frame(&mut bytes, &frame).expect("write frame");
+        let mut oversized = serde_json::to_value(frame).expect("value");
+        oversized["payload"]["data"]["parentPid"] =
+            serde_json::Value::String("x".repeat(super::MAX_STRING_BYTES + 1));
+        let payload = serde_json::to_vec(&oversized).expect("json");
+        let mut framed = (payload.len() as u32).to_le_bytes().to_vec();
+        framed.extend(payload);
+        let error = read_frame(&mut Cursor::new(framed)).expect_err("oversized string");
+        assert!(matches!(error, super::ProtocolError::InvalidLength(_)));
     }
 }

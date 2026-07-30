@@ -3,9 +3,10 @@
 ## Status
 
 NSIS is the planned Windows distribution format, but release bundling is not
-enabled in `src-tauri/tauri.conf.json`. The release-only configuration is
-`src-tauri/tauri.windows.release.conf.json` and must not be used until the
-libobs runtime lock has status `approved`.
+enabled in `src-tauri/tauri.conf.json`. The standard configuration is
+`src-tauri/tauri.windows.release.conf.json`; the offline WebView2 variant is
+`src-tauri/tauri.windows.offline.conf.json`. Neither may be used until the
+libobs runtime, allowlist and license locks have status `approved`.
 
 Ordinary development remains FakeBackend-first and does not require OBS,
 FFmpeg or a staged recorder.
@@ -24,9 +25,12 @@ MoonLit/
     bin/64bit/
       moonlit-recorder.exe
       moonlit-obs-bridge.dll
+      ffmpeg.exe
       obs.dll
       libobs-d3d11.dll
       libobs-winrt.dll
+      obs-x265.dll
+      libx265.dll
       obs-ffmpeg-mux.exe
       <allowlisted dependency DLLs>
     obs-plugins/64bit/
@@ -68,7 +72,7 @@ components without license records. GPU driver DLLs such as
 4. Recreate `target/package-stage/windows-x86_64` from empty.
 5. Run `packaging/windows/Stage-Runtime.ps1` with the approved manifests.
 6. Inspect PE architecture/import closure and run recorder `--self-test --json`.
-7. Generate the unsigned runtime manifest and SBOM.
+7. Run `Generate-RuntimeManifest.ps1` and `Generate-Sbom.ps1`.
 8. Sign the staged MoonLit recorder, bridge and runtime DLLs in a protected
    signing environment.
 9. Generate the signed manifest and include license/source notices.
@@ -80,9 +84,9 @@ They must not use `Invoke-Expression`, `cmd /c`, user-provided command strings,
 
 ## WebView2
 
-The primary installer uses Tauri's `downloadBootstrapper` mode. A future
-offline installer may use WebView2's offline installer and will be a separate
-artifact because of its size. MoonLit does not use a fixed WebView2 runtime.
+The primary installer uses Tauri's `downloadBootstrapper` mode. The offline
+artifact uses WebView2's `offlineInstaller` mode and is built separately
+because of its size. MoonLit does not use a fixed WebView2 runtime.
 
 ## Launch Rules
 

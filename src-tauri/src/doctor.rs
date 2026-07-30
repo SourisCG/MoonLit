@@ -240,7 +240,12 @@ pub fn run_doctor() -> DoctorReport {
     #[cfg(not(target_os = "linux"))]
     let (wayland_display, x11_display) = (false, false);
 
-    let mut capabilities = vec!["fake-backend".to_string()];
+    let mut capabilities = vec![
+        "fake-backend".to_string(),
+        "h264-contract".to_string(),
+        "hevc-contract".to_string(),
+        "software-encoding-contract".to_string(),
+    ];
     let mut notes =
         vec!["Este diagnóstico no inicia una captura ni modifica el sistema.".to_string()];
 
@@ -257,7 +262,10 @@ pub fn run_doctor() -> DoctorReport {
         {
             capabilities.push("nvidia-gpu".to_string());
         } else {
-            notes.push("nvidia-smi no fue encontrado en PATH.".to_string());
+            notes.push(
+                "nvidia-smi no fue encontrado; MoonLit debe usar AMF, QuickSync o x264/x265 según el runtime disponible."
+                    .to_string(),
+            );
         }
     }
 

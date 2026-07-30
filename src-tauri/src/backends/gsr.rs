@@ -16,9 +16,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::traits::{
-    BackendCapabilities, BackendDescriptor, BackendError, BackendId, CaptureSource,
-    CaptureSourceKind, ClipArtifact, ClipKind, EncoderCapability, EncoderPreference, ReplayBackend,
-    ReplayConfig, VideoCodec,
+    AudioCapabilities, BackendCapabilities, BackendDescriptor, BackendError, BackendId,
+    CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, ContainerFormat, EncoderCapability,
+    EncoderPreference, ReplayBackend, ReplayConfig, VideoCodec,
 };
 use serde::Serialize;
 
@@ -171,6 +171,9 @@ impl GsrBackend {
                         None
                     },
                 }],
+                codecs: vec![VideoCodec::H264, VideoCodec::Hevc],
+                formats: vec![ContainerFormat::Mkv],
+                audio: AudioCapabilities::default(),
             },
             note: Some(note),
         }
@@ -187,6 +190,9 @@ impl GsrBackend {
                 max_resolution: None,
                 max_fps: None,
                 encoders: Vec::new(),
+                codecs: Vec::new(),
+                formats: Vec::new(),
+                audio: AudioCapabilities::default(),
             },
             note: Some(note.to_string()),
         }
@@ -294,6 +300,10 @@ impl ReplayBackend for LegacyGsrBackend {
             kind: CaptureSourceKind::Monitor,
             label: "Monitor via portal (GSR)".to_string(),
             is_default: true,
+            width: None,
+            height: None,
+            process_name: None,
+            available: true,
         }])
     }
 
@@ -381,6 +391,13 @@ impl ReplayBackend for LegacyGsrBackend {
                             path,
                             duration_seconds: process.config.buffer_seconds,
                             kind: ClipKind::Media,
+                            codec: process.config.codec.clone(),
+                            format: ContainerFormat::Mkv,
+                            width: process.config.resolution.as_ref().map(|value| value.width),
+                            height: process.config.resolution.as_ref().map(|value| value.height),
+                            fps: process.config.fps,
+                            has_audio: process.config.audio.system_enabled
+                                || process.config.audio.microphone_enabled,
                         });
                     }
                 }

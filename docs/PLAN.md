@@ -337,3 +337,30 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 - [NVENC SDK](https://developer.nvidia.com/nvidia-video-codec-sdk)
 - [AMD AMF](https://gpuopen.com/advanced-media-framework/)
 - [Intel Quick Sync](https://software.intel.com/content/www/us/en/develop/documentation/video-tutorial/getting-started-with-intel-quick-sync-video.html)
+
+## V1 Execution Status (2026-07-29)
+
+The v1 scope is now explicitly blocked on both H.264 and H.265/HEVC. The
+production matrix is NVENC, AMF, QuickSync, x264 and x265, with x264/x265 as
+CPU fallbacks. MP4 and MKV are required for both codecs. H.265 clips retain
+their original file and receive an H.264 proxy for WebView2 preview when the
+system cannot decode HEVC.
+
+Implemented host-side v1 lanes:
+
+- Versioned configuration persistence with atomic writes and migration hooks.
+- Configurable `%USERPROFILE%\\Videos\\MoonLit` storage root and cleanup.
+- SQLite clip metadata, search, metadata updates, deletion and reconciliation foundation.
+- Protocol v2 metadata for codecs, containers, quality, audio and unsolicited events.
+- Dynamic bridge loading in `moonlit-recorder.exe` with fail-closed ABI checks.
+- FakeBackend coverage for H.264/H.265, MP4/MKV, audio settings and UI flows.
+- F8 global shortcut, tray menu, Windows notification plugin and close-to-tray behavior.
+- H.264 proxy worker contract, runtime manifest, CycloneDX SBOM and Authenticode scripts.
+
+Still required before v1 release, but not post-v1 features:
+
+- Build and validate the pinned libobs runtime and the real WGC/WASAPI bridge.
+- Implement the bridge's actual capture, encoding, replay and MP4/MKV muxing.
+- Validate hardware encoders, x264/x265 real-time profiles, A/V sync and proxy output.
+- Approve the exact runtime closure, complete licenses, SBOM contents and signatures.
+- Produce clean-machine installers and complete the Windows/GPU/soak validation gates.

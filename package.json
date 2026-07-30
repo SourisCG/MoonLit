@@ -13,10 +13,15 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build:windows": "tauri build --config src-tauri/tauri.windows.release.conf.json",
+    "tauri:build:windows:offline": "tauri build --config src-tauri/tauri.windows.offline.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
