@@ -21,6 +21,7 @@ public:
 	virtual bool open(QString *error = nullptr) = 0;
 	virtual bool reload(QString *error = nullptr) = 0;
 	virtual QVector<Clip> list(bool includeMissing = true) const = 0;
+	virtual QVector<Clip> search(const QString &query, bool includeMissing = true) const = 0;
 	virtual std::optional<Clip> find(const QString &id) const = 0;
 	virtual std::optional<Clip> findByMediaPath(const QString &mediaPath) const = 0;
 	virtual std::optional<Clip> upsert(Clip clip, QString *error = nullptr) = 0;

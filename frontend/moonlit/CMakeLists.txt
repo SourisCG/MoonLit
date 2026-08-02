@@ -27,12 +27,19 @@ target_sources(
     media/ThumbnailService.hpp
     output/EncoderResolver.cpp
     output/EncoderResolver.hpp
+    persistence/ClipJson.hpp
     persistence/ClipRepository.hpp
     persistence/FileClipRepository.cpp
     persistence/FileClipRepository.hpp
+    persistence/JsonImport.cpp
+    persistence/JsonImport.hpp
+    persistence/SqliteClipRepository.cpp
+    persistence/SqliteClipRepository.hpp
     services/ClipJobs.cpp
     services/ClipJobs.hpp
 )
+
+add_subdirectory("${CMAKE_SOURCE_DIR}/deps/sqlite" "${CMAKE_BINARY_DIR}/deps/sqlite")
 
 target_include_directories(moonlit-clip-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
@@ -47,6 +54,8 @@ target_link_libraries(
     FFmpeg::avformat
     FFmpeg::avutil
     FFmpeg::swscale
+  PRIVATE
+    sqlite3
 )
 
 set_target_properties(moonlit-clip-core PROPERTIES AUTOMOC ON FOLDER frontend)

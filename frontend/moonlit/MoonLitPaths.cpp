@@ -63,6 +63,11 @@ QString MoonLitPaths::indexPath() const
 	return QDir(clipsPath()).filePath(QStringLiteral("index.json"));
 }
 
+QString MoonLitPaths::databasePath() const
+{
+	return QDir(rootPath_).filePath(QStringLiteral("MoonLit.db"));
+}
+
 QString MoonLitPaths::thumbnailsPath() const
 {
 	return QDir(rootPath_).filePath(QStringLiteral("thumbnails"));

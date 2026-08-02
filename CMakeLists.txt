@@ -34,4 +34,9 @@ add_subdirectory(test/test-input)
 
 add_subdirectory(frontend)
 
+if(MOONLIT_BUILD)
+  enable_testing()
+  add_subdirectory(test)
+endif()
+
 message_configuration()

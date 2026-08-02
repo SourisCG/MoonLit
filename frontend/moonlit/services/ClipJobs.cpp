@@ -81,16 +81,7 @@ void ClipJobs::search(const QString &query)
 		return;
 	}
 	repository_.reconcile(nullptr, &error);
-
-	const QString trimmed = query.trimmed();
-	QVector<Clip> clips;
-	for (const Clip &clip : repository_.list(true)) {
-		if (trimmed.isEmpty() || clip.title.contains(trimmed, Qt::CaseInsensitive) ||
-		    clip.mediaPath.contains(trimmed, Qt::CaseInsensitive)) {
-			clips.append(clip);
-		}
-	}
-	emit searchResults(clips, query);
+	emit searchResults(repository_.search(query), query);
 }
 
 void ClipJobs::exportClip(const QString &id, qint64 startMs, qint64 endMs)

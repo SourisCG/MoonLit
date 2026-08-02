@@ -10,7 +10,7 @@
 #include <moonlit/editor/ClipExportService.hpp>
 #include <moonlit/media/MediaProbe.hpp>
 #include <moonlit/media/ThumbnailService.hpp>
-#include <moonlit/persistence/FileClipRepository.hpp>
+#include <moonlit/persistence/SqliteClipRepository.hpp>
 
 namespace MoonLit {
 
@@ -47,7 +47,7 @@ signals:
 
 private:
 	MoonLitPaths paths_;
-	FileClipRepository repository_;
+	SqliteClipRepository repository_;
 	FfmpegMediaProbe probe_;
 	FfmpegThumbnailService thumbnails_;
 	FfmpegClipExportService exporter_;

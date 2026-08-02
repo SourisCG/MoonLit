@@ -13,6 +13,7 @@ public:
 	const QString &rootPath() const;
 	QString clipsPath() const;
 	QString indexPath() const;
+	QString databasePath() const;
 	QString thumbnailsPath() const;
 	QString exportsPath() const;
 	QString temporaryPath() const;

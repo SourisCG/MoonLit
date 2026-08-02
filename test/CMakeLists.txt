@@ -1,3 +1,7 @@
+if(MOONLIT_BUILD)
+  add_subdirectory(moonlit)
+endif()
+
 if(BUILD_TESTS)
   add_subdirectory(test-input)
 
