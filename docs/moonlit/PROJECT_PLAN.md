@@ -95,7 +95,7 @@ media and query code must not depend on `OBSBasic` so it can be tested separatel
 
 ### P0 - Durable Plan And Baseline
 
-Status: in progress
+Status: complete
 
 Deliverables:
 
@@ -109,7 +109,7 @@ Exit criteria:
 
 ### P1 - Product Identity And Safe Build
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -134,6 +134,10 @@ Acceptance:
 - OBS and MoonLit can run together.
 - MoonLit has no idle update/network behavior.
 - A clean package contains no forbidden capture artifacts.
+
+Current result: the MoonLit x64 preset, product identity and minimal module
+selection are implemented. Portable staging, denylist validation and the
+release package remain pending.
 
 ### P2 - Output Configuration And Encoder Resolver
 
@@ -164,7 +168,7 @@ Acceptance:
 
 ### P3 - Robust Capture State Machine
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -191,9 +195,13 @@ Acceptance:
 - Alt+Tab, minimize, secure desktop and protected content remain black.
 - A recreated game window does not create a stale capture.
 
+Current result: detector identity checks, WGC health, monitor fallback gating,
+shield ordering and private runtime sources are implemented. Live windowed,
+borderless, Alt+Tab and protected-content testing remains pending.
+
 ### P4 - Independent Audio Graph
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -217,9 +225,13 @@ Acceptance:
 - No game audio duplication.
 - Device disconnect, Discord restart and microphone changes recover cleanly.
 
+Current result: process-loopback audio now carries PID, HWND and creation-time
+identity and is isolated from the window capture source. Four-track routing
+and device-recovery testing remain pending.
+
 ### P5 - Replay Lifecycle And Local Library
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -246,9 +258,13 @@ Acceptance:
 - Missing files, duplicate imports and thumbnail failures are recoverable.
 - Large libraries do not block the UI.
 
+Current result: replay save signaling, local ingest, metadata, thumbnails,
+search, reveal, trash and reconciliation foundations are implemented. The
+current index is atomic JSON; SQLite/FTS5 and background work remain pending.
+
 ### P6 - Basic Editor And Export
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -273,6 +289,10 @@ Acceptance:
 - Original MKV is never modified.
 - Cancelled or failed exports leave no corrupt final file.
 - Final metadata and duration match the selected range.
+
+Current result: keyframe-aligned MP4 export with trim controls is implemented.
+Background export, cancellation, verification and fractional-duration tests
+remain pending.
 
 ### P7 - Tray, Startup And Product UI
 
@@ -362,7 +382,10 @@ Acceptance:
 
 | Date | Phase | Result | Commit |
 |---|---|---|---|
-| 2026-08-02 | P0 | Plan document created; implementation starting | pending |
+| 2026-08-02 | P0 | Plan document created and committed | 2bc158d86 |
+| 2026-08-02 | P1 | Product identity, Windows x64 preset and clip-core foundation implemented; packaging pending | bbdbcf1c7 |
+| 2026-08-02 | P3/P4 | Capture privacy/lifecycle and process-audio foundations implemented; runtime smoke pending | 97f3b714a |
+| 2026-08-02 | P5/P6 | Replay library, metadata, thumbnails, search and export UI foundations implemented; SQLite/background work pending | 9fbd8101b |
 
 ## GitHub Release Procedure
 
