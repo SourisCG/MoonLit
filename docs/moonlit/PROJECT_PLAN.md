@@ -28,7 +28,7 @@ Cloud sync, accounts, social integrations and Linux support are explicitly defer
 ## Repository Baseline
 
 - OBS base commit: `0052d024f` (`32.2.1`).
-- Current MoonLit commit: `841c663ec`.
+- Current MoonLit commit: `a6cdd107a` (release tag `v1.0.0`).
 - Current branch: `main`.
 - Legacy branch: `legacy/rust-tauri-v2`.
 - Legacy tag: `legacy-rust-tauri-v2-2026-08-01`.
@@ -303,7 +303,11 @@ Acceptance:
 Current result: keyframe-aligned MP4 export with trim controls is implemented,
 export runs in the background with progress and cancellation, and the output
 duration is verified against the selected range with tolerance-based unit
-tests. Fractional-duration and live trim testing remains in the manual matrix.
+tests. The clip editor now has a frame-strip preview with seek and draggable
+trim handles, plus mute and gain controls that are saved as clip metadata and
+applied at export time (audio is re-encoded to AAC). 17 unit tests pass,
+including end-to-end export tests over a generated h264/aac clip.
+Fractional-duration and live trim testing remains in the manual matrix.
 
 ### P7 - Tray, Startup And Product UI
 
@@ -368,9 +372,12 @@ Current result: `package.ps1` produces the staging (no PDBs), runs the
 release-gate audit, builds the 40 MB portable ZIP and a signed 28 MB NSIS
 installer into `%LOCALAPPDATA%\Programs\MoonLit`; silent install and uninstall
 verified on this host, preserving `%APPDATA%\MoonLit` and
-`%LOCALAPPDATA%\MoonLit` (clips/database). Signing uses the self-signed
-"MoonLit Development" certificate (trusted on this host); end-user machines
-need the certificate installed to Trusted Root, or a switch to a publicly
+`%LOCALAPPDATA%\MoonLit` (clips/database). The ZIP is truly portable: a
+`portable_mode` marker at the app root keeps OBS config in `config/` and
+MoonLit data in `MoonLitData/` next to the executable (verified: "Portable
+mode: true"). Signing uses the self-signed "MoonLit Development" certificate
+(trusted on this host); other machines need the certificate installed to
+Trusted Root (procedure in `MANUAL_MATRIX.md`), or a switch to a publicly
 trusted certificate later.
 
 ### P9 - Test Matrix And GitHub Publication
@@ -394,15 +401,14 @@ Acceptance:
 - No forbidden runtime artifacts.
 - GitHub contains both legacy recovery refs and the complete MoonLit main history.
 
-Current result: 11 unit tests pass under ctest (SQLite round-trip, FTS5,
-migration, export-math tolerances, MoonLitPaths); the manual matrix is
-documented in `MANUAL_MATRIX.md` with the host-feasible rows passed. The
-runtime starts and exits cleanly with no CodeIntegrity or Defender events.
-`legacy/rust-tauri-v2`, `archive/pre-obs-reset` and the legacy tag were pushed
-first and verified, then `main` was force-pushed with lease from the known
-`4ddee14d` to `841c663ec` (https://github.com/SourisCG/MoonLit). Remaining
-manual rows (capture/audio/library with a real game window) are pending user
-execution.
+Current result: 17 unit tests pass under ctest (SQLite round-trip, FTS5,
+migration, export-math tolerances and gain, MoonLitPaths portable detection,
+and end-to-end media tests: frame strip, trim export, full export, audio
+edits). The automated smoke matrix (`matrix-smoke.ps1`) passes S3/S4/S7; the
+manual matrix is documented in `MANUAL_MATRIX.md` including the signing
+procedure for other machines. Release `v1.0.0` is published on GitHub with the
+portable ZIP, installer and checksums. Remaining manual rows (capture/audio
+with a real game window) are pending user execution.
 
 ## Explicitly Deferred
 
@@ -432,6 +438,9 @@ execution.
 | 2026-08-02 | P8 | Portable ZIP and NSIS installer pipeline with data-preserving uninstall | 5ae297c7d |
 | 2026-08-02 | P9 | MoonLitPaths tests, manual matrix documented, plan updated | 841c663ec |
 | 2026-08-02 | P9 | GitHub publication: legacy refs and tag pushed first, then `main` force-pushed with lease (4ddee14d -> 841c663ec) | published |
+| 2026-08-02 | P6 | Clip editor: frame-strip preview, trim handles, mute/gain with AAC re-encode; media tests | aebd9853f |
+| 2026-08-02 | P8 | True portable ZIP (self-contained config and data) | a6cdd107a |
+| 2026-08-02 | P9 | Signing procedure docs, automated matrix smoke, release v1.0.0 published | published |
 
 ## GitHub Release Procedure
 
