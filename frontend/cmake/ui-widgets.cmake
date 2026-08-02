@@ -56,6 +56,8 @@ target_sources(
     widgets/MoonLitDashboard.hpp
     widgets/MoonLitGameDetector.cpp
     widgets/MoonLitGameDetector.hpp
+    widgets/MoonLitLibraryWidget.cpp
+    widgets/MoonLitLibraryWidget.hpp
     widgets/MoonLitShell.cpp
     widgets/OBSMainWindow.hpp
     widgets/OBSProjector.cpp

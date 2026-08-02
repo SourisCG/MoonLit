@@ -93,7 +93,11 @@ void OBSBasic::StartReplayBuffer()
 
 	OnEvent(OBS_FRONTEND_EVENT_REPLAY_BUFFER_STARTING);
 
+	/* MoonLit capture sources are runtime-only and must not enter the saved
+	 * scene collection when replay starts. */
+	disableSaving++;
 	SaveProject();
+	disableSaving--;
 
 	if (outputHandler->StartReplayBuffer() && os_atomic_load_bool(&recording_paused)) {
 		ShowReplayBufferPauseWarning();
@@ -122,7 +126,9 @@ void OBSBasic::StopReplayBuffer()
 		return;
 	}
 
+	disableSaving++;
 	SaveProject();
+	disableSaving--;
 
 	if (outputHandler->ReplayBufferActive()) {
 		outputHandler->StopReplayBuffer(replayBufferStopping);
@@ -171,17 +177,18 @@ void OBSBasic::ReplayBufferSaved()
 	if (!outputHandler || !outputHandler->replayBuffer) {
 		return;
 	}
-	if (!outputHandler->ReplayBufferActive()) {
-		return;
-	}
-
 	calldata_t cd = {0};
 	proc_handler_t *ph = obs_output_get_proc_handler(outputHandler->replayBuffer);
 	proc_handler_call(ph, "get_last_replay", &cd);
 	std::string path = calldata_string(&cd, "path");
+	if (path.empty()) {
+		calldata_free(&cd);
+		return;
+	}
 	QString msg = QTStr("Basic.StatusBar.ReplayBufferSavedTo").arg(QT_UTF8(path.c_str()));
 	ShowStatusBarMessage(msg);
 	lastReplay = path;
+	emit ReplayClipSaved(QT_UTF8(path.c_str()));
 	calldata_free(&cd);
 
 	OnEvent(OBS_FRONTEND_EVENT_REPLAY_BUFFER_SAVED);
