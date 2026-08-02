@@ -3,6 +3,34 @@
 Every row below must be executed on the target hardware (host or clean VM)
 with a signed package. Results go in the right-hand column.
 
+## Signing And Other Machines
+
+The package is signed with the self-signed "MoonLit Development" certificate
+(`.deps/certs/moonlit-dev.pfx`, gitignored). On this host the certificate is
+already installed in Trusted Root and Trusted Publisher, so the app runs
+without prompts. On any other machine:
+
+1. Export the certificate: `certutil -exportPFX .deps\certs\moonlit-dev.pfx` or
+   from the store: `certutil -user -exportPFX My MoonLit Development moonlit.pfx`.
+2. Install it for the current user (no admin needed):
+   - `certutil -addstore -user Root moonlit.cer`
+   - `certutil -addstore -user TrustedPublisher moonlit.cer`
+   (Or double-click the `.cer` and choose "Install Certificate" > Current User >
+   "Trusted Root Certification Authorities" and "Trusted Publishers".)
+3. Defender/SmartScreen may still show an "Unknown publisher" warning for a
+   self-signed certificate until it is trusted locally. A publicly trusted
+   certificate (e.g. Azure Trusted Signing) removes that warning everywhere;
+   `sign.ps1` accepts the certificate path as a parameter.
+
+Rows M1-M3 verify this on a clean machine (no VM available on this host;
+marked PENDING).
+
+| ID | Check | Result |
+|---|---|---|
+| M1 | On a clean machine: install the certificate (steps above), run the portable ZIP | PENDING |
+| M2 | On a clean machine: run the installer; Windows shows no hard block (only the known-publisher caveat for self-signed) | PENDING |
+| M3 | No Defender detection after installing and running the package | PENDING |
+
 ## Build And Startup
 
 | ID | Check | Result |
