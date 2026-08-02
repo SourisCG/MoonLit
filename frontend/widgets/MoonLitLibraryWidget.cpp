@@ -11,13 +11,17 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMetaObject>
 #include <QProcess>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QThread>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -45,6 +49,11 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
         QPushButton:hover { background: #303746; }
         QPushButton:disabled { color: #697180; background: #1d2027; }
     )"));
+
+	searchDebounceTimer_ = new QTimer(this);
+	searchDebounceTimer_->setSingleShot(true);
+	searchDebounceTimer_->setInterval(300);
+	connect(searchDebounceTimer_, &QTimer::timeout, this, &MoonLitLibraryWidget::refresh);
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(28, 24, 28, 24);
@@ -101,6 +110,9 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	exportButton_ = new QPushButton(QStringLiteral("Exportar MP4"), this);
 	exportButton_->setEnabled(false);
 	details->addWidget(exportButton_);
+	cancelButton_ = new QPushButton(QStringLiteral("Cancelar"), this);
+	cancelButton_->setEnabled(false);
+	details->addWidget(cancelButton_);
 	details->addStretch(1);
 	content->addLayout(details, 1);
 	root->addLayout(content, 1);
@@ -112,15 +124,38 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 
 	connect(backButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::backRequested);
 	connect(refreshButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::refresh);
-	connect(searchEdit_, &QLineEdit::textChanged, this, &MoonLitLibraryWidget::refresh);
+	connect(searchEdit_, &QLineEdit::textChanged, this, [this]() { searchDebounceTimer_->start(); });
 	connect(clipList_, &QListWidget::currentRowChanged, this, &MoonLitLibraryWidget::updateSelection);
 	connect(clipList_, &QListWidget::itemDoubleClicked, this, [this]() { openSelected(); });
 	connect(openButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::openSelected);
 	connect(revealButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::revealSelected);
 	connect(removeButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::removeSelected);
 	connect(exportButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::exportSelected);
+	connect(cancelButton_, &QPushButton::clicked, this,
+		[this]() { setStatus(QStringLiteral("Cancelando...")); jobs_->cancelExport(); });
+
+	workerThread_ = new QThread(this);
+	jobs_ = new MoonLit::ClipJobs(paths_);
+	jobs_->moveToThread(workerThread_);
+	connect(workerThread_, &QThread::finished, jobs_, &QObject::deleteLater);
+	connect(jobs_, &MoonLit::ClipJobs::libraryLoaded, this, &MoonLitLibraryWidget::onLibraryLoaded);
+	connect(jobs_, &MoonLit::ClipJobs::clipIngested, this, &MoonLitLibraryWidget::onClipIngested);
+	connect(jobs_, &MoonLit::ClipJobs::clipRemoved, this, &MoonLitLibraryWidget::onClipRemoved);
+	connect(jobs_, &MoonLit::ClipJobs::searchResults, this, &MoonLitLibraryWidget::onSearchResults);
+	connect(jobs_, &MoonLit::ClipJobs::exportProgress, this, &MoonLitLibraryWidget::onExportProgress);
+	connect(jobs_, &MoonLit::ClipJobs::exportFinished, this, &MoonLitLibraryWidget::onExportFinished);
+	workerThread_->start();
 
 	refresh();
+}
+
+MoonLitLibraryWidget::~MoonLitLibraryWidget()
+{
+	if (workerThread_ && workerThread_->isRunning()) {
+		QMetaObject::invokeMethod(jobs_, []() {}, Qt::BlockingQueuedConnection);
+		workerThread_->quit();
+		workerThread_->wait();
+	}
 }
 
 void MoonLitLibraryWidget::setStatus(const QString &status, bool error)
@@ -131,22 +166,44 @@ void MoonLitLibraryWidget::setStatus(const QString &status, bool error)
 
 void MoonLitLibraryWidget::refresh()
 {
-	QString error;
-	if (!repository_.open(&error) && !repository_.reload(&error)) {
-		setStatus(error, true);
+	if (!jobs_)
 		return;
-	}
 
-	repository_.reconcile(nullptr, &error);
-	const QString query = searchEdit_ ? searchEdit_->text().trimmed() : QString();
-	const auto clips = repository_.list(true);
+	const QString query = searchEdit_->text().trimmed();
+	if (query.isEmpty())
+		QMetaObject::invokeMethod(jobs_, [this]() { jobs_->reload(); }, Qt::QueuedConnection);
+	else
+		QMetaObject::invokeMethod(jobs_, [this, query]() { jobs_->search(query); }, Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::ingestClip(const QString &path)
+{
+	if (path.isEmpty() || !jobs_)
+		return;
+
+	setStatus(QStringLiteral("Agregando clip..."));
+	QMetaObject::invokeMethod(jobs_, [this, path]() { jobs_->ingest(path); }, Qt::QueuedConnection);
+}
+
+std::optional<MoonLit::Clip> MoonLitLibraryWidget::selectedClip() const
+{
+	const QListWidgetItem *item = clipList_->currentItem();
+	if (!item)
+		return std::nullopt;
+
+	const QString id = item->data(Qt::UserRole).toString();
+	for (const MoonLit::Clip &clip : clips_) {
+		if (clip.id == id)
+			return clip;
+	}
+	return std::nullopt;
+}
+
+void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
+{
+	clips_ = clips;
 	clipList_->clear();
 	for (const MoonLit::Clip &clip : clips) {
-		if (!query.isEmpty() && !clip.title.contains(query, Qt::CaseInsensitive) &&
-		    !clip.mediaPath.contains(query, Qt::CaseInsensitive)) {
-			continue;
-		}
-
 		auto *item = new QListWidgetItem(clipSummary(clip), clipList_);
 		item->setData(Qt::UserRole, clip.id);
 		if (QFileInfo::exists(clip.thumbnailPath))
@@ -159,52 +216,49 @@ void MoonLitLibraryWidget::refresh()
 	updateSelection();
 }
 
-void MoonLitLibraryWidget::ingestClip(const QString &path)
+void MoonLitLibraryWidget::onLibraryLoaded(QVector<MoonLit::Clip> clips, const QString &error)
 {
-	if (path.isEmpty())
-		return;
-
-	QString error;
-	if (!repository_.open(&error)) {
+	if (!error.isEmpty())
 		setStatus(error, true);
-		return;
-	}
-	if (repository_.findByMediaPath(path)) {
-		refresh();
-		return;
-	}
+	populateList(clips);
+}
 
-	MoonLit::Clip clip = MoonLit::Clip::create(path);
-	if (const auto metadata = probe_.probe(path, &error))
-		clip.metadata = *metadata;
-	else
+void MoonLitLibraryWidget::onClipIngested(const QString &id, const QString &error)
+{
+	if (!error.isEmpty())
 		setStatus(error, true);
-
-	clip.thumbnailPath = paths_.thumbnailPath(clip.id);
-	const auto stored = repository_.upsert(clip, &error);
-	if (!stored) {
-		setStatus(error, true);
-		return;
-	}
-
-	QString thumbnailError;
-	const qint64 timestamp = stored->metadata.durationMs > 0 ? stored->metadata.durationMs / 4 : 0;
-	MoonLit::ThumbnailOptions options;
-	options.timestampMs = timestamp;
-	if (!thumbnails_.writeThumbnail(stored->mediaPath, stored->thumbnailPath, options, &thumbnailError))
-		setStatus(QStringLiteral("Clip guardado; thumbnail pendiente: %1").arg(thumbnailError), true);
-	else
-		setStatus(QStringLiteral("Clip guardado en la biblioteca"));
-
 	refresh();
 }
 
-std::optional<MoonLit::Clip> MoonLitLibraryWidget::selectedClip() const
+void MoonLitLibraryWidget::onClipRemoved(const QString &id, const QString &error)
 {
-	const QListWidgetItem *item = clipList_->currentItem();
-	if (!item)
-		return std::nullopt;
-	return repository_.find(item->data(Qt::UserRole).toString());
+	if (!error.isEmpty())
+		setStatus(error, true);
+	refresh();
+}
+
+void MoonLitLibraryWidget::onSearchResults(QVector<MoonLit::Clip> clips, const QString &query)
+{
+	if (!query.trimmed().isEmpty())
+		setStatus(QStringLiteral("Resultados para \"%1\"").arg(query.trimmed()));
+	populateList(clips);
+}
+
+void MoonLitLibraryWidget::onExportProgress(double fraction)
+{
+	setStatus(QStringLiteral("Exportando... %1 %").arg(qRound(fraction * 100.0)));
+}
+
+void MoonLitLibraryWidget::onExportFinished(bool succeeded, bool cancelled, const QString &outputPath,
+					    const QString &error)
+{
+	cancelButton_->setEnabled(false);
+	if (cancelled)
+		setStatus(QStringLiteral("Exportacion cancelada"));
+	else if (succeeded)
+		setStatus(QStringLiteral("Exportacion terminada: %1").arg(outputPath));
+	else
+		setStatus(error, true);
 }
 
 void MoonLitLibraryWidget::updateSelection()
@@ -269,12 +323,7 @@ void MoonLitLibraryWidget::removeSelected()
 		return;
 	}
 
-	QString error;
-	if (!repository_.remove(clip->id, &error)) {
-		setStatus(error, true);
-		return;
-	}
-	refresh();
+	QMetaObject::invokeMethod(jobs_, [this, id = clip->id]() { jobs_->removeClip(id); }, Qt::QueuedConnection);
 }
 
 void MoonLitLibraryWidget::exportSelected()
@@ -290,16 +339,12 @@ void MoonLitLibraryWidget::exportSelected()
 		return;
 	}
 
-	MoonLit::ClipExportRequest request;
-	request.sourcePath = clip->mediaPath;
-	request.destinationPath = paths_.exportPath(clip->id, QStringLiteral("mp4"));
-	request.startMs = static_cast<qint64>(start) * 1000;
-	request.endMs = end > 0 ? static_cast<qint64>(end) * 1000 : -1;
-	const MoonLit::ClipExportResult result = exporter_.exportClip(request);
-	if (!result.succeeded) {
-		setStatus(result.error, true);
-		return;
-	}
-
-	setStatus(QStringLiteral("Exportacion terminada: %1").arg(result.outputPath));
+	cancelButton_->setEnabled(true);
+	setStatus(QStringLiteral("Exportando..."));
+	QMetaObject::invokeMethod(jobs_,
+				  [this, id = clip->id, startMs = static_cast<qint64>(start) * 1000,
+				   endMs = end > 0 ? static_cast<qint64>(end) * 1000 : -1]() {
+					  jobs_->exportClip(id, startMs, endMs);
+				  },
+				  Qt::QueuedConnection);
 }

@@ -10,12 +10,15 @@ enum class ClipExportMode {
 	FastKeyframeAligned,
 };
 
+using ProgressCallback = std::function<void(double)>;
+
 struct ClipExportRequest {
 	QString sourcePath;
 	QString destinationPath;
 	qint64 startMs{0};
 	qint64 endMs{-1};
 	ClipExportMode mode{ClipExportMode::FastKeyframeAligned};
+	ProgressCallback progress;
 };
 
 struct ClipExportResult {

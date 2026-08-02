@@ -30,6 +30,8 @@ target_sources(
     persistence/ClipRepository.hpp
     persistence/FileClipRepository.cpp
     persistence/FileClipRepository.hpp
+    services/ClipJobs.cpp
+    services/ClipJobs.hpp
 )
 
 target_include_directories(moonlit-clip-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
@@ -47,4 +49,4 @@ target_link_libraries(
     FFmpeg::swscale
 )
 
-set_target_properties(moonlit-clip-core PROPERTIES FOLDER frontend)
+set_target_properties(moonlit-clip-core PROPERTIES AUTOMOC ON FOLDER frontend)

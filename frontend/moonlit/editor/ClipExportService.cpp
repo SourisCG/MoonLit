@@ -220,7 +220,6 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 		setError(result, message);
 		return result;
 	};
-
 	const QByteArray encodedDestination = QFile::encodeName(request.destinationPath);
 	int outputContextResult =
 		avformat_alloc_output_context2(&output.context, nullptr, nullptr, encodedDestination.constData());
@@ -272,6 +271,8 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 
 	const int64_t endUs = request.endMs >= 0 ? av_rescale_q(request.endMs, AVRational{1, 1000}, AV_TIME_BASE_Q)
 						 : AV_NOPTS_VALUE;
+	const int64_t startUs = request.startMs > 0 ? av_rescale_q(request.startMs, AVRational{1, 1000}, AV_TIME_BASE_Q)
+						    : 0;
 	std::vector<int64_t> streamOffsets(input->nb_streams, AV_NOPTS_VALUE);
 	AVPacket *packet = av_packet_alloc();
 	if (!packet) {
@@ -280,6 +281,7 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 
 	bool cancelled = false;
 	int readResult = 0;
+	double lastProgress = 0.0;
 	while ((readResult = av_read_frame(input.get(), packet)) >= 0) {
 		if (shouldCancel && shouldCancel()) {
 			cancelled = true;
@@ -322,6 +324,21 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 		if (writeResult < 0) {
 			av_packet_free(&packet);
 			return fail(QStringLiteral("Unable to write export packet: %1").arg(ffmpegError(writeResult)));
+		}
+
+		if (request.progress) {
+			const double currentUs = static_cast<double>(timestampUs);
+			double fraction = 0.0;
+			if (endUs != AV_NOPTS_VALUE) {
+				const double span = static_cast<double>(std::max<int64_t>(1, endUs - startUs));
+				fraction = std::clamp((currentUs - static_cast<double>(startUs)) / span, 0.0, 1.0);
+			} else if (input->duration > 0) {
+				fraction = std::clamp(currentUs / static_cast<double>(input->duration), 0.0, 1.0);
+			}
+			if (fraction > lastProgress + 0.02) {
+				lastProgress = fraction;
+				request.progress(fraction);
+			}
 		}
 	}
 	av_packet_free(&packet);
