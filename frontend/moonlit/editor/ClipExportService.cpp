@@ -1,5 +1,7 @@
 #include "ClipExportService.hpp"
 
+#include "ExportMath.hpp"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -18,6 +20,12 @@ extern "C" {
 
 namespace MoonLit {
 namespace {
+
+/* Keyframe-aligned trimming starts at a keyframe at or before the requested
+ * point, so the export may be up to one GOP longer than the range; it should
+ * never be meaningfully shorter (that indicates dropped packets). */
+constexpr qint64 kTrimStartToleranceMs = 500;
+constexpr qint64 kTrimEndToleranceMs = 10000;
 
 struct FormatContextDeleter {
 	void operator()(AVFormatContext *context) const noexcept
@@ -155,7 +163,7 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 		setError(result, QStringLiteral("Source and destination paths are required"));
 		return result;
 	}
-	if (request.startMs < 0 || (request.endMs >= 0 && request.endMs <= request.startMs)) {
+	if (!exportmath::isRangeValid(request.startMs, request.endMs)) {
 		setError(result, QStringLiteral("Invalid export range"));
 		return result;
 	}
@@ -358,6 +366,16 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 	QString verificationError;
 	if (!verifyOutput(partPath, result.durationMs, verificationError)) {
 		return fail(verificationError);
+	}
+
+	const qint64 sourceDurationMs = mediaDurationMs(*input);
+	const qint64 expectedRangeMs =
+		exportmath::expectedDurationMs(request.startMs, request.endMs, sourceDurationMs);
+	if (!exportmath::durationMatches(result.durationMs, expectedRangeMs, kTrimStartToleranceMs,
+					 kTrimEndToleranceMs)) {
+		return fail(QStringLiteral("Exported duration (%1 ms) does not match the selected range (%2 ms)")
+				    .arg(result.durationMs)
+				    .arg(expectedRangeMs));
 	}
 
 	if (!QFile::rename(partPath, request.destinationPath)) {

@@ -21,6 +21,7 @@ target_sources(
     MoonLitPaths.hpp
     editor/ClipExportService.cpp
     editor/ClipExportService.hpp
+    editor/ExportMath.hpp
     media/MediaProbe.cpp
     media/MediaProbe.hpp
     media/ThumbnailService.cpp
