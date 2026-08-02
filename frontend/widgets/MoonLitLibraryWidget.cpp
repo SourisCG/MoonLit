@@ -1,9 +1,11 @@
 #include "MoonLitLibraryWidget.hpp"
 
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QColor>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -15,6 +17,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -31,6 +34,22 @@ QString clipSummary(const MoonLit::Clip &clip)
 				? QStringLiteral("%1 s").arg(clip.metadata.durationMs / 1000)
 				: QStringLiteral("duracion desconocida");
 	return QStringLiteral("%1\n%2 | %3").arg(clip.title, duration, QFileInfo(clip.mediaPath).fileName());
+}
+
+/* Pick a destination inside clipsDir that does not collide with an existing
+ * file, so an import never overwrites a clip that is already in the library. */
+QString uniqueClipDestination(const QDir &clipsDir, const QString &fileName)
+{
+	QString baseName = QFileInfo(fileName).completeBaseName();
+	const QString extension = QFileInfo(fileName).suffix();
+
+	QString candidate = baseName + QLatin1Char('.') + extension;
+	int counter = 2;
+	while (QFileInfo::exists(clipsDir.filePath(candidate))) {
+		candidate = QStringLiteral("%1 (%2).%3").arg(baseName).arg(counter).arg(extension);
+		++counter;
+	}
+	return clipsDir.filePath(candidate);
 }
 
 } // namespace
@@ -64,15 +83,24 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	auto *title = new QLabel(QStringLiteral("Biblioteca"), this);
 	title->setObjectName(QStringLiteral("libraryTitle"));
 	auto *refreshButton = new QPushButton(QStringLiteral("Actualizar"), this);
+	auto *importButton = new QPushButton(QStringLiteral("Importar"), this);
 	header->addWidget(backButton);
 	header->addWidget(title);
 	header->addStretch(1);
+	header->addWidget(importButton);
 	header->addWidget(refreshButton);
 	root->addLayout(header);
 
 	searchEdit_ = new QLineEdit(this);
 	searchEdit_->setPlaceholderText(QStringLiteral("Buscar clips, juegos o archivos..."));
-	root->addWidget(searchEdit_);
+	filterCombo_ = new QComboBox(this);
+	filterCombo_->addItems({QStringLiteral("Todos"), QStringLiteral("Disponibles"),
+				QStringLiteral("Faltantes")});
+	filterCombo_->setCurrentIndex(0);
+	auto *searchRow = new QHBoxLayout();
+	searchRow->addWidget(searchEdit_, 1);
+	searchRow->addWidget(filterCombo_);
+	root->addLayout(searchRow);
 
 	auto *content = new QHBoxLayout();
 	clipList_ = new QListWidget(this);
@@ -124,6 +152,9 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 
 	connect(backButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::backRequested);
 	connect(refreshButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::refresh);
+	connect(importButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::importFiles);
+	connect(filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+		&MoonLitLibraryWidget::onFilterChanged);
 	connect(searchEdit_, &QLineEdit::textChanged, this, [this]() { searchDebounceTimer_->start(); });
 	connect(clipList_, &QListWidget::currentRowChanged, this, &MoonLitLibraryWidget::updateSelection);
 	connect(clipList_, &QListWidget::itemDoubleClicked, this, [this]() { openSelected(); });
@@ -202,18 +233,62 @@ std::optional<MoonLit::Clip> MoonLitLibraryWidget::selectedClip() const
 void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 {
 	clips_ = clips;
+	const LibraryFilter filter = static_cast<LibraryFilter>(filterCombo_->currentIndex());
 	clipList_->clear();
+	int shown = 0;
 	for (const MoonLit::Clip &clip : clips) {
+		const bool missing = clip.missing;
+		if (filter == LibraryFilter::Available && missing)
+			continue;
+		if (filter == LibraryFilter::Missing && !missing)
+			continue;
+
 		auto *item = new QListWidgetItem(clipSummary(clip), clipList_);
 		item->setData(Qt::UserRole, clip.id);
 		if (QFileInfo::exists(clip.thumbnailPath))
 			item->setIcon(QIcon(clip.thumbnailPath));
-		if (clip.missing)
+		if (missing)
 			item->setForeground(QColor(QStringLiteral("#e98b8b")));
+		++shown;
 	}
 
-	setStatus(QStringLiteral("%1 clip(s) local(es)").arg(clipList_->count()));
+	setStatus(QStringLiteral("%1 clip(s) local(es)").arg(shown));
 	updateSelection();
+}
+
+void MoonLitLibraryWidget::onFilterChanged(int)
+{
+	if (!clipList_)
+		return;
+	populateList(clips_);
+}
+
+void MoonLitLibraryWidget::importFiles()
+{
+	const QStringList files = QFileDialog::getOpenFileNames(
+		this, QStringLiteral("Importar clips"),
+		QStandardPaths::writableLocation(QStandardPaths::MoviesLocation),
+		QStringLiteral("Video (%1)").arg(QStringLiteral("*.mkv *.mp4 *.mov *.avi *.webm *.ts *.flv *.m4v")));
+	if (files.isEmpty() || !jobs_)
+		return;
+
+	setStatus(QStringLiteral("Importando %1 archivo(s)...").arg(files.size()));
+	QMetaObject::invokeMethod(
+		jobs_,
+		[this, files]() {
+			QDir clipsDir(paths_.clipsPath());
+			if (!clipsDir.mkpath(QStringLiteral(".")))
+				return;
+
+			for (const QString &source : files) {
+				const QString target = uniqueClipDestination(clipsDir, QFileInfo(source).fileName());
+				if (!QFile::copy(source, target)) {
+					continue;
+				}
+				jobs_->ingest(target);
+			}
+		},
+		Qt::QueuedConnection);
 }
 
 void MoonLitLibraryWidget::onLibraryLoaded(QVector<MoonLit::Clip> clips, const QString &error)

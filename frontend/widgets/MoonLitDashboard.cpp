@@ -14,11 +14,13 @@
 
 #include "MoonLitDashboard.hpp"
 
+#include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace {
@@ -129,6 +131,11 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 
 	root->addStretch(1);
 
+	clipNoticeLabel = makeLabel(QString(), this);
+	clipNoticeLabel->setObjectName(QStringLiteral("moonlitNotice"));
+	clipNoticeLabel->setAlignment(Qt::AlignCenter);
+	root->addWidget(clipNoticeLabel);
+
 	auto *actions = new QHBoxLayout();
 	actions->setSpacing(10);
 	replayButton = new QPushButton(QStringLiteral("Iniciar buffer"), this);
@@ -152,6 +159,11 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	connect(saveButton, &QPushButton::clicked, this, &MoonLitDashboard::saveClipRequested);
 	connect(libraryButton, &QPushButton::clicked, this, &MoonLitDashboard::libraryRequested);
 	connect(settingsButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
+
+	noticeTimer = new QTimer(this);
+	noticeTimer->setSingleShot(true);
+	noticeTimer->setInterval(8000);
+	connect(noticeTimer, &QTimer::timeout, this, [this]() { clipNoticeLabel->clear(); });
 }
 
 void MoonLitDashboard::setReplayState(bool active, bool stopping)
@@ -182,4 +194,18 @@ void MoonLitDashboard::setCaptureStatus(const QString &status)
 void MoonLitDashboard::setEncoderStatus(const QString &status)
 {
 	encoderLabel->setText(QStringLiteral("Encoder: %1").arg(status));
+}
+
+void MoonLitDashboard::setClipSaved(const QString &path)
+{
+	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #83d89b; font-weight: 600;"));
+	clipNoticeLabel->setText(QStringLiteral("Clip guardado: %1").arg(QFileInfo(path).fileName()));
+	noticeTimer->start();
+}
+
+void MoonLitDashboard::setClipError(const QString &message)
+{
+	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #e98b8b; font-weight: 600;"));
+	clipNoticeLabel->setText(QStringLiteral("Error: %1").arg(message));
+	noticeTimer->start();
 }

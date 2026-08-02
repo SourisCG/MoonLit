@@ -372,6 +372,19 @@ void OBSBasic::InitializeMoonLitShell()
 			moonlitDashboard->show();
 		});
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitLibrary, &MoonLitLibraryWidget::ingestClip);
+		connect(this, &OBSBasic::ReplayClipSaved, moonlitDashboard,
+			[this](const QString &path) { moonlitDashboard->setClipSaved(path); });
+		connect(this, &OBSBasic::ReplaySaveFailed, moonlitDashboard,
+			[this](int code) {
+				QString message;
+				if (code == OBS_OUTPUT_UNSUPPORTED)
+					message = QStringLiteral("el guardado no es compatible con el encoder");
+				else if (code == OBS_OUTPUT_NO_SPACE)
+					message = QStringLiteral("no hay espacio en disco");
+				else
+					message = QStringLiteral("fallo al guardar el clip");
+				moonlitDashboard->setClipError(message);
+			});
 
 		connect(this, &OBSBasic::ReplayBufStarted, this,
 			[this]() {

@@ -1085,6 +1085,7 @@ signals:
 	void ReplayBufStopping();
 	void ReplayBufStopped();
 	void ReplayClipSaved(QString path);
+	void ReplaySaveFailed(int code);
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_SceneCollections

@@ -18,6 +18,7 @@
 
 class QLabel;
 class QPushButton;
+class QTimer;
 
 class MoonLitDashboard final : public QWidget {
 	Q_OBJECT
@@ -29,6 +30,8 @@ public:
 	void setDetectedGame(const QString &name);
 	void setCaptureStatus(const QString &status);
 	void setEncoderStatus(const QString &status);
+	void setClipSaved(const QString &path);
+	void setClipError(const QString &message);
 
 signals:
 	void replayActionRequested();
@@ -41,7 +44,9 @@ private:
 	QLabel *gameLabel = nullptr;
 	QLabel *captureLabel = nullptr;
 	QLabel *encoderLabel = nullptr;
+	QLabel *clipNoticeLabel = nullptr;
 	QLabel *hintLabel = nullptr;
 	QPushButton *replayButton = nullptr;
 	QPushButton *saveButton = nullptr;
+	QTimer *noticeTimer = nullptr;
 };

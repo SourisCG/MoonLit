@@ -187,6 +187,8 @@ void OBSBasic::ReplayBufferSaved()
 	}
 	QString msg = QTStr("Basic.StatusBar.ReplayBufferSavedTo").arg(QT_UTF8(path.c_str()));
 	ShowStatusBarMessage(msg);
+	SysTrayNotify(QTStr("Basic.StatusBar.ReplayBufferSavedTo").arg(QT_UTF8(path.c_str())),
+		      QSystemTrayIcon::Information);
 	lastReplay = path;
 	emit ReplayClipSaved(QT_UTF8(path.c_str()));
 	calldata_free(&cd);
@@ -211,21 +213,27 @@ void OBSBasic::ReplayBufferStop(int code)
 	blog(LOG_INFO, REPLAY_BUFFER_STOP);
 
 	if (code == OBS_OUTPUT_UNSUPPORTED && isVisible()) {
+		emit ReplaySaveFailed(code);
 		OBSMessageBox::critical(this, QTStr("Output.RecordFail.Title"), QTStr("Output.RecordFail.Unsupported"));
 
 	} else if (code == OBS_OUTPUT_NO_SPACE && isVisible()) {
+		emit ReplaySaveFailed(code);
 		OBSMessageBox::warning(this, QTStr("Output.RecordNoSpace.Title"), QTStr("Output.RecordNoSpace.Msg"));
 
 	} else if (code != OBS_OUTPUT_SUCCESS && isVisible()) {
+		emit ReplaySaveFailed(code);
 		OBSMessageBox::critical(this, QTStr("Output.RecordError.Title"), QTStr("Output.RecordError.Msg"));
 
 	} else if (code == OBS_OUTPUT_UNSUPPORTED && !isVisible()) {
+		emit ReplaySaveFailed(code);
 		SysTrayNotify(QTStr("Output.RecordFail.Unsupported"), QSystemTrayIcon::Warning);
 
 	} else if (code == OBS_OUTPUT_NO_SPACE && !isVisible()) {
+		emit ReplaySaveFailed(code);
 		SysTrayNotify(QTStr("Output.RecordNoSpace.Msg"), QSystemTrayIcon::Warning);
 
 	} else if (code != OBS_OUTPUT_SUCCESS && !isVisible()) {
+		emit ReplaySaveFailed(code);
 		SysTrayNotify(QTStr("Output.RecordError.Msg"), QSystemTrayIcon::Warning);
 	}
 

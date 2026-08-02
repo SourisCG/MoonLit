@@ -8,6 +8,7 @@
 
 #include <optional>
 
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -36,6 +37,8 @@ private slots:
 	void revealSelected();
 	void removeSelected();
 	void exportSelected();
+	void importFiles();
+	void onFilterChanged(int index);
 	void onLibraryLoaded(QVector<MoonLit::Clip> clips, const QString &error);
 	void onClipIngested(const QString &id, const QString &error);
 	void onClipRemoved(const QString &id, const QString &error);
@@ -44,10 +47,11 @@ private slots:
 	void onExportFinished(bool succeeded, bool cancelled, const QString &outputPath, const QString &error);
 
 private:
+	enum class LibraryFilter { All, Available, Missing };
+
 	void setStatus(const QString &status, bool error = false);
 	std::optional<MoonLit::Clip> selectedClip() const;
 	void populateList(const QVector<MoonLit::Clip> &clips);
-	void scheduleSearch();
 
 	MoonLit::MoonLitPaths paths_ = MoonLit::MoonLitPaths::defaultPaths();
 	MoonLit::ClipJobs *jobs_ = nullptr;
@@ -56,6 +60,7 @@ private:
 	QVector<MoonLit::Clip> clips_;
 
 	QLineEdit *searchEdit_ = nullptr;
+	QComboBox *filterCombo_ = nullptr;
 	QListWidget *clipList_ = nullptr;
 	QLabel *detailsLabel_ = nullptr;
 	QLabel *statusLabel_ = nullptr;
