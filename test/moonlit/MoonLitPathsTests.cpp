@@ -59,3 +59,23 @@ MOONLIT_TEST(moonlit_paths_ensure_directories_creates_tree)
 	ok &= expect(paths.ensureDirectories(&error), "ensureDirectories is idempotent", failure);
 	return ok;
 }
+
+MOONLIT_TEST(moonlit_paths_portable_detection)
+{
+	QTemporaryDir directory;
+	const QString rootDir = directory.path();
+	const QString appDir = QDir(rootDir).filePath(QStringLiteral("bin/64bit"));
+	QDir().mkpath(appDir);
+
+	bool ok = expect(MoonLitPaths::portableDataRoot(appDir).isEmpty(),
+			 "no data root without the portable marker", failure);
+
+	QFile marker(QDir(rootDir).filePath(QStringLiteral("portable_mode")));
+	ok &= expect(marker.open(QIODevice::WriteOnly), "portable marker is created", failure);
+	marker.close();
+
+	const QString root = MoonLitPaths::portableDataRoot(appDir);
+	ok &= expect(root == QDir(rootDir).filePath(QStringLiteral("MoonLitData")),
+		     "portable data root sits at the app root", failure);
+	return ok;
+}

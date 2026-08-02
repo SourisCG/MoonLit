@@ -10,6 +10,10 @@ public:
 
 	static MoonLitPaths defaultPaths();
 
+	/* Data root next to a portable install: <app dir>/../MoonLitData when the
+	 * `portable_mode` marker sits next to the executable, empty otherwise. */
+	static QString portableDataRoot(const QString &applicationDir);
+
 	const QString &rootPath() const;
 	QString clipsPath() const;
 	QString indexPath() const;

@@ -1,5 +1,6 @@
 #include "MoonLitPaths.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
 
@@ -40,12 +41,30 @@ MoonLitPaths::MoonLitPaths(QString rootPath) : rootPath_(QDir::cleanPath(std::mo
 
 MoonLitPaths MoonLitPaths::defaultPaths()
 {
+	const QString portableRoot = portableDataRoot(QCoreApplication::applicationDirPath());
+	if (!portableRoot.isEmpty()) {
+		return MoonLitPaths(portableRoot);
+	}
+
 	QString root = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
 	if (root.isEmpty()) {
 		root = QDir::homePath() + QStringLiteral("/.moonlit");
 	}
 
 	return MoonLitPaths(std::move(root));
+}
+
+QString MoonLitPaths::portableDataRoot(const QString &applicationDir)
+{
+	/* The OBS portable marker sits at the application root, two levels above
+	 * the 64-bit executable (the frontend looks at BASE_PATH/portable_mode). */
+	const QDir appDir(applicationDir);
+	const QString rootDir = QDir::cleanPath(appDir.filePath(QStringLiteral("../..")));
+	if (appDir.exists(QStringLiteral("portable_mode")) ||
+	    QDir(rootDir).exists(QStringLiteral("portable_mode"))) {
+		return QDir(rootDir).filePath(QStringLiteral("MoonLitData"));
+	}
+	return QString();
 }
 
 const QString &MoonLitPaths::rootPath() const

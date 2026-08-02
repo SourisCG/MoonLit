@@ -42,10 +42,19 @@ Write-Host "== release-gate audit =="
 & (Join-Path $PSScriptRoot "audit.ps1") -PackageDir $staging
 
 Write-Host "== portable ZIP =="
+$zipStaging = Join-Path $OutDir "zip-staging"
+if (Test-Path -LiteralPath $zipStaging) {
+    Remove-Item -LiteralPath $zipStaging -Recurse -Force
+}
+New-Item -ItemType Directory -Path $zipStaging -Force | Out-Null
+Copy-Item -Path (Join-Path $staging "*") -Destination $zipStaging -Recurse -Force
+# The portable marker at the app root makes OBS and MoonLit keep everything
+# next to the extracted ZIP (BASE_PATH is two levels above bin/64bit).
+New-Item -ItemType File -Path (Join-Path $zipStaging "portable_mode") -Force | Out-Null
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
-Push-Location $staging
+Push-Location $zipStaging
 try {
     tar -a -c -f $zipPath .
     if ($LASTEXITCODE -ne 0) {
@@ -54,6 +63,7 @@ try {
 } finally {
     Pop-Location
 }
+Remove-Item -LiteralPath $zipStaging -Recurse -Force
 Write-Host "zip: $([math]::Round((Get-Item $zipPath).Length / 1MB, 1)) MB"
 
 Write-Host "== NSIS installer =="
