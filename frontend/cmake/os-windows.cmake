@@ -18,6 +18,14 @@ if(NOT MOONLIT_BUILD)
 endif()
 find_package(nlohmann_json 3.11 REQUIRED)
 
+if(MOONLIT_BUILD)
+  set(OBS_WINDOWS_ICON "cmake/windows/MoonLit.ico")
+  set(OBS_EXE_NAME "MoonLit")
+else()
+  set(OBS_WINDOWS_ICON "cmake/windows/obs-studio.ico")
+  set(OBS_EXE_NAME "obs")
+endif()
+
 configure_file(cmake/windows/obs.rc.in obs.rc)
 configure_file(cmake/windows/obs.manifest "${CMAKE_CURRENT_BINARY_DIR}/obs.manifest")
 

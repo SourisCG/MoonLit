@@ -1756,6 +1756,18 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 				  saveGeometry().toBase64().constData());
 	}
 
+#ifdef MOONLIT_BUILD
+	/* Close-to-tray: the X button hides the window so recording continues.
+	 * A forced exit (tray action), a Windows shutdown (WM_QUERYENDSESSION) or
+	 * an application quit still closes normally. */
+	if (!moonlitForceQuit && !moonlitSessionEnding && !QApplication::closingDown() && !event->spontaneous() &&
+	    trayIcon && trayIcon->isVisible()) {
+		event->ignore();
+		hide();
+		return;
+	}
+#endif
+
 	if (!isReadyToClose()) {
 		event->ignore();
 
@@ -1807,6 +1819,14 @@ bool OBSBasic::nativeEvent(const QByteArray &, void *message, qintptr *)
 		for (OBSQTDisplay *const display : findChildren<OBSQTDisplay *>()) {
 			display->OnDisplayChange();
 		}
+		break;
+#ifdef MOONLIT_BUILD
+	case WM_QUERYENDSESSION:
+	case WM_ENDSESSION:
+		/* Windows is shutting down: do not swallow the close into the tray. */
+		moonlitSessionEnding = true;
+		break;
+#endif
 	}
 #else
 	UNUSED_PARAMETER(message);

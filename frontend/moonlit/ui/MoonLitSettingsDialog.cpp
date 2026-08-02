@@ -8,13 +8,17 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -34,6 +38,31 @@ bool VideoEncoderRegistered(const char *id)
 	}
 
 	return false;
+}
+
+/* Registry key used for per-user login startup (HKCU\...\Run). */
+QString AutoStartRegistryValue()
+{
+	return QStringLiteral("\"%1\" --minimize-to-tray")
+		.arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
+}
+
+bool IsAutoStartEnabled()
+{
+	QSettings settings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+			   QSettings::NativeFormat);
+	return settings.contains(QStringLiteral("MoonLit"));
+}
+
+void SetAutoStartEnabled(bool enabled)
+{
+	QSettings settings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+			   QSettings::NativeFormat);
+	if (enabled) {
+		settings.setValue(QStringLiteral("MoonLit"), AutoStartRegistryValue());
+	} else {
+		settings.remove(QStringLiteral("MoonLit"));
+	}
 }
 
 /* Maps an obs encoder id back to the simple output token used in config. */
@@ -94,6 +123,8 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	chatExe = new QLineEdit(this);
 	chatExe->setPlaceholderText(QStringLiteral("Discord.exe"));
 
+	autoStart = new QCheckBox(QStringLiteral("Iniciar MoonLit con Windows (oculto en la bandeja)"), this);
+
 	QLabel *formatNote = new QLabel(
 		QStringLiteral("Formato de grabación: MKV (autoritativo; MP4 solo como exportación)."), this);
 	formatNote->setWordWrap(true);
@@ -102,6 +133,15 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 		QStringLiteral("Pistas: 1 mezcla (audio de escritorio de la escena), 2 juego, 3 micrófono, 4 chat."),
 		this);
 	audioNote->setWordWrap(true);
+
+	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
+	QLabel *aboutText = new QLabel(
+		QStringLiteral("MoonLit 1.0.0\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
+			       "Software libre bajo GPLv2."),
+		aboutGroup);
+	aboutText->setWordWrap(true);
+	QVBoxLayout *aboutLayout = new QVBoxLayout(aboutGroup);
+	aboutLayout->addWidget(aboutText);
 
 	QHBoxLayout *pathLayout = new QHBoxLayout;
 	pathLayout->addWidget(outputPath, 1);
@@ -121,6 +161,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(audioNote);
 	form->addRow(QStringLiteral("Micrófono (ID de dispositivo):"), micDevice);
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
+	form->addRow(autoStart);
 	form->addRow(formatNote);
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -129,6 +170,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->addLayout(form);
+	layout->addWidget(aboutGroup);
 	layout->addWidget(buttons);
 
 	LoadCurrentValues();
@@ -170,6 +212,8 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 
 	const char *chat = config_get_string(config, "MoonLit", "ChatExe");
 	chatExe->setText(QString::fromUtf8(chat ? chat : ""));
+
+	autoStart->setChecked(IsAutoStartEnabled());
 }
 
 void MoonLitSettingsDialog::SaveValues()
@@ -212,6 +256,7 @@ void MoonLitSettingsDialog::SaveValues()
 	}
 
 	config_save_safe(config, "tmp", nullptr);
+	SetAutoStartEnabled(autoStart->isChecked());
 	main_->ResetOutputs();
 }
 

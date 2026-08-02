@@ -957,7 +957,11 @@ OBSApp::OBSApp(int &argc, char **argv, profiler_name_store_t *store)
 	sleepInhibitor = os_inhibit_sleep_create("OBS Video/audio");
 
 #ifndef __APPLE__
+#ifdef MOONLIT_BUILD
+	setWindowIcon(QIcon(":/res/images/moonlit-icon.svg"));
+#else
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
+#endif
 #endif
 
 #ifdef MOONLIT_BUILD

@@ -269,6 +269,12 @@ private:
 	std::unique_ptr<Ui::OBSBasic> ui;
 	QPointer<MoonLitDashboard> moonlitDashboard;
 	QPointer<MoonLitLibraryWidget> moonlitLibrary;
+#ifdef MOONLIT_BUILD
+	bool moonlitForceQuit = false;
+	bool moonlitSessionEnding = false;
+	void ShowMoonLitLibrary();
+	void ShowMoonLitDashboard();
+#endif
 
 	void InitializeMoonLitShell();
 #ifdef _WIN32
@@ -1490,6 +1496,11 @@ private:
 	QPointer<QAction> sysTrayRecord;
 	QPointer<QAction> sysTrayReplayBuffer;
 	QPointer<QAction> sysTrayVirtualCam;
+#ifdef MOONLIT_BUILD
+	QPointer<QAction> moonlitSaveClip;
+	QPointer<QAction> moonlitOpenLibrary;
+	QPointer<QAction> moonlitSettings;
+#endif
 	QPointer<QMenu> trayMenu;
 
 	bool sysTrayMinimizeToTray();

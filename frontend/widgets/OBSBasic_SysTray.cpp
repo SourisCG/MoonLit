@@ -19,6 +19,10 @@
 
 #include "OBSBasic.hpp"
 
+#ifdef MOONLIT_BUILD
+#include <moonlit/ui/MoonLitSettingsDialog.hpp>
+#endif
+
 extern bool opt_minimize_tray;
 
 void OBSBasic::SystemTrayInit()
@@ -26,11 +30,17 @@ void OBSBasic::SystemTrayInit()
 #ifdef __APPLE__
 	QIcon trayIconFile = QIcon(":/res/images/obs_macos.svg");
 	trayIconFile.setIsMask(true);
+#elif defined(MOONLIT_BUILD)
+	QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.svg");
 #else
 	QIcon trayIconFile = QIcon(":/res/images/obs.png");
 #endif
 	trayIcon = new QSystemTrayIcon(QIcon::fromTheme("obs-tray", trayIconFile), this);
+#ifdef MOONLIT_BUILD
+	trayIcon->setToolTip("MoonLit");
+#else
 	trayIcon->setToolTip("OBS Studio");
+#endif
 
 	trayMenu = new QMenu(this);
 
@@ -47,6 +57,21 @@ void OBSBasic::SystemTrayInit()
 					trayMenu);
 	exit = new QAction(QTStr("Exit"), trayMenu);
 
+#ifdef MOONLIT_BUILD
+	moonlitSaveClip = new QAction(QStringLiteral("Guardar clip"), trayMenu);
+	moonlitOpenLibrary = new QAction(QStringLiteral("Abrir biblioteca"), trayMenu);
+	moonlitSettings = new QAction(QStringLiteral("Ajustes"), trayMenu);
+
+	trayMenu->addAction(showHide);
+	trayMenu->addSeparator();
+	trayMenu->addAction(sysTrayReplayBuffer);
+	trayMenu->addAction(moonlitSaveClip);
+	trayMenu->addSeparator();
+	trayMenu->addAction(moonlitOpenLibrary);
+	trayMenu->addAction(moonlitSettings);
+	trayMenu->addSeparator();
+	trayMenu->addAction(exit);
+#else
 	previewProjector = new QMenu(QTStr("Projector.Open.Preview"), trayMenu);
 	studioProgramProjector = new QMenu(QTStr("Projector.Open.Program"), trayMenu);
 	OBSBasic::updateSysTrayProjectorMenu();
@@ -62,6 +87,7 @@ void OBSBasic::SystemTrayInit()
 	trayMenu->addAction(sysTrayVirtualCam);
 	trayMenu->addSeparator();
 	trayMenu->addAction(exit);
+#endif
 	trayIcon->setContextMenu(trayMenu);
 	trayIcon->show();
 
@@ -81,7 +107,21 @@ void OBSBasic::SystemTrayInit()
 	connect(sysTrayRecord, &QAction::triggered, this, &OBSBasic::RecordActionTriggered);
 	connect(sysTrayReplayBuffer.data(), &QAction::triggered, this, &OBSBasic::ReplayBufferActionTriggered);
 	connect(sysTrayVirtualCam.data(), &QAction::triggered, this, &OBSBasic::VirtualCamActionTriggered);
+#ifdef MOONLIT_BUILD
+	connect(moonlitSaveClip, &QAction::triggered, this, &OBSBasic::ReplayBufferSave);
+	connect(moonlitOpenLibrary, &QAction::triggered, this, &OBSBasic::ShowMoonLitLibrary);
+	connect(moonlitSettings, &QAction::triggered, this, [this]() {
+		ShowMoonLitDashboard();
+		MoonLitSettingsDialog dialog(this);
+		dialog.exec();
+	});
+	connect(exit, &QAction::triggered, this, [this]() {
+		moonlitForceQuit = true;
+		close();
+	});
+#else
 	connect(exit, &QAction::triggered, this, &OBSBasic::close);
+#endif
 }
 
 void OBSBasic::IconActivated(QSystemTrayIcon::ActivationReason reason)

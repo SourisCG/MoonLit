@@ -343,6 +343,26 @@ bool readMoonLitCaptureHealth(obs_source_t *source, bool &active, bool &firstFra
 
 } // namespace
 
+void OBSBasic::ShowMoonLitLibrary()
+{
+	if (!moonlitDashboard || !moonlitLibrary) {
+		return;
+	}
+	moonlitDashboard->hide();
+	moonlitLibrary->refresh();
+	moonlitLibrary->show();
+}
+
+void OBSBasic::ShowMoonLitDashboard()
+{
+	if (moonlitLibrary) {
+		moonlitLibrary->hide();
+	}
+	if (moonlitDashboard) {
+		moonlitDashboard->show();
+	}
+}
+
 void OBSBasic::InitializeMoonLitShell()
 {
 	if (!moonlitDashboard) {
@@ -362,15 +382,8 @@ void OBSBasic::InitializeMoonLitShell()
 			MoonLitSettingsDialog dialog(this);
 			dialog.exec();
 		});
-		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, [this]() {
-			moonlitDashboard->hide();
-			moonlitLibrary->refresh();
-			moonlitLibrary->show();
-		});
-		connect(moonlitLibrary, &MoonLitLibraryWidget::backRequested, this, [this]() {
-			moonlitLibrary->hide();
-			moonlitDashboard->show();
-		});
+		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, &OBSBasic::ShowMoonLitLibrary);
+		connect(moonlitLibrary, &MoonLitLibraryWidget::backRequested, this, &OBSBasic::ShowMoonLitDashboard);
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitLibrary, &MoonLitLibraryWidget::ingestClip);
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitDashboard,
 			[this](const QString &path) { moonlitDashboard->setClipSaved(path); });
