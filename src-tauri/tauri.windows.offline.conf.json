@@ -10,7 +10,7 @@
     "licenseFile": "../LICENSE",
     "useLocalToolsDir": true,
     "resources": {
-      "target/package-stage/windows-x86_64/runtime/obs/": "runtime/obs/"
+      "../target/package-stage/windows-x86_64/runtime/obs/": "runtime/obs/"
     },
     "windows": {
       "allowDowngrades": false,

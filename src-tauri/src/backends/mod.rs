@@ -6,6 +6,29 @@ use crate::traits::{BackendDescriptor, BackendError, BackendId, ReplayBackend};
 
 pub mod fake;
 
+// The host services are deliberately included in a test-only namespace. This
+// keeps their unit tests out of the Tauri entrypoint test binary while still
+// compiling the real service implementations and fixtures. Production keeps
+// the normal root modules from lib.rs.
+#[cfg(test)]
+#[path = "../config.rs"]
+pub(crate) mod host_config;
+#[cfg(test)]
+#[path = "../library.rs"]
+pub(crate) mod host_library;
+#[cfg(test)]
+#[path = "../media.rs"]
+pub(crate) mod host_media;
+#[cfg(test)]
+#[path = "../recorder.rs"]
+pub(crate) mod host_recorder;
+#[cfg(test)]
+#[path = "../state.rs"]
+pub(crate) mod host_state;
+#[cfg(test)]
+#[path = "../storage.rs"]
+pub(crate) mod host_storage;
+
 #[cfg(target_os = "linux")]
 pub mod gsr;
 

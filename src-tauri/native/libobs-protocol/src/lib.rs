@@ -37,6 +37,7 @@ impl Frame {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum Payload {
@@ -45,6 +46,7 @@ pub enum Payload {
     Event(Event),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum Request {
@@ -98,6 +100,7 @@ pub enum Response {
     Probe(ProbeResult),
     Started {
         encoder: String,
+        codec: String,
         format: String,
     },
     ClipSaved {

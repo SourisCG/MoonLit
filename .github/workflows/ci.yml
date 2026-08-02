@@ -48,6 +48,9 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - name: Validate packaging policy inputs
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File packaging/windows/Test-PackagingInputs.ps1
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features --target x86_64-pc-windows-msvc -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc

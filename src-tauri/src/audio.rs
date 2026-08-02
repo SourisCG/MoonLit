@@ -74,6 +74,10 @@ impl AudioMixer {
         self.snapshot.config = config;
         self.snapshot.clone()
     }
+
+    fn restore(&mut self, snapshot: AudioMixerSnapshot) {
+        self.snapshot = snapshot;
+    }
 }
 
 pub struct AudioState(pub Mutex<AudioMixer>);
@@ -94,17 +98,24 @@ pub fn set_audio_config(
     config_state: State<'_, ConfigState>,
     config: AudioConfig,
 ) -> Result<AudioMixerSnapshot, String> {
-    let snapshot = state
+    let mut mixer = state
         .0
         .lock()
-        .map_err(|_| "El mezclador esta bloqueado".to_string())?
-        .update(config.clone());
-    let store = config_state
-        .0
-        .lock()
-        .map_err(|_| "La configuracion esta bloqueada".to_string())?;
-    let mut app_config = store.load()?;
-    app_config.replay.audio = config;
-    store.save(&app_config)?;
+        .map_err(|_| "El mezclador esta bloqueado".to_string())?;
+    let previous = mixer.snapshot.clone();
+    let snapshot = mixer.update(config.clone());
+    let result = (|| {
+        let store = config_state
+            .0
+            .lock()
+            .map_err(|_| "La configuracion esta bloqueada".to_string())?;
+        let mut app_config = store.load()?;
+        app_config.replay.audio = config;
+        store.save(&app_config)
+    })();
+    if let Err(error) = result {
+        mixer.restore(previous);
+        return Err(error);
+    }
     Ok(snapshot)
 }

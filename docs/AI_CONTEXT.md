@@ -1,6 +1,6 @@
 # MoonLit AI Context
 
-Updated: 2026-07-29 (v1 product lanes and codec/runtime integration)
+Updated: 2026-08-01 (v1 coordination baseline)
 
 ## Project Overview
 
@@ -112,7 +112,7 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 ## Locked Decisions
 
 ### Platform & Distribution
-- **Initial platform**: Windows 10 1903+ and Windows 11
+- **Initial platform**: Windows 10 Enterprise LTSC 2021 and Windows 11 for v1
 - **Future platform**: Linux (portable architecture)
 - **Primary distribution**: .exe installer (NSIS/WiX)
 - **Secondary distribution**: MSIX for Microsoft Store (future, when account available)
@@ -123,14 +123,15 @@ MoonLit is a Windows-first game clip recorder with GPU acceleration and advanced
 - **GPU Encoding**: NVENC (NVIDIA), AMF (AMD), QuickSync (Intel)
 - **CPU Fallback**: x264/x265 software encoding
 - **Audio**: WASAPI (Windows Audio Session API)
-- **Audio Separation**: System audio (loopback) + microphone + specific apps
+- **Audio Separation**: System audio (loopback) + microphone for v1; specific
+  application audio is post-v1
 - **Container**: MP4 (default) and MKV (configurable)
 
 ### Features
 - **Replay buffer**: 30 seconds default, configurable (10s - 5min)
 - **Hotkey**: F8 default, configurable
 - **Quality presets**: Low/Medium/High/Ultra + advanced configuration
-- **Game detection**: Automatic + manual
+- **Game detection**: Post-v1; not part of the strict v1 release
 - **Notifications**: Windows system notifications (like Medal)
 - **Clip storage**: `%USERPROFILE%\Videos\MoonLit` (configurable)
 - **Audio mixing**: Separate volumes for system, microphone, and apps (OBS-style)
@@ -303,7 +304,8 @@ Tauri process never receives frames, audio samples or encoded packets.
 
 ### Windows.Graphics.Capture
 - **Purpose**: Screen and window capture
-- **Requirements**: Windows 10 1903+
+- **API technical minimum**: Windows 10 1903+; the supported v1 product target
+  is Windows 10 Enterprise LTSC 2021 and Windows 11
 - **Pros**: Official API, no drivers needed, good performance
 - **Cons**: Requires user permission (popup)
 
@@ -369,3 +371,23 @@ Tauri process never receives frames, audio samples or encoded packets.
 - Host services include `ConfigStore`, `StorageManager`, `LibraryStore`, `MediaJobService`, `HotkeyState` and Tauri notification/tray integration.
 - H.265 library playback requests an H.264 proxy through the staged, fixed-path FFmpeg worker when WebView2 cannot play the original.
 - CI workflows, standard/offline NSIS configs, runtime manifest, SBOM and signing scripts are present. Runtime approval, clean-machine installation and hardware evidence remain release gates.
+
+## Coordinated Execution Team (2026-08-01)
+
+- Project-scoped OpenCode configuration is stored in `opencode.json` and
+  `.opencode/`.
+- `moonlit-coordinator` owns shared contracts, integration, wave gates and
+  evidence decisions.
+- Native, runtime, capture, codec, audio, host, frontend, release, assurance,
+  verifier and reviewer agents have isolated responsibilities and permissions.
+- At most three subagents and two heavy build jobs may run at once.
+- Shared contracts and execution state are coordinator-owned in
+  `docs/V1_REQUIREMENTS.md` and `docs/V1_EXECUTION.md`.
+- Agent setup does not change the product release status: the real libobs
+  bridge, runtime closure, audio, codec matrix, legal review, signatures and
+  external hardware validation remain blocked or pending.
+- Wave 0 baseline checks were rerun on the current source tree after a
+  coordinator-only formatting fix: frontend check/build, Rust format, root
+  tests (15), protocol tests (6), recorder compile tests (0), windows-native
+  tests (2), and strict clippy passed. The tree remains dirty, so this is
+  development evidence only; no release gate is verified.

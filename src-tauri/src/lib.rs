@@ -77,7 +77,9 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&open, &save, &quit])?;
             let _tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?)
+                .icon(tauri::image::Image::from_bytes(include_bytes!(
+                    "../icons/icon.png"
+                ))?)
                 .tooltip("MoonLit")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => {
@@ -97,7 +99,7 @@ pub fn run() {
                 })
                 .build(app)?;
             let initial_backend = backends::create(config.backend.clone(), resource_dir.clone())
-                .unwrap_or_else(|_| Box::new(backends::fake::FakeBackend::new()));
+                .map_err(std::io::Error::other)?;
             app.manage(recorder::RecorderRuntime::new_with_backend(
                 storage_manager.root().to_path_buf(),
                 resource_dir,

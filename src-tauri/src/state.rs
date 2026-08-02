@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::traits::{BackendDescriptor, BackendError, ReplayConfig};
+use crate::traits::{BackendDescriptor, BackendError, EffectiveReplaySettings, ReplayConfig};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +48,8 @@ pub struct CaptureSnapshot {
     pub phase: CapturePhase,
     pub backend: BackendDescriptor,
     pub config: Option<ReplayConfig>,
+    pub effective: Option<EffectiveReplaySettings>,
+    pub can_save: bool,
     pub session: Option<SessionSnapshot>,
     pub saved_clips: u32,
     pub last_clip: Option<ClipRecord>,

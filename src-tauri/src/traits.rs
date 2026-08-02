@@ -238,6 +238,14 @@ impl ReplayConfig {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveReplaySettings {
+    pub encoder: String,
+    pub codec: VideoCodec,
+    pub format: ContainerFormat,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ClipKind {
@@ -337,6 +345,15 @@ pub trait ReplayBackend: Send {
     fn descriptor(&self) -> BackendDescriptor;
     fn list_sources(&self) -> Result<Vec<CaptureSource>, BackendError>;
     fn start(&mut self, config: &ReplayConfig, output_dir: &Path) -> Result<(), BackendError>;
+
+    fn effective_settings(&self) -> Option<EffectiveReplaySettings> {
+        None
+    }
+
+    fn can_save(&self) -> bool {
+        true
+    }
+
     fn save_replay(&mut self) -> Result<ClipArtifact, BackendError>;
     fn stop(&mut self) -> Result<(), BackendError>;
 

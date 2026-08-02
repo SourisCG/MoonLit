@@ -100,7 +100,7 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 ## Windows API Validation
 
 ### Windows.Graphics.Capture
-- [ ] Basic monitor capture on Windows 10 1903+
+- [ ] Basic monitor capture on Windows 10 Enterprise LTSC 2021
 - [x] Basic monitor capture on Windows 11
 - [ ] Window capture (specific application window)
 - [ ] Full screen capture (entire monitor)
@@ -127,7 +127,7 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [ ] Audio mute/unmute (per source)
 - [ ] Audio sync with video (< 50ms drift)
 - [ ] Audio quality (no clipping/distortion)
-- [ ] Application-specific audio capture (OBS-style)
+- [ ] Application-specific audio capture (post-v1; excluded from v1 gate)
 - [ ] Audio mixing (system + mic + apps)
 
 ### GPU Encoding
@@ -167,6 +167,8 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [ ] Hotkey performance (latency < 100ms)
 
 ### Game Detector
+
+Post-v1 feature; these checks do not belong to the strict v1 release gate.
 - [ ] Process scanning (Windows 10)
 - [ ] Process scanning (Windows 11)
 - [ ] Window matching
@@ -318,7 +320,7 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 ## Compatibility Validation
 
 ### Windows Versions
-- [ ] Windows 10 1903 (minimum)
+- [ ] Windows 10 Enterprise LTSC 2021 (minimum)
 - [ ] Windows 10 20H2
 - [ ] Windows 10 21H2
 - [ ] Windows 11 21H2
@@ -408,7 +410,7 @@ These checks require Windows hardware, specific GPUs, or long-running sessions t
 - [ ] Adjust settings
 - [ ] Uninstall MoonLit
 
-### Advanced User Flow
+### Advanced User Flow (v1 items only; game detection is post-v1)
 - [ ] Configure custom hotkey
 - [ ] Configure custom quality settings
 - [ ] Capture with audio mixing

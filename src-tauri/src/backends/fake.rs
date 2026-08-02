@@ -9,8 +9,9 @@ use serde::Serialize;
 
 use crate::traits::{
     AudioCapabilities, BackendCapabilities, BackendDescriptor, BackendError, BackendId,
-    CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, ContainerFormat, EncoderCapability,
-    EncoderPreference, ReplayBackend, ReplayConfig, VideoCodec, VideoResolution,
+    CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind, ContainerFormat,
+    EffectiveReplaySettings, EncoderCapability, EncoderPreference, ReplayBackend, ReplayConfig,
+    VideoCodec, VideoResolution,
 };
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -154,6 +155,20 @@ impl ReplayBackend for FakeBackend {
             output_dir: output_dir.to_path_buf(),
         });
         Ok(())
+    }
+
+    fn effective_settings(&self) -> Option<EffectiveReplaySettings> {
+        self.session
+            .as_ref()
+            .map(|session| EffectiveReplaySettings {
+                encoder: "software".to_string(),
+                codec: session.config.codec.clone(),
+                format: session.config.format.clone(),
+            })
+    }
+
+    fn can_save(&self) -> bool {
+        self.session.is_some()
     }
 
     fn save_replay(&mut self) -> Result<ClipArtifact, BackendError> {

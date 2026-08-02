@@ -1,10 +1,13 @@
 # MoonLit
 
-MoonLit is a Windows-first, local-first game clip recorder inspired by Medal and OBS. It features GPU-accelerated screen capture, advanced audio mixing, replay buffer, and a simple editor.
+MoonLit is a Windows-first, local-first game clip recorder inspired by Medal and OBS. It targets GPU-accelerated screen capture, audio mixing, and a replay buffer. Editing and export remain post-v1.
 
 Windows with future Linux portability planned.
 
-## Features
+## V1 Target Features
+
+These are strict v1 targets; the development status below is authoritative
+about what is currently real and verified.
 
 - **GPU-Accelerated Capture**: Windows.Graphics.Capture API with NVENC/AMF/QuickSync encoding
 - **Replay Buffer**: 30 seconds default (configurable 10s - 5min)
@@ -19,7 +22,7 @@ Windows with future Linux portability planned.
 ## Requirements
 
 ### System Requirements
-- **OS**: Windows 10 1903+ or Windows 11
+- **OS**: Windows 10 Enterprise LTSC 2021 or Windows 11
 - **Architecture**: x86_64 (64-bit)
 - **GPU**: Optional (for hardware encoding)
   - NVIDIA: NVENC support
@@ -63,7 +66,7 @@ Windows native build workstation and release validation matrix.
 ### Quick Start
 
 1. Launch MoonLit
-2. Select capture source (monitor, window, or application)
+2. Select a monitor or window capture source
 3. Configure audio sources and volumes
 4. Start replay buffer
 5. Press F8 (or configured hotkey) to save last 30 seconds
@@ -74,7 +77,6 @@ Windows native build workstation and release validation matrix.
 MoonLit supports multiple audio sources:
 - **System Audio**: Captures all system sounds (loopback)
 - **Microphone**: Your microphone input
-- **Application Audio**: Specific applications (OBS-style)
 
 Each source has independent volume control and can be muted/unmuted.
 
@@ -82,7 +84,6 @@ Each source has independent volume control and can be muted/unmuted.
 
 - **Full Screen**: Capture entire monitor
 - **Window**: Capture specific window
-- **Application**: Capture specific application (when available)
 
 ### Quality Settings
 
@@ -245,7 +246,6 @@ See [TESTING.md](docs/TESTING.md) for complete testing strategy.
 - Video format (MP4 or MKV)
 - Quality preset or advanced settings
 - Audio source volumes
-- Game detection settings
 - Notification preferences
 
 ## Troubleshooting
@@ -288,7 +288,7 @@ MoonLit will fall back to CPU encoding (x264/x265). This works but uses more CPU
 - ⏳ WASAPI audio capture
 - ⏳ GPU encoding (NVENC/AMF/QuickSync/x264)
 - ⏳ Hotkey service
-- ⏳ Game detector
+- ⏳ Game detector (post-v1; excluded from the v1 gate)
 
 ### Phase 2: Frontend
 - ⏳ Windows-inspired UI

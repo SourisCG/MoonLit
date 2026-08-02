@@ -14,8 +14,8 @@ use crate::sidecar::{ProcessSidecarLauncher, SidecarError, SidecarLauncher, Side
 use crate::traits::{
     AudioCapabilities, AudioConfig, BackendCapabilities, BackendDescriptor, BackendError,
     BackendErrorCode, BackendId, CaptureSource, CaptureSourceKind, ClipArtifact, ClipKind,
-    ContainerFormat, EncoderCapability, EncoderPreference, QualityPreset, ReplayBackend,
-    ReplayConfig, VideoCodec, VideoResolution,
+    ContainerFormat, EffectiveReplaySettings, EncoderCapability, EncoderPreference, QualityPreset,
+    ReplayBackend, ReplayConfig, VideoCodec, VideoResolution,
 };
 
 const RUNTIME_RELATIVE_PATH: &str = "runtime/obs";
@@ -29,6 +29,15 @@ pub struct LibobsSidecarBackend {
     sources: Vec<CaptureSource>,
     output_root: Option<PathBuf>,
     buffer_seconds: u32,
+    effective_start: Option<EffectiveStartMetadata>,
+    can_save: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EffectiveStartMetadata {
+    encoder: String,
+    codec: VideoCodec,
+    format: ContainerFormat,
 }
 
 impl LibobsSidecarBackend {
@@ -65,6 +74,8 @@ impl LibobsSidecarBackend {
             sources: Vec::new(),
             output_root: None,
             buffer_seconds: 0,
+            effective_start: None,
+            can_save: false,
         }
     }
 
@@ -195,6 +206,7 @@ impl ReplayBackend for LibobsSidecarBackend {
         fs::create_dir_all(&output_root).map_err(|error| {
             BackendError::io(format!("No se pudo crear el directorio libobs: {error}"))
         })?;
+        self.effective_start = None;
 
         let mut session = self
             .launcher
@@ -239,14 +251,58 @@ impl ReplayBackend for LibobsSidecarBackend {
         let response = session
             .request(Request::Start(start))
             .map_err(map_sidecar_error)?;
-        if !matches!(response, Response::Started { .. }) {
+        let Response::Started {
+            encoder,
+            codec,
+            format,
+        } = response
+        else {
             session.terminate();
             return Err(Self::response_error(response));
+        };
+        let effective_start = match effective_start_metadata(&encoder, &codec, &format) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                session.terminate();
+                return Err(error);
+            }
+        };
+        if !requested_encoder_matches(&config.encoder, &effective_start.encoder)
+            || effective_start.codec != config.codec
+            || effective_start.format != config.format
+        {
+            session.terminate();
+            return Err(BackendError::new(
+                BackendErrorCode::Unsupported,
+                format!(
+                    "El sidecar devolvio una combinacion efectiva distinta: {} / {} / {}",
+                    effective_start.encoder,
+                    codec_name(&effective_start.codec),
+                    format_name(&effective_start.format)
+                ),
+                false,
+            ));
         }
+        self.effective_start = Some(effective_start);
         self.output_root = Some(output_root);
         self.buffer_seconds = config.buffer_seconds;
         self.session = Some(session);
+        self.can_save = false;
         Ok(())
+    }
+
+    fn effective_settings(&self) -> Option<EffectiveReplaySettings> {
+        self.effective_start
+            .as_ref()
+            .map(|settings| EffectiveReplaySettings {
+                encoder: settings.encoder.clone(),
+                codec: settings.codec.clone(),
+                format: settings.format.clone(),
+            })
+    }
+
+    fn can_save(&self) -> bool {
+        self.can_save
     }
 
     fn save_replay(&mut self) -> Result<ClipArtifact, BackendError> {
@@ -270,6 +326,33 @@ impl ReplayBackend for LibobsSidecarBackend {
         else {
             return Err(Self::response_error(response));
         };
+        let clip_codec = parse_codec(&codec)?;
+        let clip_format = parse_format(&format)?;
+        if let Some(started) = &self.effective_start {
+            if started.codec != clip_codec {
+                return Err(BackendError::new(
+                    BackendErrorCode::Unsupported,
+                    format!(
+                        "El sidecar cambio el codec efectivo de {} a {}",
+                        codec_name(&started.codec),
+                        codec
+                    ),
+                    false,
+                ));
+            }
+            if started.format != clip_format {
+                return Err(BackendError::new(
+                    BackendErrorCode::Unsupported,
+                    format!(
+                        "El sidecar cambio el contenedor efectivo de {} a {} (encoder: {})",
+                        format_name(&started.format),
+                        format_name(&clip_format),
+                        started.encoder
+                    ),
+                    false,
+                ));
+            }
+        }
         let root = self.output_root.as_ref().ok_or_else(|| {
             BackendError::new(BackendErrorCode::Internal, "No hay salida libobs", true)
         })?;
@@ -281,8 +364,8 @@ impl ReplayBackend for LibobsSidecarBackend {
             path,
             duration_seconds,
             kind: ClipKind::Media,
-            codec: parse_codec(&codec),
-            format: parse_format(&format),
+            codec: clip_codec,
+            format: clip_format,
             width,
             height,
             fps,
@@ -302,6 +385,8 @@ impl ReplayBackend for LibobsSidecarBackend {
         }
         self.output_root = None;
         self.buffer_seconds = 0;
+        self.effective_start = None;
+        self.can_save = false;
         first_error.map_or(Ok(()), Err)
     }
 
@@ -319,9 +404,10 @@ impl ReplayBackend for LibobsSidecarBackend {
                         true,
                     ));
                 }
-                protocol::Event::AudioDeviceChanged { .. }
-                | protocol::Event::BufferStatus { .. }
-                | protocol::Event::Heartbeat => {}
+                protocol::Event::AudioDeviceChanged { .. } | protocol::Event::Heartbeat => {}
+                protocol::Event::BufferStatus { can_save, .. } => {
+                    self.can_save = can_save;
+                }
             }
         }
         match session.request(Request::Ping).map_err(map_sidecar_error)? {
@@ -504,20 +590,80 @@ fn audio_start(audio: &AudioConfig) -> protocol::AudioStart {
     }
 }
 
-fn parse_codec(codec: &str) -> VideoCodec {
-    if codec.eq_ignore_ascii_case("hevc") || codec.eq_ignore_ascii_case("h265") {
-        VideoCodec::Hevc
-    } else {
-        VideoCodec::H264
+fn effective_start_metadata(
+    encoder: &str,
+    codec: &str,
+    format: &str,
+) -> Result<EffectiveStartMetadata, BackendError> {
+    let encoder = parse_effective_encoder(encoder)?;
+    let codec = parse_codec(codec)?;
+    let format = parse_format(format)?;
+    Ok(EffectiveStartMetadata {
+        encoder,
+        codec,
+        format,
+    })
+}
+
+fn parse_effective_encoder(encoder: &str) -> Result<String, BackendError> {
+    let value = encoder.trim();
+    let known = [
+        "auto",
+        "nvenc",
+        "amf",
+        "quicksync",
+        "quick-sync",
+        "software",
+        "x264",
+        "x265",
+    ];
+    if value.is_empty()
+        || !known
+            .iter()
+            .any(|candidate| value.eq_ignore_ascii_case(candidate))
+    {
+        return Err(unknown_metadata("encoder", encoder));
+    }
+    Ok(value.to_string())
+}
+
+fn requested_encoder_matches(requested: &EncoderPreference, effective: &str) -> bool {
+    let effective = effective.to_ascii_lowercase();
+    match requested {
+        EncoderPreference::Auto => true,
+        EncoderPreference::Nvenc => effective == "nvenc",
+        EncoderPreference::Amf => effective == "amf",
+        EncoderPreference::QuickSync => effective == "quicksync" || effective == "quick-sync",
+        EncoderPreference::Software => matches!(effective.as_str(), "software" | "x264" | "x265"),
     }
 }
 
-fn parse_format(format: &str) -> ContainerFormat {
-    if format.eq_ignore_ascii_case("mkv") {
-        ContainerFormat::Mkv
+fn parse_codec(codec: &str) -> Result<VideoCodec, BackendError> {
+    if codec.eq_ignore_ascii_case("h264") || codec.eq_ignore_ascii_case("avc") {
+        Ok(VideoCodec::H264)
+    } else if codec.eq_ignore_ascii_case("hevc") || codec.eq_ignore_ascii_case("h265") {
+        Ok(VideoCodec::Hevc)
     } else {
-        ContainerFormat::Mp4
+        Err(unknown_metadata("codec", codec))
     }
+}
+
+fn parse_format(format: &str) -> Result<ContainerFormat, BackendError> {
+    if format.eq_ignore_ascii_case("mp4") {
+        Ok(ContainerFormat::Mp4)
+    } else if format.eq_ignore_ascii_case("mkv") {
+        Ok(ContainerFormat::Mkv)
+    } else {
+        Err(unknown_metadata("container", format))
+    }
+}
+
+fn unknown_metadata(kind: &str, value: &str) -> BackendError {
+    BackendError::new(
+        BackendErrorCode::Unsupported,
+        format!("El sidecar devolvio {kind} desconocido: '{value}'"),
+        false,
+    )
 }
 
 fn safe_clip_path(root: &Path, relative_path: &str) -> Result<PathBuf, BackendError> {
@@ -583,9 +729,15 @@ mod tests {
 
     use moonlit_libobs_protocol as protocol;
 
-    use super::{descriptor_from_probe, safe_clip_path, LibobsSidecarBackend};
+    use super::{
+        descriptor_from_probe, effective_start_metadata, parse_codec, parse_format, safe_clip_path,
+        LibobsSidecarBackend,
+    };
     use crate::sidecar::{SidecarError, SidecarLauncher, SidecarTransport};
-    use crate::traits::{BackendId, EncoderPreference, ReplayBackend, ReplayConfig};
+    use crate::traits::{
+        BackendErrorCode, BackendId, ContainerFormat, EncoderPreference, ReplayBackend,
+        ReplayConfig, VideoCodec,
+    };
 
     struct MockTransport {
         responses: VecDeque<Result<protocol::Response, SidecarError>>,
@@ -631,6 +783,31 @@ mod tests {
     }
 
     #[test]
+    fn unknown_clip_metadata_is_rejected_instead_of_defaulting() {
+        assert!(matches!(
+            parse_codec("vp9"),
+            Err(error) if error.code == BackendErrorCode::Unsupported
+        ));
+        assert!(matches!(
+            parse_format("webm"),
+            Err(error) if error.code == BackendErrorCode::Unsupported
+        ));
+        assert_eq!(parse_codec("h264").expect("h264"), VideoCodec::H264);
+        assert_eq!(parse_format("mkv").expect("mkv"), ContainerFormat::Mkv);
+    }
+
+    #[test]
+    fn started_metadata_is_preserved_and_validated() {
+        let metadata =
+            effective_start_metadata("nvenc", "hevc", "MKV").expect("effective metadata");
+        assert_eq!(metadata.encoder, "nvenc");
+        assert_eq!(metadata.codec, VideoCodec::Hevc);
+        assert_eq!(metadata.format, ContainerFormat::Mkv);
+        assert!(effective_start_metadata("unknown", "h264", "mp4").is_err());
+        assert!(effective_start_metadata("software", "h264", "webm").is_err());
+    }
+
+    #[test]
     fn sidecar_backend_saves_only_a_validated_relative_clip() {
         let directory = std::env::temp_dir().join(format!("moonlit-libobs-{}", std::process::id()));
         let output_root = directory.join("libobs-clips");
@@ -644,6 +821,7 @@ mod tests {
                 }),
                 Ok(protocol::Response::Started {
                     encoder: "software".to_string(),
+                    codec: "h264".to_string(),
                     format: "mp4".to_string(),
                 }),
                 Ok(protocol::Response::ClipSaved {
@@ -698,9 +876,18 @@ mod tests {
                 &directory,
             )
             .expect("start");
+        assert_eq!(
+            backend.effective_start,
+            Some(super::EffectiveStartMetadata {
+                encoder: "software".to_string(),
+                codec: VideoCodec::H264,
+                format: ContainerFormat::Mp4,
+            })
+        );
         let clip = backend.save_replay().expect("save");
         assert_eq!(clip.path, output_root.join("clip.mp4"));
         backend.stop().expect("stop");
+        assert!(backend.effective_start.is_none());
         fs::remove_dir_all(directory).expect("cleanup");
     }
 }

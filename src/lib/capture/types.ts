@@ -93,6 +93,12 @@ export type ReplayConfig = {
   audio: AudioConfig;
 };
 
+export type EffectiveReplaySettings = {
+  encoder: string;
+  codec: VideoCodec;
+  format: ContainerFormat;
+};
+
 export type CaptureError = {
   code: string;
   message: string;
@@ -121,6 +127,8 @@ export type CaptureSnapshot = {
   phase: CapturePhase;
   backend: BackendDescriptor;
   config: ReplayConfig | null;
+  effective: EffectiveReplaySettings | null;
+  canSave: boolean;
   session: {
     id: string;
     sourceId: string;

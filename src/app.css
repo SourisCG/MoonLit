@@ -218,6 +218,22 @@ input[type='range'] { width: 100%; height: 3px; accent-color: var(--lime); }
 .hotkey-input { width: 80px; text-align: center; color: var(--lime); font-weight: 700; }
 .toast.error { border-color: rgba(255,117,117,0.4); background: #2a1d20; color: #ffacac; }
 .toast.success { border-color: rgba(209,244,100,0.35); }
+.effective-state { display: grid; gap: 5px; margin-top: 19px; padding: 13px 14px; border: 1px solid rgba(209,244,100,0.2); border-radius: 8px; background: rgba(209,244,100,0.05); }
+.effective-state strong { color: var(--lime); font-size: 12px; }
+.effective-state small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.capability-warning, .keyframe-wait { margin: 12px 0 0; color: #ffb49b; font-size: 10px; line-height: 1.5; }
+.keyframe-wait { color: var(--lime); }
+.bootstrap-banner { align-items: center; margin: -12px 0 18px; }
+.bootstrap-banner.error, .info-banner.error { border-color: rgba(255,117,117,0.38); background: rgba(255,117,117,0.07); color: #ffb4b4; }
+.bootstrap-banner .secondary-button, .info-banner .secondary-button { margin-left: auto; }
+.backend-meta { max-width: 520px; line-height: 1.5; }
+.tray-options { display: grid; gap: 12px; justify-items: start; }
+.library-status { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; }
+.file-status { color: var(--lime-dim); }
+.file-status.file-unavailable { color: #ffad95; }
+.simulation-placeholder { border: 1px dashed rgba(255,147,93,0.35); color: #ffb49b; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 20px; color: var(--muted); font-size: 10px; }
+.pagination .secondary-button { min-height: 31px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(4,7,10,0.72); backdrop-filter: blur(8px); }
 .modal { width: min(520px, 100%); padding: 35px; border: 1px solid rgba(209,244,100,0.24); border-radius: 16px; background: #17211e; box-shadow: 0 30px 90px rgba(0,0,0,0.5); }
 .modal h2 { max-width: 360px; font-size: 38px; }

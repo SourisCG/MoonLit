@@ -40,6 +40,13 @@ MoonLit/
     licenses/
 ```
 
+The repository staging root is
+`target/package-stage/windows-x86_64/runtime/obs`. The release Tauri configs
+refer to that same directory as `../target/package-stage/windows-x86_64/runtime/obs/`
+because their paths are relative to `src-tauri/`; the release workflow creates
+the repository-root path. Runtime and legal metadata are generated or staged
+inside `runtime/obs/` so the resource mapping cannot omit them.
+
 The recorder is a resource rather than a Tauri `externalBin`. This preserves
 its DLL/plugin/data closure and avoids flattening the OBS runtime beside the
 main executable. Trusted Rust code launches the absolute path directly; the
@@ -71,16 +78,24 @@ components without license records. GPU driver DLLs such as
 3. Build only the no-frontend libobs targets and the MoonLit recorder/bridge.
 4. Recreate `target/package-stage/windows-x86_64` from empty.
 5. Run `packaging/windows/Stage-Runtime.ps1` with the approved manifests.
-6. Inspect PE architecture/import closure and run recorder `--self-test --json`.
-7. Run `Generate-RuntimeManifest.ps1` and `Generate-Sbom.ps1`.
-8. Sign the staged MoonLit recorder, bridge and runtime DLLs in a protected
-   signing environment.
-9. Generate the signed manifest and include license/source notices.
-10. Build NSIS with the release configuration and verify the installed tree.
+6. Sign every staged PE in a protected signing environment and verify the
+   expected certificate thumbprint.
+7. Run `Generate-RuntimeManifest.ps1` and `Generate-Sbom.ps1` against the
+   signed runtime closure.
+8. Stage reviewed license texts, notices and corresponding-source metadata;
+   placeholders and design-only inputs fail closed.
+9. Inspect PE architecture/import closure and run recorder `--self-test --json`.
+10. Build standard and offline NSIS with their matching release configs, sign
+    every installer, and emit a source/runtime/installer hash manifest.
 
 The build scripts must invoke tools with executable paths and argument arrays.
 They must not use `Invoke-Expression`, `cmd /c`, user-provided command strings,
 `build.rs` downloads or runtime downloads.
+
+The release workflow requires a clean checkout at the exact workflow SHA, an
+exact package version, externally supplied audited runtime/legal inputs, and a
+certificate thumbprint. Missing certificate or legal review is a hard failure;
+the upload step is conditional on all signing and verification steps passing.
 
 ## WebView2
 

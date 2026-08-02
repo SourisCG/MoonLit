@@ -2,13 +2,13 @@
 
 ## Product
 
-MoonLit is a Windows-first, local-first desktop application for saving game clips in the style of Medal. It features GPU-accelerated capture, advanced audio mixing, replay buffer, and a simple editor. Linux version planned for future release.
+MoonLit is a Windows-first, local-first desktop application for saving game clips in the style of Medal. It targets GPU-accelerated capture, audio mixing, and a replay buffer. Editing and export are post-v1. Linux version planned for future release.
 
 ## Locked Decisions
 
 ### Platform & Distribution
 - Tauri 2, Svelte 5, TypeScript and Rust.
-- Windows 10 1903+ and Windows 11 x86_64.
+- Windows 10 Enterprise LTSC 2021 and Windows 11 x86_64 for the v1 release.
 - Linux x86_64 support planned (future, portable architecture).
 - ARM64 not supported initially (x86_64 only).
 - Primary distribution: .exe installer (NSIS/WiX).
@@ -38,9 +38,10 @@ MoonLit is a Windows-first, local-first desktop application for saving game clip
 ### Features
 - Replay buffer with 30 seconds default (configurable 10s - 5min).
 - Hotkey: F8 default (configurable).
-- Audio separation: System audio, microphone, and specific apps (OBS-style).
+- Audio separation: System audio and microphone for v1. Application-specific
+  audio is post-v1.
 - Volume control: Both system and microphone adjustable independently.
-- Game detection: Automatic + manual.
+- Game detection: Post-v1; no game-process integration is used by v1.
 - Notifications: Windows system notifications (like Medal).
 - Clip storage: `%USERPROFILE%\Videos\MoonLit` (configurable).
 - Formats: MP4 (default) and MKV (configurable).
@@ -129,12 +130,11 @@ The project is designed as a Windows-first application with portable architectur
 
 ### Later
 - Application-specific audio capture (OBS-style)
-- Game detection (automatic + manual)
-- Advanced quality settings (bitrate, FPS, resolution)
+- Application-specific audio, game detection, editor/export, separated tracks,
+  and social export presets
 - Clip editing (trim, split, join)
 - Audio track separation
 - Export presets (YouTube, Discord, Twitter)
-- Notifications and system tray
 - Overlay indicators (optional)
 - Linux port
 
@@ -181,7 +181,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 ## Hardware Profiles
 
 ### Windows Test Machine
-- **OS**: Windows 10 1903+ or Windows 11
+- **OS**: Windows 10 Enterprise LTSC 2021 or Windows 11
 - **GPU**: NVIDIA RTX 3060 12 GB (or other GPU)
 - **Encoding**: NVENC H.264/H.265
 - **Audio**: WASAPI loopback + microphone
@@ -218,7 +218,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
    - ⏳ WASAPI audio capture and mixing
    - ⏳ GPU encoding (NVENC/AMF/QuickSync)
    - ⏳ Hotkey service
-   - ⏳ Game detector
+   - ⏳ Game detector (post-v1; excluded from the v1 gate)
 
 3. **Frontend Adaptation** (Linux - Current)
    - ⏳ Windows-inspired UI design
@@ -254,7 +254,8 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 - **Save**: Hotkey (F8 default) saves last N seconds to MP4/MKV
 
 ### Audio Mixing
-- **Sources**: System audio (loopback), microphone, specific apps
+- **Sources**: System audio (loopback) and microphone for v1; specific app
+  sources are post-v1
 - **Volumes**: Independent control per source
 - **Mute**: Individual mute/unmute
 - **Mixing**: Real-time mixing before encoding
@@ -262,7 +263,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 ### Capture Modes
 - **Full screen**: Capture entire monitor
 - **Window**: Capture specific window
-- **Application**: Capture specific application (when available)
+- **Application**: Post-v1; v1 supports monitor and window capture only
 - **Region**: Capture custom region (future)
 
 ### Quality Settings
@@ -271,7 +272,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 - **GPU**: NVENC/AMF/QuickSync (automatic detection)
 - **CPU**: x264/x265 fallback
 
-### Game Detection
+### Game Detection (Post-v1)
 - **Automatic**: Scan running processes for known games
 - **Manual**: Add games manually with name and process
 - **Database**: Community-maintained game database (future)
@@ -297,7 +298,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 ## Technical Requirements
 
 ### Windows
-- **OS**: Windows 10 1903+ or Windows 11
+- **OS**: Windows 10 Enterprise LTSC 2021 or Windows 11
 - **Runtime**: WebView2 (installed by Tauri)
 - **GPU**: Optional (for hardware encoding)
 - **Audio**: WASAPI (built into Windows)
@@ -312,7 +313,7 @@ L3 and L4 are not development blockers. They are release evidence and belong in 
 ### Build
 - **Target**: x86_64-pc-windows-msvc
 - **Installer**: NSIS or WiX
-- **Signing**: Code signing (optional)
+- **Signing**: Authenticode signing is mandatory for a public v1 release.
 
 ## Distribution
 

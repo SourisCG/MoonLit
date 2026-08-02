@@ -69,7 +69,7 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 - [ ] Enumerate audio devices
 - [ ] Capture system audio (loopback)
 - [ ] Capture microphone
-- [ ] Capture specific application audio
+- [ ] Capture specific application audio (post-v1; excluded from v1 gate)
 - [ ] Multiple audio sources simultaneously
 - [ ] Volume control per source
 - [ ] Mute/unmute functionality
@@ -156,7 +156,7 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 - [ ] Multiple capture sessions
 - [ ] Capture with audio mixing
 - [ ] Capture with hotkey
-- [ ] Capture with game detection
+- [ ] Game detection (post-v1; not part of strict v1)
 - [ ] Capture with notifications
 - [ ] Capture with library integration
 
@@ -197,7 +197,7 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 - [ ] Sleep/hibernate during capture
 
 #### 3.6 Compatibility Tests
-- [ ] Windows 10 1903
+- [ ] Windows 10 Enterprise LTSC 2021
 - [ ] Windows 10 20H2
 - [ ] Windows 10 21H2
 - [ ] Windows 11 21H2
@@ -256,7 +256,7 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 ### Windows Versions
 | Version | Priority | Status |
 |---------|----------|--------|
-| Windows 10 1903 | High | ⏳ |
+| Windows 10 Enterprise LTSC 2021 | High | ⏳ |
 | Windows 10 21H2 | High | ⏳ |
 | Windows 11 22H2 | High | ⏳ |
 | Windows 11 23H2 | Medium | ⏳ |
@@ -275,7 +275,7 @@ rpmspec -P packaging/rpm/moonlit.spec  # For future Linux RPM
 | Full screen | High | ⏳ |
 | Window capture | High | ⏳ |
 | Multi-monitor | Medium | ⏳ |
-| Game capture | High | ⏳ |
+| Monitor/window capture only (Game Capture prohibited) | High | ⏳ |
 | Desktop capture | High | ⏳ |
 
 ### Audio Scenarios
@@ -365,7 +365,7 @@ jobs:
 - [ ] Audio mixing works correctly
 - [ ] GPU encoding works on all vendors
 - [ ] Hotkey works globally
-- [ ] Game detection works
+- [ ] Game detection (post-v1; excluded from v1 gate)
 - [ ] Notifications work
 - [ ] Library works with 1000+ clips
 - [ ] Performance meets targets
