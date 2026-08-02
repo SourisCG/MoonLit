@@ -28,7 +28,7 @@ Cloud sync, accounts, social integrations and Linux support are explicitly defer
 ## Repository Baseline
 
 - OBS base commit: `0052d024f` (`32.2.1`).
-- Current MoonLit commit: `5ae297c7d`.
+- Current MoonLit commit: `841c663ec`.
 - Current branch: `main`.
 - Legacy branch: `legacy/rust-tauri-v2`.
 - Legacy tag: `legacy-rust-tauri-v2-2026-08-01`.
@@ -375,7 +375,7 @@ trusted certificate later.
 
 ### P9 - Test Matrix And GitHub Publication
 
-Status: in progress
+Status: complete
 
 Deliverables:
 
@@ -394,13 +394,15 @@ Acceptance:
 - No forbidden runtime artifacts.
 - GitHub contains both legacy recovery refs and the complete MoonLit main history.
 
-Current result: the `test/moonlit` harness is wired into the build via
-`enable_testing()` and `ctest` with 11 passing tests (SQLite round-trip, FTS5
-search, update, reconcile, legacy-JSON migration, export-math tolerances and
-MoonLitPaths). The FTS5 search JOIN exposed and fixed a column-qualification
-bug. The manual matrix is documented in `MANUAL_MATRIX.md`; host-feasible
-rows (S1-S4, S7) passed. Live capture rows need a real game window.
-Publication awaits `gh` authentication.
+Current result: 11 unit tests pass under ctest (SQLite round-trip, FTS5,
+migration, export-math tolerances, MoonLitPaths); the manual matrix is
+documented in `MANUAL_MATRIX.md` with the host-feasible rows passed. The
+runtime starts and exits cleanly with no CodeIntegrity or Defender events.
+`legacy/rust-tauri-v2`, `archive/pre-obs-reset` and the legacy tag were pushed
+first and verified, then `main` was force-pushed with lease from the known
+`4ddee14d` to `841c663ec` (https://github.com/SourisCG/MoonLit). Remaining
+manual rows (capture/audio/library with a real game window) are pending user
+execution.
 
 ## Explicitly Deferred
 
@@ -428,6 +430,8 @@ Publication awaits `gh` authentication.
 | 2026-08-02 | P6 | Export duration verified against the trim range with tolerance unit tests | 73f8e3233 |
 | 2026-08-02 | P7 | MoonLit tray actions, close-to-tray, HKCU autostart, icons and branding | 2954f49f3 |
 | 2026-08-02 | P8 | Portable ZIP and NSIS installer pipeline with data-preserving uninstall | 5ae297c7d |
+| 2026-08-02 | P9 | MoonLitPaths tests, manual matrix documented, plan updated | 841c663ec |
+| 2026-08-02 | P9 | GitHub publication: legacy refs and tag pushed first, then `main` force-pushed with lease (4ddee14d -> 841c663ec) | published |
 
 ## GitHub Release Procedure
 
