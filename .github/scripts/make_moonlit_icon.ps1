@@ -50,5 +50,6 @@ $bw.Write([UInt32]$pngBytes.Length)
 $bw.Write([UInt32]22)         # offset
 $bw.Write($pngBytes)
 $bw.Flush()
-[System.IO.File]::WriteAllBytes((Join-Path $PSScriptRoot "MoonLit.ico"), $ms.ToArray())
-Write-Host "wrote MoonLit.ico ($($ms.ToArray().Length) bytes)"
+$target = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\frontend\cmake\windows")).Path "MoonLit.ico"
+[System.IO.File]::WriteAllBytes($target, $ms.ToArray())
+Write-Host "wrote $target ($($ms.ToArray().Length) bytes)"
