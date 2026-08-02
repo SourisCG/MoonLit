@@ -10,6 +10,8 @@ target_link_libraries(obs-studio PRIVATE OBS::qt-vertical-scroll-area)
 target_sources(
   obs-studio
   PRIVATE
+    widgets/ClipFrameStrip.cpp
+    widgets/ClipFrameStrip.hpp
     widgets/AudioMixer.cpp
     widgets/AudioMixer.hpp
     widgets/ColorSelect.cpp

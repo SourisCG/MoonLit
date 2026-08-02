@@ -5,6 +5,18 @@
 using namespace MoonLit::exportmath;
 using namespace MoonLitTest;
 
+MOONLIT_TEST(exportmath_linear_gain)
+{
+	bool ok = expect(std::abs(linearGainDb(0.0) - 1.0) < 1e-9, "0 dB is unity gain", failure);
+	ok &= expect(std::abs(linearGainDb(6.0) - std::pow(10.0, 6.0 / 20.0)) < 1e-6, "6 dB scales by 2x", failure);
+	ok &= expect(std::abs(linearGainDb(-6.0) - std::pow(10.0, -6.0 / 20.0)) < 1e-6, "negative dB attenuates",
+		     failure);
+	ok &= expect(linearGainDb(100.0) == linearGainDb(24.0), "gain clamps at +24 dB", failure);
+	ok &= expect(linearGainDb(-100.0) == linearGainDb(-60.0), "gain clamps at -60 dB", failure);
+	ok &= expect(linearGainDb(0.0) > 0.0, "gain is positive", failure);
+	return ok;
+}
+
 MOONLIT_TEST(exportmath_rejects_invalid_ranges)
 {
 	bool ok = expect(!isRangeValid(-1, 1000), "negative start is invalid", failure);

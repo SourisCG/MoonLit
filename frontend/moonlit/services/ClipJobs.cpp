@@ -1,5 +1,7 @@
 #include "ClipJobs.hpp"
 
+#include <algorithm>
+
 namespace MoonLit {
 
 ClipJobs::ClipJobs(MoonLitPaths paths, QObject *parent) : QObject(parent), paths_(std::move(paths)), repository_(paths_)
@@ -84,6 +86,46 @@ void ClipJobs::search(const QString &query)
 	emit searchResults(repository_.search(query), query);
 }
 
+void ClipJobs::saveEdits(const QString &id, qint64 startMs, qint64 endMs, bool muted, double gainDb)
+{
+	QString error;
+	if (!repository_.open(&error)) {
+		emit clipEditsSaved(id, error);
+		return;
+	}
+	const auto clip = repository_.find(id);
+	if (!clip) {
+		emit clipEditsSaved(id, QStringLiteral("Clip no encontrado"));
+		return;
+	}
+
+	Clip edited = *clip;
+	edited.trimStartMs = std::max<qint64>(0, startMs);
+	edited.trimEndMs = endMs > 0 ? std::max(endMs, edited.trimStartMs + 1) : -1;
+	edited.muted = muted;
+	edited.gainDb = gainDb;
+
+	if (!repository_.upsert(edited, &error)) {
+		emit clipEditsSaved(id, error);
+		return;
+	}
+	emit clipEditsSaved(id, QString());
+}
+
+void ClipJobs::previewFrameAt(const QString &path, qint64 positionMs)
+{
+	QString error;
+	const QImage image = preview_.frameAt(path, positionMs, 640, &error);
+	emit previewFrameReady(path, positionMs, image, error);
+}
+
+void ClipJobs::previewStrip(const QString &path, int count)
+{
+	QString error;
+	const QVector<QImage> images = preview_.frameStrip(path, count, 160, &error);
+	emit previewStripReady(path, images, error);
+}
+
 void ClipJobs::exportClip(const QString &id, qint64 startMs, qint64 endMs)
 {
 	cancelExport_.store(false);
@@ -108,6 +150,8 @@ void ClipJobs::exportClip(const QString &id, qint64 startMs, qint64 endMs)
 	request.destinationPath = paths_.exportPath(clip->id, QStringLiteral("mp4"));
 	request.startMs = startMs;
 	request.endMs = endMs;
+	request.muted = clip->muted;
+	request.gainDb = clip->gainDb;
 	request.progress = [this](double fraction) { emit exportProgress(fraction); };
 
 	const ClipExportResult result = exporter_.exportClip(request, [this] { return cancelExport_.load(); });

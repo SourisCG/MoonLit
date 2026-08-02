@@ -8,14 +8,17 @@
 
 #include <optional>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QSlider;
 class QSpinBox;
 class QThread;
 class QTimer;
+class ClipFrameStrip;
 
 class MoonLitLibraryWidget final : public QWidget {
 	Q_OBJECT
@@ -39,12 +42,16 @@ private slots:
 	void exportSelected();
 	void importFiles();
 	void onFilterChanged(int index);
+	void saveEdits();
 	void onLibraryLoaded(QVector<MoonLit::Clip> clips, const QString &error);
 	void onClipIngested(const QString &id, const QString &error);
 	void onClipRemoved(const QString &id, const QString &error);
+	void onClipEditsSaved(const QString &id, const QString &error);
 	void onSearchResults(QVector<MoonLit::Clip> clips, const QString &query);
 	void onExportProgress(double fraction);
 	void onExportFinished(bool succeeded, bool cancelled, const QString &outputPath, const QString &error);
+	void onPreviewStripReady(const QString &path, const QVector<QImage> &images, const QString &error);
+	void onPreviewFrameReady(const QString &path, qint64 positionMs, const QImage &image, const QString &error);
 
 private:
 	enum class LibraryFilter { All, Available, Missing };
@@ -64,6 +71,11 @@ private:
 	QListWidget *clipList_ = nullptr;
 	QLabel *detailsLabel_ = nullptr;
 	QLabel *statusLabel_ = nullptr;
+	QLabel *previewImage_ = nullptr;
+	QLabel *gainValue_ = nullptr;
+	ClipFrameStrip *frameStrip_ = nullptr;
+	QCheckBox *muteCheck_ = nullptr;
+	QSlider *gainSlider_ = nullptr;
 	QSpinBox *startSeconds_ = nullptr;
 	QSpinBox *endSeconds_ = nullptr;
 	QPushButton *openButton_ = nullptr;
@@ -71,4 +83,7 @@ private:
 	QPushButton *removeButton_ = nullptr;
 	QPushButton *exportButton_ = nullptr;
 	QPushButton *cancelButton_ = nullptr;
+	QPushButton *saveEditsButton_ = nullptr;
+	QString previewPath_;
+	qint64 previewDurationMs_ = 0;
 };

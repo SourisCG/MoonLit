@@ -1,5 +1,8 @@
 #include "MoonLitLibraryWidget.hpp"
 
+#include "ClipFrameStrip.hpp"
+
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QColor>
@@ -9,13 +12,16 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QProcess>
+#include <QPixmap>
 #include <QPushButton>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QThread>
@@ -123,6 +129,17 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	details->addWidget(revealButton_);
 	details->addWidget(removeButton_);
 
+	previewImage_ = new QLabel(this);
+	previewImage_->setObjectName(QStringLiteral("libraryPreview"));
+	previewImage_->setFixedHeight(110);
+	previewImage_->setAlignment(Qt::AlignCenter);
+	previewImage_->setStyleSheet(QStringLiteral("background: #000000; border: 1px solid #343b49;"));
+	previewImage_->setText(QStringLiteral("Vista previa"));
+	details->addWidget(previewImage_);
+
+	frameStrip_ = new ClipFrameStrip(this);
+	details->addWidget(frameStrip_);
+
 	auto *trimTitle = new QLabel(QStringLiteral("Exportar recorte rapido"), this);
 	details->addWidget(trimTitle);
 	auto *trimRow = new QHBoxLayout();
@@ -135,6 +152,23 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	trimRow->addWidget(startSeconds_);
 	trimRow->addWidget(endSeconds_);
 	details->addLayout(trimRow);
+
+	auto *audioRow = new QHBoxLayout();
+	muteCheck_ = new QCheckBox(QStringLiteral("Silenciar"), this);
+	gainSlider_ = new QSlider(Qt::Horizontal, this);
+	gainSlider_->setRange(-20, 20);
+	gainSlider_->setValue(0);
+	gainValue_ = new QLabel(QStringLiteral("0 dB"), this);
+	gainValue_->setMinimumWidth(48);
+	audioRow->addWidget(muteCheck_);
+	audioRow->addWidget(gainSlider_, 1);
+	audioRow->addWidget(gainValue_);
+	details->addLayout(audioRow);
+
+	saveEditsButton_ = new QPushButton(QStringLiteral("Guardar edicion"), this);
+	saveEditsButton_->setEnabled(false);
+	details->addWidget(saveEditsButton_);
+
 	exportButton_ = new QPushButton(QStringLiteral("Exportar MP4"), this);
 	exportButton_->setEnabled(false);
 	details->addWidget(exportButton_);
@@ -164,6 +198,39 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(exportButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::exportSelected);
 	connect(cancelButton_, &QPushButton::clicked, this,
 		[this]() { setStatus(QStringLiteral("Cancelando...")); jobs_->cancelExport(); });
+	connect(saveEditsButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::saveEdits);
+	connect(startSeconds_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
+		if (frameStrip_ && previewDurationMs_ > 0) {
+			frameStrip_->setTrim(static_cast<qint64>(value) * 1000,
+					     static_cast<qint64>(endSeconds_->value()) * 1000);
+		}
+	});
+	connect(endSeconds_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
+		if (frameStrip_ && previewDurationMs_ > 0) {
+			frameStrip_->setTrim(static_cast<qint64>(startSeconds_->value()) * 1000,
+					     static_cast<qint64>(value) * 1000);
+		}
+	});
+	connect(frameStrip_, &ClipFrameStrip::seekRequested, this, [this](qint64 positionMs) {
+		if (previewPath_.isEmpty())
+			return;
+		QMetaObject::invokeMethod(jobs_,
+					  [this, path = previewPath_, positionMs]() {
+						  jobs_->previewFrameAt(path, positionMs);
+					  },
+					  Qt::QueuedConnection);
+	});
+	connect(frameStrip_, &ClipFrameStrip::trimChanged, this, [this](qint64 startMs, qint64 endMs) {
+		QSignalBlocker blockerStart(startSeconds_);
+		QSignalBlocker blockerEnd(endSeconds_);
+		startSeconds_->setValue(static_cast<int>(startMs / 1000));
+		endSeconds_->setValue(endMs >= 0 ? static_cast<int>(endMs / 1000)
+						 : static_cast<int>(previewDurationMs_ / 1000));
+	});
+	connect(gainSlider_, &QSlider::valueChanged, this,
+		[this](int value) { gainValue_->setText(QStringLiteral("%1 dB").arg(value)); });
+	connect(muteCheck_, &QCheckBox::toggled, this,
+		[this](bool checked) { gainSlider_->setEnabled(!checked); });
 
 	workerThread_ = new QThread(this);
 	jobs_ = new MoonLit::ClipJobs(paths_);
@@ -172,9 +239,13 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(jobs_, &MoonLit::ClipJobs::libraryLoaded, this, &MoonLitLibraryWidget::onLibraryLoaded);
 	connect(jobs_, &MoonLit::ClipJobs::clipIngested, this, &MoonLitLibraryWidget::onClipIngested);
 	connect(jobs_, &MoonLit::ClipJobs::clipRemoved, this, &MoonLitLibraryWidget::onClipRemoved);
+	connect(jobs_, &MoonLit::ClipJobs::clipEditsSaved, this, &MoonLitLibraryWidget::onClipEditsSaved);
 	connect(jobs_, &MoonLit::ClipJobs::searchResults, this, &MoonLitLibraryWidget::onSearchResults);
 	connect(jobs_, &MoonLit::ClipJobs::exportProgress, this, &MoonLitLibraryWidget::onExportProgress);
 	connect(jobs_, &MoonLit::ClipJobs::exportFinished, this, &MoonLitLibraryWidget::onExportFinished);
+	connect(jobs_, &MoonLit::ClipJobs::previewFrameReady, this, &MoonLitLibraryWidget::onPreviewFrameReady);
+	connect(jobs_, &MoonLit::ClipJobs::previewStripReady, this, &MoonLitLibraryWidget::onPreviewStripReady);
+	qRegisterMetaType<QVector<QImage>>("QVector<QImage>");
 	workerThread_->start();
 
 	refresh();
@@ -360,6 +431,90 @@ void MoonLitLibraryWidget::updateSelection()
 	endSeconds_->setRange(0, std::max(0, durationSeconds));
 	startSeconds_->setValue(static_cast<int>(clip->trimStartMs / 1000));
 	endSeconds_->setValue(clip->trimEndMs > 0 ? static_cast<int>(clip->trimEndMs / 1000) : durationSeconds);
+
+	muteCheck_->setChecked(clip->muted);
+	gainSlider_->setEnabled(!clip->muted);
+	gainSlider_->setValue(qBound(-20, static_cast<int>(std::lround(clip->gainDb)), 20));
+	gainValue_->setText(QStringLiteral("%1 dB").arg(gainSlider_->value()));
+	saveEditsButton_->setEnabled(true);
+
+	previewPath_ = clip->mediaPath;
+	previewDurationMs_ = clip->metadata.durationMs;
+	previewImage_->setText(QStringLiteral("Vista previa"));
+	frameStrip_->setFrames({}, previewDurationMs_);
+	frameStrip_->setTrim(clip->trimStartMs, clip->trimEndMs);
+	QMetaObject::invokeMethod(jobs_,
+				  [this, path = clip->mediaPath]() { jobs_->previewStrip(path, 12); },
+				  Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::saveEdits()
+{
+	const auto clip = selectedClip();
+	if (!clip || !jobs_)
+		return;
+
+	const int start = startSeconds_->value();
+	const int end = endSeconds_->value();
+	if (end > 0 && end <= start) {
+		setStatus(QStringLiteral("El final debe ser mayor que el inicio"), true);
+		return;
+	}
+
+	setStatus(QStringLiteral("Guardando edicion..."));
+	QMetaObject::invokeMethod(jobs_,
+				  [this, id = clip->id, startMs = static_cast<qint64>(start) * 1000,
+				   endMs = end > 0 ? static_cast<qint64>(end) * 1000 : -1, muted = muteCheck_->isChecked(),
+				   gainDb = static_cast<double>(gainSlider_->value())]() {
+					  jobs_->saveEdits(id, startMs, endMs, muted, gainDb);
+				  },
+				  Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::onClipEditsSaved(const QString &, const QString &error)
+{
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	setStatus(QStringLiteral("Edicion guardada"));
+	refresh();
+}
+
+void MoonLitLibraryWidget::onPreviewStripReady(const QString &path, const QVector<QImage> &images,
+					       const QString &error)
+{
+	if (path != previewPath_)
+		return;
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	frameStrip_->setFrames(images, previewDurationMs_);
+	if (!images.isEmpty() && !previewImage_->text().isEmpty()) {
+		previewImage_->setPixmap(QPixmap::fromImage(
+			images.first().scaled(previewImage_->width() - 4, previewImage_->height() - 4,
+					      Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+		previewImage_->setText(QString());
+	}
+}
+
+void MoonLitLibraryWidget::onPreviewFrameReady(const QString &path, qint64 positionMs, const QImage &image,
+					       const QString &error)
+{
+	Q_UNUSED(positionMs);
+	if (path != previewPath_)
+		return;
+	if (!error.isEmpty() || image.isNull()) {
+		if (!error.isEmpty()) {
+			setStatus(error, true);
+		}
+		return;
+	}
+	previewImage_->setPixmap(QPixmap::fromImage(
+		image.scaled(previewImage_->width() - 4, previewImage_->height() - 4, Qt::KeepAspectRatio,
+			     Qt::SmoothTransformation)));
+	previewImage_->setText(QString());
 }
 
 void MoonLitLibraryWidget::openSelected()

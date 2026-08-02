@@ -3,8 +3,15 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <cmath>
 
 namespace MoonLit::exportmath {
+
+/* Linear gain factor for a decibel value, clamped to [-60, 24] dB. */
+inline double linearGainDb(double gainDb)
+{
+	return std::pow(10.0, std::clamp(gainDb, -60.0, 24.0) / 20.0);
+}
 
 /* A trim range is valid when the start is not negative and the end (if set)
  * is strictly after the start. */

@@ -17,6 +17,8 @@ struct ClipExportRequest {
 	QString destinationPath;
 	qint64 startMs{0};
 	qint64 endMs{-1};
+	bool muted{false};
+	double gainDb{0.0};
 	ClipExportMode mode{ClipExportMode::FastKeyframeAligned};
 	ProgressCallback progress;
 };

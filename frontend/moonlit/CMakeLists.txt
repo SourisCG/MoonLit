@@ -22,6 +22,8 @@ target_sources(
     editor/ClipExportService.cpp
     editor/ClipExportService.hpp
     editor/ExportMath.hpp
+    media/ClipPreviewService.cpp
+    media/ClipPreviewService.hpp
     media/MediaProbe.cpp
     media/MediaProbe.hpp
     media/ThumbnailService.cpp
@@ -55,6 +57,7 @@ target_link_libraries(
     FFmpeg::avformat
     FFmpeg::avutil
     FFmpeg::swscale
+    FFmpeg::swresample
   PRIVATE
     sqlite3
 )
