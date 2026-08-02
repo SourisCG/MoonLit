@@ -2,6 +2,7 @@ add_executable(
   moonlit-tests
   ExportMathTests.cpp
   JsonImportTests.cpp
+  MoonLitPathsTests.cpp
   MoonLitTest.hpp
   SqliteRepositoryTests.cpp
   main.cpp

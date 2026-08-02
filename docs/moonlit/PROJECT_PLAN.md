@@ -28,7 +28,7 @@ Cloud sync, accounts, social integrations and Linux support are explicitly defer
 ## Repository Baseline
 
 - OBS base commit: `0052d024f` (`32.2.1`).
-- Current MoonLit commit: `56dd3b79a`.
+- Current MoonLit commit: `5ae297c7d`.
 - Current branch: `main`.
 - Legacy branch: `legacy/rust-tauri-v2`.
 - Legacy tag: `legacy-rust-tauri-v2-2026-08-01`.
@@ -267,8 +267,10 @@ Current result: replay save signaling, local ingest, metadata, thumbnails,
 search, reveal, trash and reconciliation are implemented. The library moved
 from the JSON index to a vendored SQLite repository with FTS5 search and
 transactional migration, and all repository work runs on a background worker.
-Dashboard/tray save notifications, library filters and import-to-library
-remain pending.
+Save/error notices surface on the dashboard and tray, and the library has
+status filters and file import. The dev runtime was unblocked (Smart App
+Control disabled) and the first-run startup fixed (missing obs-transitions
+and obs-filters plugins, optional streaming service).
 
 ### P6 - Basic Editor And Export
 
@@ -299,12 +301,13 @@ Acceptance:
 - Final metadata and duration match the selected range.
 
 Current result: keyframe-aligned MP4 export with trim controls is implemented,
-and export runs in the background with progress reporting and cancellation.
-Export verification and fractional-duration tests remain pending (P9).
+export runs in the background with progress and cancellation, and the output
+duration is verified against the selected range with tolerance-based unit
+tests. Fractional-duration and live trim testing remains in the manual matrix.
 
 ### P7 - Tray, Startup And Product UI
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -328,9 +331,15 @@ Acceptance:
 - Close-to-tray does not swallow Windows shutdown.
 - Explicit Exit cleanly finalizes output.
 
+Current result: MoonLit tray actions (guardar clip, abrir biblioteca, ajustes,
+salir), close-to-tray with explicit exit and WM_QUERYENDSESSION guard, HKCU
+Run autostart with `--minimize-to-tray`, MoonLit icon (SVG + ICO), version
+resources and About section are implemented. Interactive verification (S5/S6)
+remains in the manual matrix.
+
 ### P8 - Portable Package, Installer And Release Gate
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -355,6 +364,15 @@ Acceptance:
 - End-user package has no PDBs, hooks, injectors or virtual camera.
 - Signatures verify, or the build is explicitly marked unsigned.
 
+Current result: `package.ps1` produces the staging (no PDBs), runs the
+release-gate audit, builds the 40 MB portable ZIP and a signed 28 MB NSIS
+installer into `%LOCALAPPDATA%\Programs\MoonLit`; silent install and uninstall
+verified on this host, preserving `%APPDATA%\MoonLit` and
+`%LOCALAPPDATA%\MoonLit` (clips/database). Signing uses the self-signed
+"MoonLit Development" certificate (trusted on this host); end-user machines
+need the certificate installed to Trusted Root, or a switch to a publicly
+trusted certificate later.
+
 ### P9 - Test Matrix And GitHub Publication
 
 Status: in progress
@@ -377,11 +395,12 @@ Acceptance:
 - GitHub contains both legacy recovery refs and the complete MoonLit main history.
 
 Current result: the `test/moonlit` harness is wired into the build via
-`enable_testing()` and `ctest`, and SQLite round-trip, FTS5 search, update,
-reconcile and legacy-JSON-migration tests pass. The FTS5 search JOIN exposed
-and fixed a column-qualification bug. Resolver, detector, paths, trim-rule and
-export tests remain; live hardware/manual matrix is blocked on this host by
-App Control (WDAC) denying unsigned binaries.
+`enable_testing()` and `ctest` with 11 passing tests (SQLite round-trip, FTS5
+search, update, reconcile, legacy-JSON migration, export-math tolerances and
+MoonLitPaths). The FTS5 search JOIN exposed and fixed a column-qualification
+bug. The manual matrix is documented in `MANUAL_MATRIX.md`; host-feasible
+rows (S1-S4, S7) passed. Live capture rows need a real game window.
+Publication awaits `gh` authentication.
 
 ## Explicitly Deferred
 
@@ -404,6 +423,11 @@ App Control (WDAC) denying unsigned binaries.
 | 2026-08-02 | P2 | Encoder resolver, profile migration, settings dialog and four-track MKV audio implemented | 079c1e56e, a28442ac2, 405e9cbf4 |
 | 2026-08-02 | P5/P6 | Library work moved to a background worker thread with cancellation and export progress | 2ee9e2b33 |
 | 2026-08-02 | P5/P9 | Vendored SQLite with FTS5, SQLite clip repository with JSON migration, and `test/moonlit` harness with passing tests | 56dd3b79a |
+| 2026-08-02 | F0 | Code-signing, verification and release-gate audit scripts; host unblocked (Smart App Control off, self-signed certificate) | c31ddd1a9 |
+| 2026-08-02 | P5 | Clip save/error notices, tray notification, library filters and import; first-run startup fixes | 7896832c2, 0e9fbf93d |
+| 2026-08-02 | P6 | Export duration verified against the trim range with tolerance unit tests | 73f8e3233 |
+| 2026-08-02 | P7 | MoonLit tray actions, close-to-tray, HKCU autostart, icons and branding | 2954f49f3 |
+| 2026-08-02 | P8 | Portable ZIP and NSIS installer pipeline with data-preserving uninstall | 5ae297c7d |
 
 ## GitHub Release Procedure
 
