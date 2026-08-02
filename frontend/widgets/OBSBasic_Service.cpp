@@ -104,7 +104,12 @@ bool OBSBasic::InitService()
 
 	service = obs_service_create("rtmp_common", "default_service", nullptr, nullptr);
 	if (!service) {
+#ifdef MOONLIT_BUILD
+		/* MoonLit is recording-only; no streaming service is required. */
+		return true;
+#else
 		return false;
+#endif
 	}
 	obs_service_release(service);
 
