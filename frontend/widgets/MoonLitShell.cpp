@@ -97,6 +97,10 @@ std::string makeWindowSelector(const MoonLitTarget &target)
 OBSSceneItem moonlitShieldItem;
 OBSSceneItem moonlitAudioItem;
 OBSSource moonlitAudioSource;
+OBSSceneItem moonlitMicItem;
+OBSSource moonlitMicSource;
+OBSSceneItem moonlitChatItem;
+OBSSource moonlitChatSource;
 MoonLitTarget moonlitTarget;
 QElapsedTimer moonlitWgcTimer;
 bool moonlitTargetFocused = false;
@@ -212,7 +216,72 @@ obs_source_t *createMoonLitAudioSource(const std::string &selector)
 	obs_data_set_int(settings, "moonlit_hwnd", static_cast<int64_t>(moonlitTarget.window));
 	obs_data_set_int(settings, "moonlit_process_id", moonlitTarget.processId);
 	obs_data_set_int(settings, "moonlit_creation_time", static_cast<int64_t>(moonlitTarget.creationTime));
-	return obs_source_create_private(audioType, "MoonLit Game Audio", settings);
+	obs_source_t *source = obs_source_create_private(audioType, "MoonLit Game Audio", settings);
+	if (source) {
+		/* Track 2: game only. */
+		obs_source_set_audio_mixers(source, (1u << 1));
+	}
+	return source;
+}
+
+/* Track 3: explicit microphone with persisted device. */
+obs_source_t *createMoonLitMicSource()
+{
+	static const char *const audioType = "wasapi_input_capture";
+	if (!obs_get_latest_input_type_id(audioType))
+		return nullptr;
+
+	const char *deviceId = config_get_string(OBSBasic::Get()->Config(), "MoonLit", "MicDeviceId");
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_string(settings, "device_id", deviceId && *deviceId ? deviceId : "default");
+
+	obs_source_t *source = obs_source_create_private(audioType, "MoonLit Micrófono", settings);
+	if (source) {
+		obs_source_set_audio_mixers(source, (1u << 2));
+	}
+	return source;
+}
+
+/* Track 4: chat process audio (e.g. Discord) with exe-based restart recovery. */
+obs_source_t *createMoonLitChatSource()
+{
+	const char *chatExe = config_get_string(OBSBasic::Get()->Config(), "MoonLit", "ChatExe");
+	if (!chatExe || !*chatExe)
+		return nullptr;
+
+	static const char *const audioType = "wasapi_process_output_capture";
+	if (!obs_get_latest_input_type_id(audioType))
+		return nullptr;
+
+	std::string selector = "::" + encodeWindowPart(QString::fromUtf8(chatExe));
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_string(settings, "window", selector.c_str());
+	obs_data_set_int(settings, "priority", WINDOW_PRIORITY_EXE);
+
+	obs_source_t *source = obs_source_create_private(audioType, "MoonLit Chat", settings);
+	if (source) {
+		obs_source_set_audio_mixers(source, (1u << 3));
+	}
+	return source;
+}
+
+void RemoveMoonLitAudioItems()
+{
+	if (moonlitAudioItem) {
+		obs_sceneitem_remove(moonlitAudioItem);
+		moonlitAudioItem = nullptr;
+	}
+	moonlitAudioSource = nullptr;
+	if (moonlitMicItem) {
+		obs_sceneitem_remove(moonlitMicItem);
+		moonlitMicItem = nullptr;
+	}
+	moonlitMicSource = nullptr;
+	if (moonlitChatItem) {
+		obs_sceneitem_remove(moonlitChatItem);
+		moonlitChatItem = nullptr;
+	}
+	moonlitChatSource = nullptr;
 }
 
 struct MoonLitMonitorSelection {
@@ -569,6 +638,24 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 		}
 	}
 
+	if (obs_get_latest_input_type_id("wasapi_input_capture")) {
+		OBSSourceAutoRelease mic = createMoonLitMicSource();
+		if (mic) {
+			moonlitMicSource = mic;
+			moonlitMicItem = obs_scene_add(scene, mic);
+			if (!moonlitMicItem)
+				moonlitMicSource = nullptr;
+		}
+	}
+
+	OBSSourceAutoRelease chat = createMoonLitChatSource();
+	if (chat) {
+		moonlitChatSource = chat;
+		moonlitChatItem = obs_scene_add(scene, chat);
+		if (!moonlitChatItem)
+			moonlitChatSource = nullptr;
+	}
+
 	createMoonLitShield(scene);
 	if (!moonlitShieldItem) {
 		blog(LOG_ERROR, "MoonLit: capture shield could not be installed");
@@ -578,6 +665,7 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 			moonlitAudioItem = nullptr;
 		}
 		moonlitAudioSource = nullptr;
+		RemoveMoonLitAudioItems();
 		return;
 	}
 
@@ -590,11 +678,7 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 			moonlitShieldItem = nullptr;
 		}
 		moonlitCaptureSource = nullptr;
-		if (moonlitAudioItem) {
-			obs_sceneitem_remove(moonlitAudioItem);
-			moonlitAudioItem = nullptr;
-		}
-		moonlitAudioSource = nullptr;
+		RemoveMoonLitAudioItems();
 		return;
 	}
 	setMoonLitBounds(moonlitCaptureItem);
@@ -623,11 +707,7 @@ void OBSBasic::ClearMoonLitCapture()
 		moonlitCaptureItem = nullptr;
 	}
 	moonlitCaptureSource = nullptr;
-	if (moonlitAudioItem) {
-		obs_sceneitem_remove(moonlitAudioItem);
-		moonlitAudioItem = nullptr;
-	}
-	moonlitAudioSource = nullptr;
+	RemoveMoonLitAudioItems();
 	if (moonlitShieldItem) {
 		obs_sceneitem_remove(moonlitShieldItem);
 		moonlitShieldItem = nullptr;

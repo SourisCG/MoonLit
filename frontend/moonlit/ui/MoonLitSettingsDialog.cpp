@@ -88,9 +88,20 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	QPushButton *browse = new QPushButton(QStringLiteral("Examinar…"), this);
 	connect(browse, &QPushButton::clicked, this, &MoonLitSettingsDialog::BrowseOutputPath);
 
+	micDevice = new QLineEdit(this);
+	micDevice->setPlaceholderText(QStringLiteral("default"));
+
+	chatExe = new QLineEdit(this);
+	chatExe->setPlaceholderText(QStringLiteral("Discord.exe"));
+
 	QLabel *formatNote = new QLabel(
 		QStringLiteral("Formato de grabación: MKV (autoritativo; MP4 solo como exportación)."), this);
 	formatNote->setWordWrap(true);
+
+	QLabel *audioNote = new QLabel(
+		QStringLiteral("Pistas: 1 mezcla (audio de escritorio de la escena), 2 juego, 3 micrófono, 4 chat."),
+		this);
+	audioNote->setWordWrap(true);
 
 	QHBoxLayout *pathLayout = new QHBoxLayout;
 	pathLayout->addWidget(outputPath, 1);
@@ -107,6 +118,9 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Pista 3 (micrófono):"), trackMic);
 	form->addRow(QStringLiteral("Pista 4 (chat):"), trackChat);
 	form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
+	form->addRow(audioNote);
+	form->addRow(QStringLiteral("Micrófono (ID de dispositivo):"), micDevice);
+	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
 	form->addRow(formatNote);
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -150,6 +164,12 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 
 	const char *path = config_get_string(config, "SimpleOutput", "FilePath");
 	outputPath->setText(QString::fromUtf8(path ? path : ""));
+
+	const char *mic = config_get_string(config, "MoonLit", "MicDeviceId");
+	micDevice->setText(QString::fromUtf8(mic ? mic : "default"));
+
+	const char *chat = config_get_string(config, "MoonLit", "ChatExe");
+	chatExe->setText(QString::fromUtf8(chat ? chat : ""));
 }
 
 void MoonLitSettingsDialog::SaveValues()
@@ -177,6 +197,18 @@ void MoonLitSettingsDialog::SaveValues()
 	const std::string path = outputPath->text().toStdString();
 	if (!path.empty()) {
 		config_set_string(config, "SimpleOutput", "FilePath", path.c_str());
+	}
+
+	const std::string mic = micDevice->text().trimmed().toStdString();
+	if (!mic.empty()) {
+		config_set_string(config, "MoonLit", "MicDeviceId", mic.c_str());
+	}
+
+	const std::string chat = chatExe->text().trimmed().toStdString();
+	if (chat.empty()) {
+		config_remove_value(config, "MoonLit", "ChatExe");
+	} else {
+		config_set_string(config, "MoonLit", "ChatExe", chat.c_str());
 	}
 
 	config_save_safe(config, "tmp", nullptr);

@@ -35,4 +35,6 @@ private:
 	QCheckBox *trackMic = nullptr;
 	QCheckBox *trackChat = nullptr;
 	QLineEdit *outputPath = nullptr;
+	QLineEdit *micDevice = nullptr;
+	QLineEdit *chatExe = nullptr;
 };
