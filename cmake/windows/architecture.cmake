@@ -100,13 +100,10 @@ else()
     set(${return_value} ${valid_uuid} PARENT_SCOPE)
   endfunction()
 
-  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows/buildspec.cmake")
+	include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows/buildspec.cmake")
 
-  add_subdirectory(libobs)
-  add_subdirectory(plugins/win-capture/get-graphics-offsets)
-  add_subdirectory(plugins/win-capture/graphics-hook)
-  add_subdirectory(plugins/win-capture/inject-helper)
-  add_subdirectory(plugins/win-dshow/virtualcam-module)
+	add_subdirectory(libobs)
+	add_subdirectory(plugins/win-dshow/virtualcam-module)
 
   return()
 endif()

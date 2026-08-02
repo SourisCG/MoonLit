@@ -594,15 +594,10 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 	UpdatePreviewSafeAreas();
 	UpdatePreviewSpacingHelpers();
 	UpdatePreviewOverflowSettings();
+	InitializeMoonLitShell();
 }
 
 static const double scaled_vals[] = {1.0, 1.25, (1.0 / 0.75), 1.5, (1.0 / 0.6), 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.0};
-
-#ifdef __APPLE__ // macOS
-#define DEFAULT_CONTAINER "hybrid_mov"
-#else // Windows/Linux
-#define DEFAULT_CONTAINER "hybrid_mp4"
-#endif
 
 bool OBSBasic::InitBasicConfigDefaults()
 {
@@ -748,16 +743,17 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "Stream1", "MultitrackVideoMaximumVideoTracksAuto", true);
 
 	config_set_default_string(activeConfiguration, "SimpleOutput", "FilePath", GetDefaultVideoSavePath().c_str());
-	config_set_default_string(activeConfiguration, "SimpleOutput", "RecFormat2", DEFAULT_CONTAINER);
+	config_set_default_string(activeConfiguration, "SimpleOutput", "RecFormat2", "mkv");
 	config_set_default_uint(activeConfiguration, "SimpleOutput", "VBitrate", 6000);
 	config_set_default_uint(activeConfiguration, "SimpleOutput", "ABitrate", 160);
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "UseAdvanced", false);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "Preset", "veryfast");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "NVENCPreset2", "p5");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecQuality", "Stream");
-	config_set_default_bool(activeConfiguration, "SimpleOutput", "RecRB", false);
+	config_set_default_bool(activeConfiguration, "SimpleOutput", "RecRB", true);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBSize", 512);
+	config_set_default_bool(activeConfiguration, "Video", "AutoRemux", true);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecRBPrefix", "Replay");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecAudioEncoder", "aac");
@@ -772,7 +768,7 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_string(activeConfiguration, "AdvOut", "RecType", "Standard");
 
 	config_set_default_string(activeConfiguration, "AdvOut", "RecFilePath", GetDefaultVideoSavePath().c_str());
-	config_set_default_string(activeConfiguration, "AdvOut", "RecFormat2", DEFAULT_CONTAINER);
+	config_set_default_string(activeConfiguration, "AdvOut", "RecFormat2", "mkv");
 	config_set_default_bool(activeConfiguration, "AdvOut", "RecUseRescale", false);
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecTracks", (1 << 0));
 	config_set_default_string(activeConfiguration, "AdvOut", "RecEncoder", "none");
@@ -798,7 +794,7 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecSplitFileTime", 15);
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecSplitFileSize", 2048);
 
-	config_set_default_bool(activeConfiguration, "AdvOut", "RecRB", false);
+	config_set_default_bool(activeConfiguration, "AdvOut", "RecRB", true);
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "AdvOut", "RecRBSize", 512);
 
@@ -1369,6 +1365,11 @@ void OBSBasic::OBSInit()
 
 	UpdatePreviewProgramIndicators();
 	OnFirstLoad();
+	InitializeMoonLitShell();
+
+#ifdef _WIN32
+	InitializeMoonLitDetection();
+#endif
 
 	if (!hideWindowOnStart) {
 		activateWindow();
@@ -1382,13 +1383,19 @@ void OBSBasic::OBSInit()
 
 		char **plugin = mfi.failed_modules;
 		while (*plugin) {
-			failed_plugins += *plugin;
-			failed_plugins += "\n";
+			if (strncmp(*plugin, "obs-qsv11", 9) == 0) {
+				blog(LOG_WARNING, "MoonLit: optional encoder module failed to load: %s", *plugin);
+			} else {
+				failed_plugins += *plugin;
+				failed_plugins += "\n";
+			}
 			plugin++;
 		}
 
-		QString failed_msg = QTStr("PluginsFailedToLoad.Text").arg(failed_plugins);
-		OBSMessageBox::warning(this, QTStr("PluginsFailedToLoad.Title"), failed_msg);
+		if (!failed_plugins.isEmpty()) {
+			QString failed_msg = QTStr("PluginsFailedToLoad.Text").arg(failed_plugins);
+			OBSMessageBox::warning(this, QTStr("PluginsFailedToLoad.Title"), failed_msg);
+		}
 	}
 }
 
@@ -2122,6 +2129,11 @@ void OBSBasic::UpdateEditMenu()
 
 void OBSBasic::UpdateTitleBar()
 {
+	if (moonlitDashboard) {
+		setWindowTitle(QStringLiteral("MoonLit"));
+		return;
+	}
+
 	stringstream name;
 
 	const char *profile = config_get_string(App()->GetUserConfig(), "Basic", "Profile");

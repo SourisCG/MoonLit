@@ -58,6 +58,10 @@ class OBSLogViewer;
 class OBSMissingFiles;
 class OBSProjector;
 class VolumeControl;
+class MoonLitDashboard;
+#ifdef _WIN32
+class MoonLitGameDetector;
+#endif
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
 #endif
@@ -262,6 +266,18 @@ private:
 	std::string patronJson;
 
 	std::unique_ptr<Ui::OBSBasic> ui;
+	QPointer<MoonLitDashboard> moonlitDashboard;
+
+	void InitializeMoonLitShell();
+#ifdef _WIN32
+	QPointer<MoonLitGameDetector> moonlitDetector;
+	OBSSource moonlitCaptureSource;
+	OBSSceneItem moonlitCaptureItem;
+
+	void InitializeMoonLitDetection();
+	void ConfigureMoonLitCapture(const struct MoonLitTarget &target);
+	void ClearMoonLitCapture();
+#endif
 
 	void OnEvent(enum obs_frontend_event event);
 
