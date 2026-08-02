@@ -338,14 +338,21 @@ static const char *duplicator_capture_getname(void *unused)
 	return TEXT_MONITOR_CAPTURE;
 }
 
-static void duplicator_actual_destroy(void *data)
+static void release_winrt_capture(struct duplicator_capture *capture)
 {
-	struct duplicator_capture *capture = data;
-
+	pthread_mutex_lock(&capture->update_mutex);
 	if (capture->capture_winrt) {
 		capture->exports.winrt_capture_free(capture->capture_winrt);
 		capture->capture_winrt = NULL;
 	}
+	pthread_mutex_unlock(&capture->update_mutex);
+}
+
+static void duplicator_actual_destroy(void *data)
+{
+	struct duplicator_capture *capture = data;
+
+	release_winrt_capture(capture);
 
 	obs_enter_graphics();
 
@@ -466,10 +473,7 @@ static void reset_capture_data(struct duplicator_capture *capture)
 
 static void free_capture_data(struct duplicator_capture *capture)
 {
-	if (capture->capture_winrt) {
-		capture->exports.winrt_capture_free(capture->capture_winrt);
-		capture->capture_winrt = NULL;
-	}
+	release_winrt_capture(capture);
 
 	if (capture->duplicator) {
 		gs_duplicator_destroy(capture->duplicator);
@@ -517,13 +521,13 @@ static void duplicator_capture_tick(void *data, float seconds)
 	obs_enter_graphics();
 
 	if (capture->method == METHOD_WGC) {
-		if (capture->reset_wgc && capture->capture_winrt) {
-			capture->exports.winrt_capture_free(capture->capture_winrt);
-			capture->capture_winrt = NULL;
+		if (capture->reset_wgc) {
+			release_winrt_capture(capture);
 			capture->reset_wgc = false;
 			capture->reset_timeout = RESET_INTERVAL_SEC;
 		}
 
+		pthread_mutex_lock(&capture->update_mutex);
 		if (!capture->capture_winrt) {
 			capture->reset_timeout += seconds;
 
@@ -549,11 +553,9 @@ static void duplicator_capture_tick(void *data, float seconds)
 				capture->reset_timeout = 0.0f;
 			}
 		}
+		pthread_mutex_unlock(&capture->update_mutex);
 	} else {
-		if (capture->capture_winrt) {
-			capture->exports.winrt_capture_free(capture->capture_winrt);
-			capture->capture_winrt = NULL;
-		}
+		release_winrt_capture(capture);
 
 		if (!capture->duplicator) {
 			capture->reset_timeout += seconds;
@@ -604,15 +606,25 @@ static void duplicator_capture_tick(void *data, float seconds)
 static uint32_t duplicator_capture_width(void *data)
 {
 	struct duplicator_capture *capture = data;
-	return (capture->method == METHOD_WGC) ? capture->exports.winrt_capture_width(capture->capture_winrt)
-					       : (capture->rot % 180 == 0 ? capture->width : capture->height);
+	if (capture->method == METHOD_WGC) {
+		pthread_mutex_lock(&capture->update_mutex);
+		const uint32_t width = capture->exports.winrt_capture_width(capture->capture_winrt);
+		pthread_mutex_unlock(&capture->update_mutex);
+		return width;
+	}
+	return capture->rot % 180 == 0 ? capture->width : capture->height;
 }
 
 static uint32_t duplicator_capture_height(void *data)
 {
 	struct duplicator_capture *capture = data;
-	return (capture->method == METHOD_WGC) ? capture->exports.winrt_capture_height(capture->capture_winrt)
-					       : (capture->rot % 180 == 0 ? capture->height : capture->width);
+	if (capture->method == METHOD_WGC) {
+		pthread_mutex_lock(&capture->update_mutex);
+		const uint32_t height = capture->exports.winrt_capture_height(capture->capture_winrt);
+		pthread_mutex_unlock(&capture->update_mutex);
+		return height;
+	}
+	return capture->rot % 180 == 0 ? capture->height : capture->width;
 }
 
 static void draw_cursor(struct duplicator_capture *capture)
@@ -629,14 +641,17 @@ static void duplicator_capture_render(void *data, gs_effect_t *unused)
 	struct duplicator_capture *capture = data;
 
 	if (capture->method == METHOD_WGC) {
+		bool release = false;
+		pthread_mutex_lock(&capture->update_mutex);
 		if (capture->capture_winrt) {
-			if (capture->exports.winrt_capture_active(capture->capture_winrt)) {
+			if (capture->exports.winrt_capture_active(capture->capture_winrt))
 				capture->exports.winrt_capture_render(capture->capture_winrt);
-			} else {
-				capture->exports.winrt_capture_free(capture->capture_winrt);
-				capture->capture_winrt = NULL;
-			}
+			else
+				release = true;
 		}
+		pthread_mutex_unlock(&capture->update_mutex);
+		if (release)
+			release_winrt_capture(capture);
 	} else {
 		if (!capture->duplicator)
 			return;
@@ -830,9 +845,11 @@ enum gs_color_space duplicator_capture_get_color_space(void *data, size_t count,
 
 	struct duplicator_capture *capture = data;
 	if (capture->method == METHOD_WGC) {
+		pthread_mutex_lock(&capture->update_mutex);
 		if (capture->capture_winrt) {
 			capture_space = capture->exports.winrt_capture_get_color_space(capture->capture_winrt);
 		}
+		pthread_mutex_unlock(&capture->update_mutex);
 	} else if (capture->duplicator && !capture->force_sdr) {
 		capture_space = gs_duplicator_get_color_space(capture->duplicator);
 	}

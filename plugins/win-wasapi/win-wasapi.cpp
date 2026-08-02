@@ -28,9 +28,35 @@ using namespace std;
 #define OPT_USE_DEVICE_TIMING "use_device_timing"
 #define OPT_WINDOW "window"
 #define OPT_PRIORITY "priority"
+#define OPT_MOONLIT_WINDOW "moonlit_hwnd"
+#define OPT_MOONLIT_PROCESS_ID "moonlit_process_id"
+#define OPT_MOONLIT_CREATION_TIME "moonlit_creation_time"
 
 WASAPINotify *GetNotify();
 static void GetWASAPIDefaults(obs_data_t *settings);
+
+static uint64_t file_time_value(const FILETIME *time)
+{
+	ULARGE_INTEGER value;
+	value.LowPart = time->dwLowDateTime;
+	value.HighPart = time->dwHighDateTime;
+	return value.QuadPart;
+}
+
+static bool target_process_matches(DWORD process_id, uint64_t creation_time)
+{
+	if (!process_id || !creation_time)
+		return false;
+
+	WinHandle process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, process_id);
+	if (!process.Valid())
+		return false;
+
+	FILETIME actual_creation_time = {}, exit_time = {}, kernel_time = {}, user_time = {};
+	return GetProcessTimes(process, &actual_creation_time, &exit_time, &kernel_time, &user_time) != FALSE &&
+	       file_time_value(&actual_creation_time) == creation_time &&
+	       WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+}
 
 #define OBS_KSAUDIO_SPEAKER_4POINT1 (KSAUDIO_SPEAKER_SURROUND | SPEAKER_LOW_FREQUENCY)
 
@@ -163,6 +189,9 @@ class WASAPISource {
 	string window_class;
 	string title;
 	string executable;
+	HWND target_window = NULL;
+	DWORD target_process_id = 0;
+	uint64_t target_creation_time = 0;
 	HWND hwnd = NULL;
 	DWORD process_id = 0;
 	const SourceType sourceType;
@@ -260,6 +289,9 @@ class WASAPISource {
 		string window_class;
 		string title;
 		string executable;
+		HWND target_window = NULL;
+		DWORD target_process_id = 0;
+		uint64_t target_creation_time = 0;
 	};
 
 	UpdateParams BuildUpdateParams(obs_data_t *settings);
@@ -492,6 +524,9 @@ WASAPISource::UpdateParams WASAPISource::BuildUpdateParams(obs_data_t *settings)
 	params.useDeviceTiming = obs_data_get_bool(settings, OPT_USE_DEVICE_TIMING);
 	params.isDefaultDevice = _strcmpi(params.device_id.c_str(), "default") == 0;
 	params.priority = (window_priority)obs_data_get_int(settings, "priority");
+	params.target_window = (HWND)(uintptr_t)obs_data_get_int(settings, OPT_MOONLIT_WINDOW);
+	params.target_process_id = (DWORD)obs_data_get_int(settings, OPT_MOONLIT_PROCESS_ID);
+	params.target_creation_time = (uint64_t)obs_data_get_int(settings, OPT_MOONLIT_CREATION_TIME);
 	params.window_class.clear();
 	params.title.clear();
 	params.executable.clear();
@@ -532,6 +567,9 @@ void WASAPISource::UpdateSettings(UpdateParams &&params)
 	window_class = std::move(params.window_class);
 	title = std::move(params.title);
 	executable = std::move(params.executable);
+	target_window = params.target_window;
+	target_process_id = params.target_process_id;
+	target_creation_time = params.target_creation_time;
 }
 
 void WASAPISource::LogSettings()
@@ -559,8 +597,10 @@ void WASAPISource::Update(obs_data_t *settings)
 	UpdateParams params = BuildUpdateParams(settings);
 
 	const bool restart = (sourceType == SourceType::ProcessOutput)
-				     ? ((priority != params.priority) || (window_class != params.window_class) ||
-					(title != params.title) || (executable != params.executable))
+					     ? ((priority != params.priority) || (window_class != params.window_class) ||
+						(title != params.title) || (executable != params.executable) ||
+						target_window != params.target_window || target_process_id != params.target_process_id ||
+						target_creation_time != params.target_creation_time)
 				     : (device_id.compare(params.device_id) != 0);
 
 	UpdateSettings(std::move(params));
@@ -576,8 +616,10 @@ void WASAPISource::OnWindowChanged(obs_data_t *settings)
 	UpdateParams params = BuildUpdateParams(settings);
 
 	const bool restart = (sourceType == SourceType::ProcessOutput)
-				     ? ((priority != params.priority) || (window_class != params.window_class) ||
-					(title != params.title) || (executable != params.executable))
+					     ? ((priority != params.priority) || (window_class != params.window_class) ||
+						(title != params.title) || (executable != params.executable) ||
+						target_window != params.target_window || target_process_id != params.target_process_id ||
+						target_creation_time != params.target_creation_time)
 				     : (device_id.compare(params.device_id) != 0);
 
 	UpdateSettings(std::move(params));
@@ -857,19 +899,36 @@ void WASAPISource::Initialize()
 	if (sourceType == SourceType::ProcessOutput) {
 		device_name = "[VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK]";
 
-		hwnd = ms_find_window(INCLUDE_MINIMIZED, priority, window_class.c_str(), title.c_str(),
-				      executable.c_str());
-		if (!hwnd) {
-			throw "Failed to find window";
-		}
+		if (target_process_id) {
+			if (!target_process_matches(target_process_id, target_creation_time))
+				throw "Target process identity is no longer valid";
 
-		DWORD dwProcessId = 0;
-		if (!GetWindowThreadProcessId(hwnd, &dwProcessId)) {
-			hwnd = NULL;
-			throw "Failed to get process id of window";
-		}
+			hwnd = target_window;
+			if (hwnd) {
+				DWORD window_process_id = 0;
+				if (!IsWindow(hwnd) || GetAncestor(hwnd, GA_ROOT) != hwnd ||
+				    !GetWindowThreadProcessId(hwnd, &window_process_id) ||
+				    window_process_id != target_process_id) {
+					hwnd = NULL;
+				}
+			}
 
-		process_id = dwProcessId;
+			process_id = target_process_id;
+		} else {
+			hwnd = ms_find_window(INCLUDE_MINIMIZED, priority, window_class.c_str(), title.c_str(),
+					      executable.c_str());
+			if (!hwnd) {
+				throw "Failed to find window";
+			}
+
+			DWORD dwProcessId = 0;
+			if (!GetWindowThreadProcessId(hwnd, &dwProcessId)) {
+				hwnd = NULL;
+				throw "Failed to get process id of window";
+			}
+
+			process_id = dwProcessId;
+		}
 	} else {
 		device = InitDevice(enumerator, isDefaultDevice, sourceType, device_id);
 
@@ -916,9 +975,15 @@ void WASAPISource::Initialize()
 		struct dstr window_class = {0};
 		struct dstr executable = {0};
 
-		ms_get_window_title(&title, hwnd);
-		ms_get_window_class(&window_class, hwnd);
-		ms_get_window_exe(&executable, hwnd);
+		if (hwnd) {
+			ms_get_window_title(&title, hwnd);
+			ms_get_window_class(&window_class, hwnd);
+			ms_get_window_exe(&executable, hwnd);
+		} else {
+			dstr_copy(&title, this->title.c_str());
+			dstr_copy(&window_class, this->window_class.c_str());
+			dstr_copy(&executable, this->executable.c_str());
+		}
 
 		calldata_set_ptr(&data, "source", source);
 		calldata_set_string(&data, "title", title.array);
@@ -1002,7 +1067,8 @@ bool WASAPISource::ProcessCaptureData()
 	UINT captureSize = 0;
 
 	while (true) {
-		if ((sourceType == SourceType::ProcessOutput) && !IsWindow(hwnd)) {
+		if (sourceType == SourceType::ProcessOutput && !target_process_id &&
+		    (!IsWindow(hwnd) || GetAncestor(hwnd, GA_ROOT) != hwnd)) {
 			blog(LOG_WARNING, "[WASAPISource::ProcessCaptureData] window disappeared");
 			return false;
 		}

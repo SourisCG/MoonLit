@@ -41,7 +41,7 @@
 #include <settings/OBSBasicSettings.hpp>
 #include <utility/QuickTransition.hpp>
 #include <utility/SceneRenameDelegate.hpp>
-#if defined(_WIN32) || defined(WHATSNEW_ENABLED)
+#ifdef WHATSNEW_ENABLED
 #include <utility/WhatsNewInfoThread.hpp>
 #endif
 #include <widgets/AudioMixer.hpp>
@@ -62,6 +62,7 @@
 
 #include <mutex>
 #ifdef _WIN32
+#include "MoonLitGameDetector.hpp"
 #include <sstream>
 #endif
 #include <string>
@@ -114,6 +115,10 @@ std::once_flag saveOnceFlag;
 
 static void AddExtraModulePaths()
 {
+#ifdef MOONLIT_BUILD
+	// MoonLit only loads modules bundled with its build.
+	return;
+#else
 	string plugins_path, plugins_data_path;
 	char *s;
 
@@ -180,6 +185,7 @@ static void AddExtraModulePaths()
 	obs_add_module_path((path + "/bin/64bit").c_str(), (path + "/data").c_str());
 #else
 	obs_add_module_path((path + "/bin/32bit").c_str(), (path + "/data").c_str());
+#endif
 #endif
 #endif
 }
@@ -1280,7 +1286,6 @@ void OBSBasic::OBSInit()
 	disableColorSpaceConversion(this);
 #endif
 
-	bool has_last_version = config_has_user_value(App()->GetAppConfig(), "General", "LastVersion");
 	bool first_run = config_get_bool(App()->GetUserConfig(), "General", "FirstRun");
 
 	if (!first_run) {
@@ -1288,11 +1293,15 @@ void OBSBasic::OBSInit()
 		config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
 	}
 
+#ifndef MOONLIT_BUILD
+	bool has_last_version = config_has_user_value(App()->GetAppConfig(), "General", "LastVersion");
 	if (!first_run && !has_last_version && !Active()) {
 		QMetaObject::invokeMethod(this, "on_autoConfigure_triggered", Qt::QueuedConnection);
 	}
+#endif
 
-#if (defined(_WIN32) || defined(__APPLE__)) && (OBS_RELEASE_CANDIDATE > 0 || OBS_BETA > 0)
+#if !defined(MOONLIT_BUILD) && (defined(_WIN32) || defined(__APPLE__)) && \
+	(OBS_RELEASE_CANDIDATE > 0 || OBS_BETA > 0)
 	/* Automatically set branch to "beta" the first time a pre-release build is run. */
 	if (!config_get_bool(App()->GetAppConfig(), "General", "AutoBetaOptIn")) {
 		config_set_string(App()->GetAppConfig(), "General", "UpdateBranch", "beta");
@@ -1403,7 +1412,7 @@ void OBSBasic::OnFirstLoad()
 {
 	OnEvent(OBS_FRONTEND_EVENT_FINISHED_LOADING);
 
-#ifdef WHATSNEW_ENABLED
+#if defined(WHATSNEW_ENABLED) && !defined(MOONLIT_BUILD)
 	/* Attempt to load init screen if available */
 	if (cef) {
 		WhatsNewInfoThread *wnit = new WhatsNewInfoThread();
@@ -2022,6 +2031,20 @@ void OBSBasic::closeWindow()
 
 	signalHandlers.clear();
 	delete extraBrowsers;
+
+#ifdef _WIN32
+	disableSaving++;
+	if (moonlitDetector) {
+		moonlitDetector->blockSignals(true);
+		moonlitDetector->stop();
+		moonlitDetector->blockSignals(false);
+	}
+	ShieldMoonLitCapture();
+	if (ReplayBufferActive())
+		StopReplayBuffer();
+	ClearMoonLitCapture();
+	disableSaving--;
+#endif
 
 	saveAll();
 

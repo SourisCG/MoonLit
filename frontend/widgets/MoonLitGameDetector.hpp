@@ -15,6 +15,7 @@
 #pragma once
 
 #include <QObject>
+#include <QElapsedTimer>
 #include <QString>
 #include <QTimer>
 
@@ -57,6 +58,7 @@ private:
 	static bool isProcessAlive(const MoonLitTarget &target);
 
 	QTimer timer_;
+	QElapsedTimer monotonicTimer_;
 	MoonLitTarget pendingTarget_;
 	MoonLitTarget activeTarget_;
 	qint64 pendingSinceMs_ = 0;

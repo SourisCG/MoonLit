@@ -59,6 +59,7 @@ class OBSMissingFiles;
 class OBSProjector;
 class VolumeControl;
 class MoonLitDashboard;
+class MoonLitLibraryWidget;
 #ifdef _WIN32
 class MoonLitGameDetector;
 #endif
@@ -267,6 +268,7 @@ private:
 
 	std::unique_ptr<Ui::OBSBasic> ui;
 	QPointer<MoonLitDashboard> moonlitDashboard;
+	QPointer<MoonLitLibraryWidget> moonlitLibrary;
 
 	void InitializeMoonLitShell();
 #ifdef _WIN32
@@ -276,6 +278,7 @@ private:
 
 	void InitializeMoonLitDetection();
 	void ConfigureMoonLitCapture(const struct MoonLitTarget &target);
+	void ShieldMoonLitCapture();
 	void ClearMoonLitCapture();
 #endif
 
@@ -1081,6 +1084,7 @@ signals:
 	void ReplayBufStarted();
 	void ReplayBufStopping();
 	void ReplayBufStopped();
+	void ReplayClipSaved(QString path);
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_SceneCollections

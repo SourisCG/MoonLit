@@ -14,8 +14,6 @@
 
 #include "MoonLitGameDetector.hpp"
 
-#include <QDateTime>
-
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -62,6 +60,7 @@ bool isIgnoredExecutable(const QString &executable)
 		QStringLiteral("runtimebroker.exe"),
 		QStringLiteral("moonlit.exe"),
 		QStringLiteral("obs64.exe"),
+		QStringLiteral("obs.exe"),
 	};
 	return ignored.contains(executable.toLower());
 }
@@ -71,6 +70,7 @@ bool isIgnoredExecutable(const QString &executable)
 
 MoonLitGameDetector::MoonLitGameDetector(QObject *parent) : QObject(parent)
 {
+	monotonicTimer_.start();
 	timer_.setInterval(500);
 	timer_.setSingleShot(false);
 	timer_.setTimerType(Qt::CoarseTimer);
@@ -101,15 +101,52 @@ void MoonLitGameDetector::stop()
 void MoonLitGameDetector::poll()
 {
 #ifdef _WIN32
+	const qint64 now = monotonicTimer_.elapsed();
+	const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
+	MoonLitTarget candidate;
+	const bool candidateValid = foreground && readTarget(reinterpret_cast<quintptr>(foreground), candidate) &&
+					    isLikelyGame(candidate);
+
 	if (activeTarget_.isValid()) {
-		if (!isProcessAlive(activeTarget_)) {
+		MoonLitTarget current;
+		const bool identityValid = readTarget(activeTarget_.window, current) && sameIdentity(activeTarget_, current) &&
+					isProcessAlive(activeTarget_);
+		if (!identityValid) {
+			if (targetFocused_) {
+				targetFocused_ = false;
+				emit targetFocusChanged(false);
+			}
+
+			/* A game can replace its top-level window while the process exits. If
+			 * the replacement is already foreground and stable, rebind directly
+			 * instead of briefly accepting an unrelated window. */
+			if (candidateValid && !sameIdentity(activeTarget_, candidate)) {
+				if (!sameIdentity(pendingTarget_, candidate)) {
+					pendingTarget_ = candidate;
+					pendingSinceMs_ = now;
+					return;
+				}
+
+				if (now - pendingSinceMs_ < 1500) {
+					return;
+				}
+
+				activeTarget_ = candidate;
+				pendingTarget_ = {};
+				pendingSinceMs_ = 0;
+				targetFocused_ = true;
+				emit targetDetected(activeTarget_);
+				return;
+			}
+
 			activeTarget_ = {};
+			pendingTarget_ = {};
+			pendingSinceMs_ = 0;
 			targetFocused_ = false;
 			emit targetLost();
 			return;
 		}
 
-		const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
 		const bool focused = foreground && reinterpret_cast<quintptr>(foreground) == activeTarget_.window;
 		if (focused != targetFocused_) {
 			targetFocused_ = focused;
@@ -118,15 +155,12 @@ void MoonLitGameDetector::poll()
 		return;
 	}
 
-	const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
-	MoonLitTarget candidate;
-	if (!foreground || !readTarget(reinterpret_cast<quintptr>(foreground), candidate) || !isLikelyGame(candidate)) {
+	if (!candidateValid) {
 		pendingTarget_ = {};
 		pendingSinceMs_ = 0;
 		return;
 	}
 
-	const qint64 now = QDateTime::currentMSecsSinceEpoch();
 	if (!sameIdentity(pendingTarget_, candidate)) {
 		pendingTarget_ = candidate;
 		pendingSinceMs_ = now;
@@ -152,7 +186,10 @@ bool MoonLitGameDetector::readTarget(quintptr window, MoonLitTarget &target)
 {
 #ifdef _WIN32
 	const HWND hwnd = reinterpret_cast<HWND>(window);
-	if (!IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
+	if (!IsWindow(hwnd)) {
+		return false;
+	}
+	if (GetAncestor(hwnd, GA_ROOT) != hwnd) {
 		return false;
 	}
 
@@ -167,7 +204,8 @@ bool MoonLitGameDetector::readTarget(quintptr window, MoonLitTarget &target)
 	}
 
 	FILETIME creationTime = {}, exitTime = {}, kernelTime = {}, userTime = {};
-	const bool timesRead = GetProcessTimes(process, &creationTime, &exitTime, &kernelTime, &userTime) != FALSE;
+	const bool timesRead = GetProcessTimes(process, &creationTime, &exitTime, &kernelTime, &userTime) != FALSE &&
+				WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
 	const QString path = timesRead ? processPath(process) : QString();
 	CloseHandle(process);
 	if (!timesRead || path.isEmpty()) {
@@ -216,7 +254,13 @@ bool MoonLitGameDetector::isLikelyGame(const MoonLitTarget &target)
 bool MoonLitGameDetector::isProcessAlive(const MoonLitTarget &target)
 {
 #ifdef _WIN32
-	if (!target.isValid() || !IsWindow(reinterpret_cast<HWND>(target.window))) {
+	const HWND hwnd = reinterpret_cast<HWND>(target.window);
+	if (!target.isValid() || !IsWindow(hwnd) || GetAncestor(hwnd, GA_ROOT) != hwnd) {
+		return false;
+	}
+
+	DWORD windowProcessId = 0;
+	if (!GetWindowThreadProcessId(hwnd, &windowProcessId) || windowProcessId != target.processId) {
 		return false;
 	}
 

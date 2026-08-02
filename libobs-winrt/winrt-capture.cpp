@@ -1,5 +1,10 @@
 #include "winrt-capture.h"
 
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+
 extern "C" EXPORT BOOL winrt_capture_supported()
 try {
 	/* no contract for IGraphicsCaptureItemInterop, verify 10.0.18362.0 */
@@ -96,13 +101,13 @@ struct winrt_capture {
 	BOOL client_area;
 	BOOL force_sdr;
 	HMONITOR monitor;
-	DXGI_FORMAT format;
+	std::atomic<DXGI_FORMAT> format = DXGI_FORMAT_UNKNOWN;
 
 	bool capture_cursor;
 	BOOL cursor_visible;
 
 	gs_texture_t *texture;
-	bool texture_written;
+	std::atomic_bool texture_written = false;
 	winrt::Windows::Graphics::Capture::GraphicsCaptureItem item{nullptr};
 	winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice device{nullptr};
 	ComPtr<ID3D11DeviceContext> context;
@@ -112,97 +117,166 @@ struct winrt_capture {
 	winrt::Windows::Graphics::Capture::GraphicsCaptureItem::Closed_revoker closed;
 	winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::FrameArrived_revoker frame_arrived;
 
-	uint32_t texture_width;
-	uint32_t texture_height;
+	std::atomic<uint32_t> texture_width = 0;
+	std::atomic<uint32_t> texture_height = 0;
 	D3D11_BOX client_box;
 
-	BOOL active;
+	std::atomic_bool active = false;
 	struct winrt_capture *next;
+	std::mutex callback_mutex;
+	std::condition_variable callback_cv;
+	size_t callback_count = 0;
+	bool callbacks_blocked = false;
+	std::mutex device_loss_mutex;
+
+	bool begin_callback()
+	{
+		std::lock_guard<std::mutex> lock(callback_mutex);
+		if (callbacks_blocked)
+			return false;
+		++callback_count;
+		return true;
+	}
+
+	void end_callback()
+	{
+		std::lock_guard<std::mutex> lock(callback_mutex);
+		if (--callback_count == 0)
+			callback_cv.notify_all();
+	}
+
+	void block_callbacks()
+	{
+		{
+			std::lock_guard<std::mutex> lock(callback_mutex);
+			callbacks_blocked = true;
+		}
+
+		frame_arrived.revoke();
+		closed.revoke();
+
+		std::unique_lock<std::mutex> lock(callback_mutex);
+		callback_cv.wait(lock, [this]() { return callback_count == 0; });
+	}
+
+	void unblock_callbacks()
+	{
+		std::lock_guard<std::mutex> lock(callback_mutex);
+		callbacks_blocked = false;
+	}
+
+	struct callback_scope {
+		winrt_capture *capture;
+		~callback_scope() { capture->end_callback(); }
+	};
 
 	void on_closed(winrt::Windows::Graphics::Capture::GraphicsCaptureItem const &,
 		       winrt::Windows::Foundation::IInspectable const &)
 	{
+		if (!begin_callback())
+			return;
+		callback_scope scope{this};
 		active = FALSE;
 	}
 
 	void on_frame_arrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const &sender,
 			      winrt::Windows::Foundation::IInspectable const &)
 	{
-		const winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame frame = sender.TryGetNextFrame();
-		const winrt::Windows::Graphics::SizeInt32 frame_content_size = frame.ContentSize();
+		if (!begin_callback())
+			return;
+		callback_scope scope{this};
 
-		winrt::com_ptr<ID3D11Texture2D> frame_surface =
-			GetDXGIInterfaceFromObject<ID3D11Texture2D>(frame.Surface());
+		try {
+			const winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame frame = sender.TryGetNextFrame();
+			if (!frame)
+				return;
 
-		/* need GetDesc because ContentSize is not reliable */
-		D3D11_TEXTURE2D_DESC desc;
-		frame_surface->GetDesc(&desc);
+			const winrt::Windows::Graphics::SizeInt32 frame_content_size = frame.ContentSize();
 
-		obs_enter_graphics();
+			winrt::com_ptr<ID3D11Texture2D> frame_surface =
+				GetDXGIInterfaceFromObject<ID3D11Texture2D>(frame.Surface());
 
-		if (desc.Format == get_pixel_format(window, monitor, force_sdr)) {
-			if (!client_area || get_client_box(window, desc.Width, desc.Height, &client_box)) {
-				if (client_area) {
-					texture_width = client_box.right - client_box.left;
-					texture_height = client_box.bottom - client_box.top;
-				} else {
-					texture_width = desc.Width;
-					texture_height = desc.Height;
-				}
+			/* need GetDesc because ContentSize is not reliable */
+			D3D11_TEXTURE2D_DESC desc;
+			frame_surface->GetDesc(&desc);
 
-				if (texture) {
-					if (texture_width != gs_texture_get_width(texture) ||
-					    texture_height != gs_texture_get_height(texture)) {
-						gs_texture_destroy(texture);
-						texture = nullptr;
+			struct graphics_scope {
+				graphics_scope() { obs_enter_graphics(); }
+				~graphics_scope() { obs_leave_graphics(); }
+			} graphics;
+
+			if (desc.Format == get_pixel_format(window, monitor, force_sdr)) {
+				if (!client_area || get_client_box(window, desc.Width, desc.Height, &client_box)) {
+					if (client_area) {
+						texture_width = client_box.right - client_box.left;
+						texture_height = client_box.bottom - client_box.top;
+					} else {
+						texture_width = desc.Width;
+						texture_height = desc.Height;
 					}
+
+					if (texture) {
+						if (texture_width != gs_texture_get_width(texture) ||
+						    texture_height != gs_texture_get_height(texture)) {
+							gs_texture_destroy(texture);
+							texture = nullptr;
+						}
+					}
+
+					if (!texture) {
+						const gs_color_format color_format =
+							desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ? GS_RGBA16F : GS_BGRA;
+						texture = gs_texture_create(texture_width, texture_height, color_format, 1,
+									    NULL, 0);
+					}
+
+					if (client_area) {
+						context->CopySubresourceRegion((ID3D11Texture2D *)gs_texture_get_obj(texture),
+									       0, 0, 0, 0, frame_surface.get(), 0, &client_box);
+					} else {
+						/* if they gave an SRV, we could avoid this copy */
+						context->CopyResource((ID3D11Texture2D *)gs_texture_get_obj(texture),
+								      frame_surface.get());
+					}
+
+					texture_written = true;
 				}
 
-				if (!texture) {
-					const gs_color_format color_format =
-						desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ? GS_RGBA16F : GS_BGRA;
-					texture = gs_texture_create(texture_width, texture_height, color_format, 1,
-								    NULL, 0);
-				}
+				if (frame_content_size.Width != last_size.Width ||
+				    frame_content_size.Height != last_size.Height) {
+					format = desc.Format;
+					frame_pool.Recreate(
+						device,
+						static_cast<winrt::Windows::Graphics::DirectX::DirectXPixelFormat>(format.load()), 2,
+						frame_content_size);
 
-				if (client_area) {
-					context->CopySubresourceRegion((ID3D11Texture2D *)gs_texture_get_obj(texture),
-								       0, 0, 0, 0, frame_surface.get(), 0, &client_box);
-				} else {
-					/* if they gave an SRV, we could avoid this copy */
-					context->CopyResource((ID3D11Texture2D *)gs_texture_get_obj(texture),
-							      frame_surface.get());
+					last_size = frame_content_size;
 				}
-
-				texture_written = true;
+			} else {
+				active = FALSE;
 			}
 
-			if (frame_content_size.Width != last_size.Width ||
-			    frame_content_size.Height != last_size.Height) {
-				format = desc.Format;
-				frame_pool.Recreate(
-					device,
-					static_cast<winrt::Windows::Graphics::DirectX::DirectXPixelFormat>(format), 2,
-					frame_content_size);
-
-				last_size = frame_content_size;
-			}
-		} else {
+		} catch (const winrt::hresult_error &err) {
 			active = FALSE;
+			texture_written = false;
+			blog(LOG_ERROR, "WGC frame (0x%08X): %s", err.code().value, winrt::to_string(err.message()).c_str());
+		} catch (...) {
+			active = FALSE;
+			texture_written = false;
+			blog(LOG_ERROR, "WGC frame (0x%08X)", winrt::to_hresult().value);
 		}
-
-		obs_leave_graphics();
 	}
 };
 
 static struct winrt_capture *capture_list;
+static std::mutex capture_list_mutex;
 
-static void winrt_capture_device_loss_release(void *data)
+static void winrt_capture_device_loss_release_internal(winrt_capture *capture)
 {
-	winrt_capture *capture = static_cast<winrt_capture *>(data);
 	capture->active = FALSE;
+	capture->texture_written = false;
 
-	capture->frame_arrived.revoke();
+	capture->block_callbacks();
 
 	try {
 		capture->frame_pool.Close();
@@ -227,6 +301,15 @@ static void winrt_capture_device_loss_release(void *data)
 	capture->context = nullptr;
 	capture->device = nullptr;
 	capture->item = nullptr;
+	capture->texture_width = 0;
+	capture->texture_height = 0;
+}
+
+static void winrt_capture_device_loss_release(void *data)
+{
+	winrt_capture *capture = static_cast<winrt_capture *>(data);
+	std::lock_guard<std::mutex> lock(capture->device_loss_mutex);
+	winrt_capture_device_loss_release_internal(capture);
 }
 
 static bool winrt_capture_border_toggle_supported()
@@ -284,6 +367,8 @@ winrt_capture_create_item(IGraphicsCaptureItemInterop *const interop_factory, HW
 static void winrt_capture_device_loss_rebuild(void *device_void, void *data)
 {
 	winrt_capture *capture = static_cast<winrt_capture *>(data);
+	std::lock_guard<std::mutex> lock(capture->device_loss_mutex);
+	try {
 
 	auto activation_factory =
 		winrt::get_activation_factory<winrt::Windows::Graphics::Capture::GraphicsCaptureItem>();
@@ -309,7 +394,7 @@ static void winrt_capture_device_loss_rebuild(void *device_void, void *data)
 		inspectable.as<winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice>();
 	const winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool frame_pool =
 		winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::Create(
-			device, static_cast<winrt::Windows::Graphics::DirectX::DirectXPixelFormat>(capture->format), 2,
+			device, static_cast<winrt::Windows::Graphics::DirectX::DirectXPixelFormat>(capture->format.load()), 2,
 			capture->last_size);
 	const winrt::Windows::Graphics::Capture::GraphicsCaptureSession session = frame_pool.CreateCaptureSession(item);
 
@@ -329,16 +414,36 @@ static void winrt_capture_device_loss_rebuild(void *device_void, void *data)
 	d3d_device->GetImmediateContext(&capture->context);
 	capture->frame_pool = frame_pool;
 	capture->session = session;
+	capture->closed = item.Closed(winrt::auto_revoke, {capture, &winrt_capture::on_closed});
 	capture->frame_arrived =
 		frame_pool.FrameArrived(winrt::auto_revoke, {capture, &winrt_capture::on_frame_arrived});
 
+	bool started = false;
 	try {
 		session.StartCapture();
 		capture->active = TRUE;
+		started = true;
 	} catch (winrt::hresult_error &err) {
+		capture->active = FALSE;
+		winrt_capture_device_loss_release_internal(capture);
 		blog(LOG_ERROR, "StartCapture (0x%08X): %s", err.code().value, winrt::to_string(err.message()).c_str());
 	} catch (...) {
+		capture->active = FALSE;
+		winrt_capture_device_loss_release_internal(capture);
 		blog(LOG_ERROR, "StartCapture (0x%08X)", winrt::to_hresult().value);
+	}
+	if (!started)
+		return;
+	capture->unblock_callbacks();
+	} catch (const winrt::hresult_error &err) {
+		capture->active = FALSE;
+		winrt_capture_device_loss_release_internal(capture);
+		blog(LOG_ERROR, "WGC device-loss rebuild (0x%08X): %s", err.code().value,
+		     winrt::to_string(err.message()).c_str());
+	} catch (...) {
+		capture->active = FALSE;
+		winrt_capture_device_loss_release_internal(capture);
+		blog(LOG_ERROR, "WGC device-loss rebuild (0x%08X)", winrt::to_hresult().value);
 	}
 }
 
@@ -392,7 +497,7 @@ try {
 		session.IsCursorCaptureEnabled(cursor);
 	}
 
-	struct winrt_capture *capture = new winrt_capture{};
+	std::unique_ptr<winrt_capture> capture = std::make_unique<winrt_capture>();
 	capture->window = window;
 	capture->client_area = client_area;
 	capture->force_sdr = force_sdr;
@@ -406,22 +511,32 @@ try {
 	capture->frame_pool = frame_pool;
 	capture->session = session;
 	capture->last_size = size;
-	capture->closed = item.Closed(winrt::auto_revoke, {capture, &winrt_capture::on_closed});
-	capture->frame_arrived =
-		frame_pool.FrameArrived(winrt::auto_revoke, {capture, &winrt_capture::on_frame_arrived});
-	capture->next = capture_list;
-	capture_list = capture;
 
-	session.StartCapture();
-	capture->active = TRUE;
+	try {
+		capture->closed = item.Closed(winrt::auto_revoke, {capture.get(), &winrt_capture::on_closed});
+		capture->frame_arrived =
+			frame_pool.FrameArrived(winrt::auto_revoke, {capture.get(), &winrt_capture::on_frame_arrived});
+		session.StartCapture();
+		capture->active = TRUE;
+		capture->unblock_callbacks();
+	} catch (...) {
+		winrt_capture_device_loss_release(capture.get());
+		throw;
+	}
 
 	gs_device_loss callbacks;
 	callbacks.device_loss_release = winrt_capture_device_loss_release;
 	callbacks.device_loss_rebuild = winrt_capture_device_loss_rebuild;
-	callbacks.data = capture;
+	callbacks.data = capture.get();
 	gs_register_loss_callbacks(&callbacks);
 
-	return capture;
+	{
+		std::lock_guard<std::mutex> lock(capture_list_mutex);
+		capture->next = capture_list;
+		capture_list = capture.get();
+	}
+
+	return capture.release();
 
 } catch (const winrt::hresult_error &err) {
 	blog(LOG_ERROR, "winrt_capture_init (0x%08X): %s", err.code().value, winrt::to_string(err.message()).c_str());
@@ -445,26 +560,36 @@ extern "C" EXPORT struct winrt_capture *winrt_capture_init_monitor(BOOL cursor, 
 extern "C" EXPORT void winrt_capture_free(struct winrt_capture *capture)
 {
 	if (capture) {
-		struct winrt_capture *current = capture_list;
-		if (current == capture) {
-			capture_list = capture->next;
-		} else {
-			struct winrt_capture *previous;
-			do {
+		{
+			std::lock_guard<std::mutex> lock(capture_list_mutex);
+			struct winrt_capture *current = capture_list;
+			struct winrt_capture *previous = nullptr;
+			while (current && current != capture) {
 				previous = current;
 				current = current->next;
-			} while (current != capture);
-
-			previous->next = current->next;
+			}
+			if (!current)
+				return;
+			if (previous)
+				previous->next = current->next;
+			else
+				capture_list = current->next;
 		}
+
+		capture->active = FALSE;
+		capture->texture_written = false;
+		capture->block_callbacks();
 
 		obs_enter_graphics();
 		gs_unregister_loss_callbacks(capture);
-		gs_texture_destroy(capture->texture);
 		obs_leave_graphics();
 
-		capture->frame_arrived.revoke();
-		capture->closed.revoke();
+		std::lock_guard<std::mutex> device_loss_lock(capture->device_loss_mutex);
+		capture->block_callbacks();
+		obs_enter_graphics();
+		gs_texture_destroy(capture->texture);
+		capture->texture = nullptr;
+		obs_leave_graphics();
 
 		try {
 			if (capture->frame_pool) {
@@ -494,7 +619,12 @@ extern "C" EXPORT void winrt_capture_free(struct winrt_capture *capture)
 
 extern "C" EXPORT BOOL winrt_capture_active(const struct winrt_capture *capture)
 {
-	return capture->active;
+	return capture && capture->active.load();
+}
+
+extern "C" EXPORT BOOL winrt_capture_has_frame(const struct winrt_capture *capture)
+{
+	return capture && capture->texture_written.load();
 }
 
 extern "C" EXPORT BOOL winrt_capture_show_cursor(struct winrt_capture *capture, BOOL visible)
@@ -522,16 +652,16 @@ extern "C" EXPORT BOOL winrt_capture_show_cursor(struct winrt_capture *capture, 
 
 extern "C" EXPORT enum gs_color_space winrt_capture_get_color_space(const struct winrt_capture *capture)
 {
-	return (capture->format == DXGI_FORMAT_R16G16B16A16_FLOAT) ? GS_CS_709_EXTENDED : GS_CS_SRGB;
+	return (capture && capture->format.load() == DXGI_FORMAT_R16G16B16A16_FLOAT) ? GS_CS_709_EXTENDED : GS_CS_SRGB;
 }
 
 extern "C" EXPORT void winrt_capture_render(struct winrt_capture *capture)
 {
-	if (capture->texture_written) {
+	if (capture && capture->texture_written.load()) {
 		const char *tech_name = "Draw";
 		float multiplier = 1.f;
 		const gs_color_space current_space = gs_get_color_space();
-		if (capture->format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+		if (capture->format.load() == DXGI_FORMAT_R16G16B16A16_FLOAT) {
 			switch (current_space) {
 			case GS_CS_SRGB:
 			case GS_CS_SRGB_16F:
@@ -578,16 +708,17 @@ extern "C" EXPORT void winrt_capture_render(struct winrt_capture *capture)
 
 extern "C" EXPORT uint32_t winrt_capture_width(const struct winrt_capture *capture)
 {
-	return capture ? capture->texture_width : 0;
+	return capture ? capture->texture_width.load() : 0;
 }
 
 extern "C" EXPORT uint32_t winrt_capture_height(const struct winrt_capture *capture)
 {
-	return capture ? capture->texture_height : 0;
+	return capture ? capture->texture_height.load() : 0;
 }
 
 extern "C" EXPORT void winrt_capture_thread_start()
 {
+	std::lock_guard<std::mutex> lock(capture_list_mutex);
 	struct winrt_capture *capture = capture_list;
 	void *const device = gs_get_device_obj();
 	while (capture) {
@@ -598,6 +729,7 @@ extern "C" EXPORT void winrt_capture_thread_start()
 
 extern "C" EXPORT void winrt_capture_thread_stop()
 {
+	std::lock_guard<std::mutex> lock(capture_list_mutex);
 	struct winrt_capture *capture = capture_list;
 	while (capture) {
 		winrt_capture_device_loss_release(capture);

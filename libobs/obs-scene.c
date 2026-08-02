@@ -1307,6 +1307,10 @@ static void scene_save(void *data, obs_data_t *settings);
 
 static void scene_save_item(obs_data_array_t *array, struct obs_scene_item *item, struct obs_scene_item *backup_group)
 {
+	/* Private scene items are runtime-owned and must not enter collections. */
+	if (obs_obj_is_private(item->source))
+		return;
+
 	obs_data_t *item_data = obs_data_create();
 	const char *name = obs_source_get_name(item->source);
 	const char *src_uuid = obs_source_get_uuid(item->source);
