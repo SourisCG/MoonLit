@@ -28,7 +28,7 @@ Cloud sync, accounts, social integrations and Linux support are explicitly defer
 ## Repository Baseline
 
 - OBS base commit: `0052d024f` (`32.2.1`).
-- Current MoonLit commit: `08386836a`.
+- Current MoonLit commit: `56dd3b79a`.
 - Current branch: `main`.
 - Legacy branch: `legacy/rust-tauri-v2`.
 - Legacy tag: `legacy-rust-tauri-v2-2026-08-01`.
@@ -141,7 +141,7 @@ release package remain pending.
 
 ### P2 - Output Configuration And Encoder Resolver
 
-Status: pending
+Status: complete
 
 Deliverables:
 
@@ -165,6 +165,10 @@ Acceptance:
 - Existing profiles migrate to valid MoonLit settings.
 - Unsupported encoders are filtered or fall back without a loop.
 - Settings survive relaunch and apply safely while replay is stopped.
+
+Current result: encoder resolver with fallback chain, profile migration and the
+MoonLit settings dialog are implemented, and the mixed/game/mic/chat tracks are
+wired to the MKV output. Live encoder-fallback testing remains for P9.
 
 ### P3 - Robust Capture State Machine
 
@@ -226,8 +230,9 @@ Acceptance:
 - Device disconnect, Discord restart and microphone changes recover cleanly.
 
 Current result: process-loopback audio now carries PID, HWND and creation-time
-identity and is isolated from the window capture source. Four-track routing
-and device-recovery testing remain pending.
+identity and is isolated from the window capture source, and the four-track
+routing is committed. Device-disconnect and Discord-restart recovery testing
+remains pending (P9).
 
 ### P5 - Replay Lifecycle And Local Library
 
@@ -259,8 +264,11 @@ Acceptance:
 - Large libraries do not block the UI.
 
 Current result: replay save signaling, local ingest, metadata, thumbnails,
-search, reveal, trash and reconciliation foundations are implemented. The
-current index is atomic JSON; SQLite/FTS5 and background work remain pending.
+search, reveal, trash and reconciliation are implemented. The library moved
+from the JSON index to a vendored SQLite repository with FTS5 search and
+transactional migration, and all repository work runs on a background worker.
+Dashboard/tray save notifications, library filters and import-to-library
+remain pending.
 
 ### P6 - Basic Editor And Export
 
@@ -290,9 +298,9 @@ Acceptance:
 - Cancelled or failed exports leave no corrupt final file.
 - Final metadata and duration match the selected range.
 
-Current result: keyframe-aligned MP4 export with trim controls is implemented.
-Background export, cancellation, verification and fractional-duration tests
-remain pending.
+Current result: keyframe-aligned MP4 export with trim controls is implemented,
+and export runs in the background with progress reporting and cancellation.
+Export verification and fractional-duration tests remain pending (P9).
 
 ### P7 - Tray, Startup And Product UI
 
@@ -349,7 +357,7 @@ Acceptance:
 
 ### P9 - Test Matrix And GitHub Publication
 
-Status: pending
+Status: in progress
 
 Deliverables:
 
@@ -367,6 +375,13 @@ Acceptance:
 - Runtime starts and exits cleanly.
 - No forbidden runtime artifacts.
 - GitHub contains both legacy recovery refs and the complete MoonLit main history.
+
+Current result: the `test/moonlit` harness is wired into the build via
+`enable_testing()` and `ctest`, and SQLite round-trip, FTS5 search, update,
+reconcile and legacy-JSON-migration tests pass. The FTS5 search JOIN exposed
+and fixed a column-qualification bug. Resolver, detector, paths, trim-rule and
+export tests remain; live hardware/manual matrix is blocked on this host by
+App Control (WDAC) denying unsigned binaries.
 
 ## Explicitly Deferred
 
@@ -386,6 +401,9 @@ Acceptance:
 | 2026-08-02 | P1 | Product identity, Windows x64 preset and clip-core foundation implemented; packaging pending | bbdbcf1c7 |
 | 2026-08-02 | P3/P4 | Capture privacy/lifecycle and process-audio foundations implemented; runtime smoke pending | 97f3b714a |
 | 2026-08-02 | P5/P6 | Replay library, metadata, thumbnails, search and export UI foundations implemented; SQLite/background work pending | 9fbd8101b |
+| 2026-08-02 | P2 | Encoder resolver, profile migration, settings dialog and four-track MKV audio implemented | 079c1e56e, a28442ac2, 405e9cbf4 |
+| 2026-08-02 | P5/P6 | Library work moved to a background worker thread with cancellation and export progress | 2ee9e2b33 |
+| 2026-08-02 | P5/P9 | Vendored SQLite with FTS5, SQLite clip repository with JSON migration, and `test/moonlit` harness with passing tests | 56dd3b79a |
 
 ## GitHub Release Procedure
 
