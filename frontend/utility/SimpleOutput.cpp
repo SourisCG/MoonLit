@@ -1,5 +1,7 @@
 #include "SimpleOutput.hpp"
 
+#include <moonlit/output/EncoderResolver.hpp>
+
 #include <utility/audio-encoders.hpp>
 #include <utility/StartMultiTrackVideoStreamingGuard.hpp>
 #include <widgets/OBSBasic.hpp>
@@ -46,6 +48,37 @@ static bool CreateSimpleOpusEncoder(OBSEncoder &res, int bitrate, const char *na
 
 extern bool EncoderAvailable(const char *encoder);
 
+/* Creates a video encoder for the requested token/id, falling back through
+ * the deterministic NVENC -> QSV -> AMF -> x264 chain when the requested
+ * encoder is unavailable or fails to create. Never writes configuration. */
+static OBSEncoder CreateVideoEncoderResolved(const std::string &requestedId, const char *name,
+					     std::string &effectiveId, std::string &reason)
+{
+	MoonLit::EncoderResolver resolver(EncoderAvailable);
+	reason = resolver.Resolve(requestedId).reason;
+
+	for (const std::string &id : resolver.CandidateIds(requestedId)) {
+		OBSEncoder encoder = obs_video_encoder_create(id.c_str(), name, nullptr, nullptr);
+		if (encoder) {
+			effectiveId = id;
+			return encoder;
+		}
+	}
+
+	return nullptr;
+}
+
+static void LogEncoderResolution(const char *kind, const std::string &requested, const std::string &effective,
+				 const std::string &reason)
+{
+	if (!reason.empty()) {
+		blog(LOG_INFO, "[MoonLit] %s encoder: %s", kind, reason.c_str());
+	} else if (!effective.empty()) {
+		blog(LOG_INFO, "[MoonLit] %s encoder: requested=\"%s\" effective=\"%s\"", kind, requested.c_str(),
+		     effective.c_str());
+	}
+}
+
 void SimpleOutput::LoadRecordingPreset_Lossless()
 {
 	fileOutput = obs_output_create("ffmpeg_output", "simple_ffmpeg_output", nullptr, nullptr);
@@ -62,29 +95,37 @@ void SimpleOutput::LoadRecordingPreset_Lossless()
 	obs_output_update(fileOutput, settings);
 }
 
-void SimpleOutput::LoadRecordingPreset_Lossy(const char *encoderId)
+void SimpleOutput::LoadRecordingPreset_Lossy(const char *encoder)
 {
-	videoRecording = obs_video_encoder_create(encoderId, "simple_video_recording", nullptr, nullptr);
+	std::string effective;
+	std::string reason;
+	videoRecording = CreateVideoEncoderResolved(encoder ? encoder : "", "simple_video_recording", effective, reason);
 	if (!videoRecording) {
 		throw "Failed to create video recording encoder (simple output)";
 	}
 	obs_encoder_release(videoRecording);
+	LogEncoderResolution("recording", encoder ? encoder : "", effective, reason);
 }
 
-void SimpleOutput::LoadStreamingPreset_Lossy(const char *encoderId)
+void SimpleOutput::LoadStreamingPreset_Lossy(const char *encoder)
 {
-	videoStreaming = obs_video_encoder_create(encoderId, "simple_video_stream", nullptr, nullptr);
+	std::string effective;
+	std::string reason;
+	videoStreaming = CreateVideoEncoderResolved(encoder ? encoder : "", "simple_video_stream", effective, reason);
 	if (!videoStreaming) {
 		throw "Failed to create video streaming encoder (simple output)";
 	}
 	obs_encoder_release(videoStreaming);
 
 	if (whipSimulcastEncoders != nullptr) {
-		whipSimulcastEncoders->Create(encoderId, config_get_int(main->Config(), "AdvOut", "RescaleFilter"),
+		whipSimulcastEncoders->Create(effective.c_str(),
+					      config_get_int(main->Config(), "AdvOut", "RescaleFilter"),
 					      config_get_int(main->Config(), "Stream1", "WHIPSimulcastTotalLayers"),
 					      video_output_get_width(obs_get_video()),
 					      video_output_get_height(obs_get_video()));
 	}
+
+	LogEncoderResolution("streaming", encoder ? encoder : "", effective, reason);
 }
 
 /* mistakes have been made to lead us to this. */
@@ -153,7 +194,7 @@ void SimpleOutput::LoadRecordingPreset()
 		if (strcmp(encoder, SIMPLE_ENCODER_X264_LOWCPU) == 0) {
 			lowCPUx264 = true;
 		}
-		LoadRecordingPreset_Lossy(get_simple_output_encoder(encoder));
+		LoadRecordingPreset_Lossy(encoder);
 		usingRecordingPreset = true;
 
 		bool success = false;
@@ -192,7 +233,7 @@ SimpleOutput::SimpleOutput(OBSBasic *main_) : BasicOutputHandler(main_)
 	const char *encoder = config_get_string(main->Config(), "SimpleOutput", "StreamEncoder");
 	const char *audio_encoder = config_get_string(main->Config(), "SimpleOutput", "StreamAudioEncoder");
 
-	LoadStreamingPreset_Lossy(get_simple_output_encoder(encoder));
+	LoadStreamingPreset_Lossy(encoder);
 
 	bool success = false;
 

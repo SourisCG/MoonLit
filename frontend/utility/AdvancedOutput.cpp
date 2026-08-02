@@ -1,5 +1,7 @@
 #include "AdvancedOutput.hpp"
 
+#include <moonlit/output/EncoderResolver.hpp>
+
 #include <utility/audio-encoders.hpp>
 #include <utility/StartMultiTrackVideoStreamingGuard.hpp>
 #include <widgets/OBSBasic.hpp>
@@ -7,6 +9,8 @@
 #include <qt-wrappers.hpp>
 
 using namespace std;
+
+extern bool EncoderAvailable(const char *encoder);
 
 static OBSData GetDataFromJsonFile(const char *jsonFile)
 {
@@ -124,13 +128,25 @@ AdvancedOutput::AdvancedOutput(OBSBasic *main_) : BasicOutputHandler(main_)
 		}
 
 		if (!useStreamEncoder) {
-			videoRecording = obs_video_encoder_create(recordEncoder, "advanced_video_recording",
-								  recordEncSettings, nullptr);
+			MoonLit::EncoderResolver resolver(EncoderAvailable);
+			MoonLit::EncoderResolution resolution = resolver.Resolve(recordEncoder ? recordEncoder : "");
+
+			for (const std::string &id : resolver.CandidateIds(recordEncoder ? recordEncoder : "")) {
+				videoRecording = obs_video_encoder_create(id.c_str(), "advanced_video_recording",
+									      recordEncSettings, nullptr);
+				if (videoRecording)
+					break;
+			}
+
 			if (!videoRecording) {
 				throw "Failed to create recording video "
 				      "encoder (advanced output)";
 			}
 			obs_encoder_release(videoRecording);
+
+			if (resolution.changed)
+				blog(LOG_INFO, "[MoonLit] advanced record encoder: %s",
+				     resolution.reason.c_str());
 		}
 	}
 

@@ -25,6 +25,8 @@ target_sources(
     media/MediaProbe.hpp
     media/ThumbnailService.cpp
     media/ThumbnailService.hpp
+    output/EncoderResolver.cpp
+    output/EncoderResolver.hpp
     persistence/ClipRepository.hpp
     persistence/FileClipRepository.cpp
     persistence/FileClipRepository.hpp

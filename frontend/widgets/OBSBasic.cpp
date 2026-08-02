@@ -38,6 +38,9 @@
 #include <dialogs/OBSBasicProperties.hpp>
 #include <dialogs/OBSBasicTransform.hpp>
 #include <models/SceneCollection.hpp>
+#ifdef MOONLIT_BUILD
+#include <moonlit/output/MoonLitOutputConfig.hpp>
+#endif
 #include <settings/OBSBasicSettings.hpp>
 #include <utility/QuickTransition.hpp>
 #include <utility/SceneRenameDelegate.hpp>
@@ -765,6 +768,17 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecAudioEncoder", "aac");
 	config_set_default_uint(activeConfiguration, "SimpleOutput", "RecTracks", (1 << 0));
 
+#ifdef MOONLIT_BUILD
+	config_set_default_uint(activeConfiguration, "SimpleOutput", "RecTracks",
+				(1 << 0) | (1 << 1) | (1 << 2) | (1 << 3));
+	config_set_default_uint(activeConfiguration, "AdvOut", "RecTracks",
+				(1 << 0) | (1 << 1) | (1 << 2) | (1 << 3));
+	config_set_default_string(activeConfiguration, "AdvOut", "Track1Name", "Mixed");
+	config_set_default_string(activeConfiguration, "AdvOut", "Track2Name", "Game");
+	config_set_default_string(activeConfiguration, "AdvOut", "Track3Name", "Microphone");
+	config_set_default_string(activeConfiguration, "AdvOut", "Track4Name", "Chat");
+#endif
+
 	config_set_default_bool(activeConfiguration, "AdvOut", "ApplyServiceSettings", true);
 	config_set_default_bool(activeConfiguration, "AdvOut", "UseRescale", false);
 	config_set_default_uint(activeConfiguration, "AdvOut", "TrackIndex", 1);
@@ -924,6 +938,10 @@ bool OBSBasic::InitBasicConfig()
 		OBSErrorBox(NULL, "Failed to open basic.ini: %d", -1);
 		return false;
 	}
+
+#ifdef MOONLIT_BUILD
+	MoonLit::MigrateProfileToMoonLitDefaults(activeConfiguration);
+#endif
 
 	return true;
 }
