@@ -305,7 +305,11 @@ RunOnceMutex CheckIfAlreadyRunning(bool &already_running)
 	string name;
 
 	if (!portable_mode) {
+#ifdef MOONLIT_BUILD
+		name = "MoonLitCore";
+#else
 		name = "OBSStudioCore";
+#endif
 	} else {
 		char path[500];
 		char absPath[512];
@@ -313,7 +317,11 @@ RunOnceMutex CheckIfAlreadyRunning(bool &already_running)
 		*absPath = 0;
 		GetAppConfigPath(path, sizeof(path), "");
 		os_get_abs_path(path, absPath, sizeof(absPath));
+#ifdef MOONLIT_BUILD
+		name = "MoonLitPortable";
+#else
 		name = "OBSStudioPortable";
+#endif
 		name += absPath;
 	}
 

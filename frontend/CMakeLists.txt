@@ -24,16 +24,20 @@ if(NOT TARGET OBS::bpm)
   add_subdirectory("${CMAKE_SOURCE_DIR}/shared/bpm" bpm)
 endif()
 
+add_subdirectory(moonlit)
+
 add_executable(obs-studio)
 add_executable(OBS::studio ALIAS obs-studio)
 
 target_link_libraries(
   obs-studio
   PRIVATE
+    MoonLit::ClipCore
     CURL::libcurl
     FFmpeg::avcodec
     FFmpeg::avutil
     FFmpeg::avformat
+    FFmpeg::swscale
     OBS::libobs
     OBS::frontend-api
     OBS::json11
@@ -108,8 +112,27 @@ list(FILTER target_hpp_sources INCLUDE REGEX ".+\\.(hpp|h)")
 list(SORT target_hpp_sources COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
 list(FILTER target_qt_sources INCLUDE REGEX ".+\\.(ui|qrc)")
 list(SORT target_qt_sources COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
+
+# Generated resources can live in the binary tree and cannot be grouped below
+# the source-tree root by Visual Studio.
+list(FILTER target_cpp_sources EXCLUDE REGEX "^${CMAKE_CURRENT_BINARY_DIR}[/\\\\]")
+list(FILTER target_hpp_sources EXCLUDE REGEX "^${CMAKE_CURRENT_BINARY_DIR}[/\\\\]")
+list(FILTER target_qt_sources EXCLUDE REGEX "^${CMAKE_CURRENT_BINARY_DIR}[/\\\\]")
+
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${target_cpp_sources})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Header Files" FILES ${target_hpp_sources})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Qt Files" FILES ${target_qt_sources})
 
-set_target_properties_obs(obs-studio PROPERTIES FOLDER frontend OUTPUT_NAME "$<IF:$<PLATFORM_ID:Windows>,obs64,obs>")
+if(MOONLIT_BUILD AND OS_WINDOWS)
+  set(frontend_output_name MoonLit)
+elseif(OS_WINDOWS)
+  set(frontend_output_name obs64)
+else()
+  set(frontend_output_name obs)
+endif()
+
+set_target_properties_obs(obs-studio PROPERTIES FOLDER frontend OUTPUT_NAME "${frontend_output_name}")
+
+if(MOONLIT_BUILD)
+  target_compile_definitions(obs-studio PRIVATE MOONLIT_BUILD)
+endif()

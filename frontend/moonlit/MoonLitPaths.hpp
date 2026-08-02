@@ -1,0 +1,28 @@
+#pragma once
+
+#include <QString>
+
+namespace MoonLit {
+
+class MoonLitPaths {
+public:
+	explicit MoonLitPaths(QString rootPath);
+
+	static MoonLitPaths defaultPaths();
+
+	const QString &rootPath() const;
+	QString clipsPath() const;
+	QString indexPath() const;
+	QString thumbnailsPath() const;
+	QString exportsPath() const;
+	QString temporaryPath() const;
+	QString thumbnailPath(const QString &clipId) const;
+	QString exportPath(const QString &clipId, const QString &extension = QStringLiteral("mkv")) const;
+
+	bool ensureDirectories(QString *error = nullptr) const;
+
+private:
+	QString rootPath_;
+};
+
+} // namespace MoonLit

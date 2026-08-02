@@ -41,11 +41,20 @@ if("${CMAKE_CURRENT_BINARY_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 # Set default global project variables
+option(MOONLIT_BUILD "Build the MoonLit product variant" OFF)
+
 set(OBS_COMPANY_NAME "OBS Project")
 set(OBS_PRODUCT_NAME "OBS Studio")
 set(OBS_WEBSITE "https://www.obsproject.com")
 set(OBS_COMMENTS "Free and open source software for video recording and live streaming")
 set(OBS_LEGAL_COPYRIGHT "(C) Lain Bailey")
+
+if(MOONLIT_BUILD)
+  # Keep OBS target names for internal compatibility while changing product metadata.
+  set(OBS_COMPANY_NAME "MoonLit")
+  set(OBS_PRODUCT_NAME "MoonLit")
+  set(OBS_COMMENTS "MoonLit local video recording")
+endif()
 set(OBS_CMAKE_VERSION 3.0.0)
 
 # Configure default version strings

@@ -300,7 +300,11 @@ bool OBSApp::InitGlobalConfigDefaults()
 	config_set_default_uint(appConfig, "General", "MaxLogs", 10);
 	config_set_default_int(appConfig, "General", "InfoIncrement", -1);
 	config_set_default_string(appConfig, "General", "ProcessPriority", "Normal");
+#ifdef MOONLIT_BUILD
+	config_set_default_bool(appConfig, "General", "EnableAutoUpdates", false);
+#else
 	config_set_default_bool(appConfig, "General", "EnableAutoUpdates", true);
+#endif
 
 #if _WIN32
 	config_set_default_string(appConfig, "Video", "Renderer", "Direct3D 11");
@@ -956,7 +960,13 @@ OBSApp::OBSApp(int &argc, char **argv, profiler_name_store_t *store)
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
 #endif
 
+#ifdef MOONLIT_BUILD
+	setApplicationName(QStringLiteral("MoonLit"));
+	setApplicationDisplayName(QStringLiteral("MoonLit"));
+	setDesktopFileName("MoonLit");
+#else
 	setDesktopFileName("com.obsproject.Studio");
+#endif
 
 	pluginManager_ = std::make_unique<OBS::PluginManager>();
 }
@@ -1731,9 +1741,22 @@ int GetAppConfigPath(char *path, size_t size, const char *name)
 		} else {
 			return snprintf(path, size, CONFIG_PATH);
 		}
-	} else {
-		return os_get_config_path(path, size, name);
 	}
+
+#ifdef MOONLIT_BUILD
+	// Keep legacy OBS subpaths below a product-specific application root.
+	char moonlitPath[512];
+	int baseLen = os_get_config_path(moonlitPath, sizeof(moonlitPath), "MoonLit");
+	if (baseLen <= 0) {
+		return baseLen;
+	}
+	if (name && *name) {
+		return snprintf(path, size, "%s/%s", moonlitPath, name);
+	}
+	return snprintf(path, size, "%s", moonlitPath);
+#else
+	return os_get_config_path(path, size, name);
+#endif
 #else
 	return os_get_config_path(path, size, name);
 #endif
@@ -1750,9 +1773,17 @@ char *GetAppConfigPathPtr(const char *name)
 		} else {
 			return NULL;
 		}
-	} else {
-		return os_get_config_path_ptr(name);
 	}
+
+#ifdef MOONLIT_BUILD
+	char path[512];
+	if (GetAppConfigPath(path, sizeof(path), name) > 0) {
+		return bstrdup(path);
+	}
+	return NULL;
+#else
+	return os_get_config_path_ptr(name);
+#endif
 #else
 	return os_get_config_path_ptr(name);
 #endif

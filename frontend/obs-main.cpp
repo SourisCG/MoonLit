@@ -59,7 +59,11 @@ extern string lastLogFile;
 bool portable_mode = false;
 bool steam = false;
 bool safe_mode = false;
+#ifdef MOONLIT_BUILD
+bool disable_3p_plugins = true;
+#else
 bool disable_3p_plugins = false;
+#endif
 static bool unclean_shutdown = false;
 bool multi = false;
 static bool log_verbose = false;
@@ -72,7 +76,11 @@ bool opt_start_virtualcam = false;
 bool opt_minimize_tray = false;
 bool opt_allow_opengl = false;
 bool opt_always_on_top = false;
+#ifdef MOONLIT_BUILD
+bool opt_disable_updater = true;
+#else
 bool opt_disable_updater = false;
+#endif
 bool opt_disable_missing_files_check = false;
 string opt_starting_collection;
 string opt_starting_profile;
@@ -928,7 +936,9 @@ int main(int argc, char *argv[])
 	}
 
 	// Try to keep this as early as possible
+#ifndef MOONLIT_BUILD
 	install_dll_blocklist_hook();
+#endif
 
 	set_process_mitigation_policies();
 
@@ -1062,7 +1072,11 @@ int main(int argc, char *argv[])
 			exit(0);
 
 		} else if (arg_is(argv[i], "--version", "-V")) {
+#ifdef MOONLIT_BUILD
+			std::cout << "MoonLit - " << App()->GetVersionString(false) << "\n";
+#else
 			std::cout << "OBS Studio - " << App()->GetVersionString(false) << "\n";
+#endif
 			exit(0);
 		}
 	}
@@ -1099,7 +1113,9 @@ int main(int argc, char *argv[])
 		FreeLibrary(hRtwq);
 	}
 
+#ifndef MOONLIT_BUILD
 	log_blocked_dlls();
+#endif
 #endif
 
 	blog(LOG_INFO, "Number of memory leaks: %ld", bnum_allocs());

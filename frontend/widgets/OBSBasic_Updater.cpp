@@ -21,14 +21,14 @@
 
 #include <dialogs/OBSWhatsNew.hpp>
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(UPDATER_ENABLED)
 #include <utility/AutoUpdateThread.hpp>
 #endif
 #ifdef ENABLE_SPARKLE_UPDATER
 #include <utility/MacUpdateThread.hpp>
 #include <utility/OBSSparkle.hpp>
 #endif
-#if defined(_WIN32) || defined(WHATSNEW_ENABLED)
+#ifdef WHATSNEW_ENABLED
 #include <utility/WhatsNewBrowserInitThread.hpp>
 #include <utility/models/whatsnew.hpp>
 #endif
@@ -173,6 +173,9 @@ void OBSBasic::ShowWhatsNew(const QString &url)
 
 void OBSBasic::TimedCheckForUpdates()
 {
+#if defined(MOONLIT_BUILD)
+	return;
+#elif defined(ENABLE_SPARKLE_UPDATER)
 	if (App()->IsUpdaterDisabled()) {
 		return;
 	}
@@ -180,9 +183,15 @@ void OBSBasic::TimedCheckForUpdates()
 		return;
 	}
 
-#if defined(ENABLE_SPARKLE_UPDATER)
 	CheckForUpdates(false);
-#elif _WIN32
+#elif defined(_WIN32) && defined(UPDATER_ENABLED)
+	if (App()->IsUpdaterDisabled()) {
+		return;
+	}
+	if (!config_get_bool(App()->GetAppConfig(), "General", "EnableAutoUpdates")) {
+		return;
+	}
+
 	long long lastUpdate = config_get_int(App()->GetAppConfig(), "General", "LastUpdateCheck");
 	uint32_t lastVersion = config_get_int(App()->GetAppConfig(), "General", "LastVersion");
 
@@ -202,7 +211,9 @@ void OBSBasic::TimedCheckForUpdates()
 
 void OBSBasic::CheckForUpdates(bool manualUpdate)
 {
-#if _WIN32
+#if defined(MOONLIT_BUILD)
+	UNUSED_PARAMETER(manualUpdate);
+#elif defined(_WIN32) && defined(UPDATER_ENABLED)
 	ui->actionCheckForUpdates->setEnabled(false);
 	ui->actionRepair->setEnabled(false);
 

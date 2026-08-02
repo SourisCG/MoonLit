@@ -4,6 +4,15 @@ include_guard(GLOBAL)
 
 include(compilerconfig)
 
+if(MOONLIT_BUILD)
+  if(NOT DEFINED OBS_PARENT_ARCHITECTURE)
+    set(OBS_PARENT_ARCHITECTURE ${CMAKE_VS_PLATFORM_NAME})
+  endif()
+
+  # MoonLit does not ship hooks or virtual camera artifacts, so no child architectures are needed.
+  return()
+endif()
+
 if(NOT DEFINED OBS_PARENT_ARCHITECTURE)
   if(CMAKE_VS_PLATFORM_NAME MATCHES "(Win32|x64|ARM64)")
     set(OBS_PARENT_ARCHITECTURE ${CMAKE_VS_PLATFORM_NAME})
@@ -103,7 +112,9 @@ else()
 	include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows/buildspec.cmake")
 
 	add_subdirectory(libobs)
-	add_subdirectory(plugins/win-dshow/virtualcam-module)
+	if(ENABLE_VIRTUALCAM)
+		add_subdirectory(plugins/win-dshow/virtualcam-module)
+	endif()
 
   return()
 endif()

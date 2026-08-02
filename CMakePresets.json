@@ -172,6 +172,33 @@
       }
     },
     {
+      "name": "windows-moonlit-x64",
+      "displayName": "Windows x64 (MoonLit)",
+      "description": "MoonLit Windows x64 build with OBS network and hook features disabled",
+      "inherits": ["windows-x64"],
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build_moonlit_v1_x64",
+      "cacheVariables": {
+        "MOONLIT_BUILD": true,
+        "VIRTUALCAM_GUID": {"type": "STRING", "value": ""},
+        "ENABLE_AJA": false,
+        "ENABLE_BROWSER": false,
+        "ENABLE_BROWSER_PANELS": false,
+        "ENABLE_DECKLINK": false,
+        "ENABLE_SCRIPTING": false,
+        "ENABLE_SCRIPTING_LUA": false,
+        "ENABLE_SCRIPTING_PYTHON": false,
+        "ENABLE_SERVICE_UPDATES": false,
+        "ENABLE_UPDATER": false,
+        "ENABLE_VLC": false,
+        "ENABLE_VIRTUALCAM": false,
+        "ENABLE_VST": false,
+        "ENABLE_WEBRTC": false,
+        "ENABLE_WEBSOCKET": false,
+        "ENABLE_WHATSNEW": false
+      }
+    },
+    {
       "name": "windows-ci-x64",
       "displayName": "Windows x64 (CI)",
       "description": "CI Windows build (x64)",
@@ -220,6 +247,13 @@
       "configurePreset": "windows-x64",
       "displayName": "Windows 64-bit",
       "description": "Windows build for 64-bit (aka x64)",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-moonlit-x64",
+      "configurePreset": "windows-moonlit-x64",
+      "displayName": "MoonLit Windows 64-bit",
+      "description": "MoonLit Windows build for 64-bit (aka x64)",
       "configuration": "RelWithDebInfo"
     },
     {

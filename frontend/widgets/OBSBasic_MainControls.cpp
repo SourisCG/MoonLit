@@ -36,11 +36,11 @@
 #endif
 #include <dialogs/OBSRemux.hpp>
 #include <settings/OBSBasicSettings.hpp>
-#ifdef _WIN32
+#if defined(_WIN32) && defined(UPDATER_ENABLED)
 #include <utility/AutoUpdateThread.hpp>
 #endif
 #include <utility/RemoteTextThread.hpp>
-#if defined(_WIN32) || defined(WHATSNEW_ENABLED)
+#ifdef WHATSNEW_ENABLED
 #include <utility/WhatsNewInfoThread.hpp>
 #endif
 #include <wizards/AutoConfig.hpp>
@@ -378,7 +378,7 @@ void OBSBasic::on_actionCheckForUpdates_triggered()
 
 void OBSBasic::on_actionRepair_triggered()
 {
-#if defined(_WIN32)
+#if defined(_WIN32) && defined(UPDATER_ENABLED) && !defined(MOONLIT_BUILD)
 	ui->actionCheckForUpdates->setEnabled(false);
 	ui->actionRepair->setEnabled(false);
 
@@ -437,7 +437,7 @@ void OBSBasic::on_actionDiscord_triggered()
 
 void OBSBasic::on_actionShowWhatsNew_triggered()
 {
-#ifdef WHATSNEW_ENABLED
+#if defined(WHATSNEW_ENABLED) && !defined(MOONLIT_BUILD)
 	if (introCheckThread && introCheckThread->isRunning()) {
 		return;
 	}
