@@ -16,6 +16,8 @@
 #include "MoonLitDashboard.hpp"
 #include "MoonLitLibraryWidget.hpp"
 
+#include <moonlit/ui/MoonLitSettingsDialog.hpp>
+
 #include <cstdint>
 #include <QElapsedTimer>
 #include <QStringList>
@@ -287,8 +289,10 @@ void OBSBasic::InitializeMoonLitShell()
 		connect(moonlitDashboard, &MoonLitDashboard::replayActionRequested, this,
 			[this]() { ReplayBufferActionTriggered(); });
 		connect(moonlitDashboard, &MoonLitDashboard::saveClipRequested, this, &OBSBasic::ReplayBufferSave);
-		connect(moonlitDashboard, &MoonLitDashboard::settingsRequested, this,
-			[this]() { on_action_Settings_triggered(); });
+		connect(moonlitDashboard, &MoonLitDashboard::settingsRequested, this, [this]() {
+			MoonLitSettingsDialog dialog(this);
+			dialog.exec();
+		});
 		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, [this]() {
 			moonlitDashboard->hide();
 			moonlitLibrary->refresh();

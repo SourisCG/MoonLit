@@ -3,4 +3,6 @@ target_sources(
   PRIVATE
     moonlit/output/MoonLitOutputConfig.cpp
     moonlit/output/MoonLitOutputConfig.hpp
+    moonlit/ui/MoonLitSettingsDialog.cpp
+    moonlit/ui/MoonLitSettingsDialog.hpp
 )
