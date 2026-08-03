@@ -5,7 +5,7 @@
 
 ClipFrameStrip::ClipFrameStrip(QWidget *parent) : QWidget(parent)
 {
-	setMinimumHeight(76);
+	setMinimumHeight(60);
 	setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	setCursor(Qt::PointingHandCursor);
 }

@@ -13,9 +13,11 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QTextStream>
 
 #include <algorithm>
 #include <cmath>
@@ -197,6 +199,33 @@ bool verifyOutput(const QString &path, qint64 &durationMs, QString &error)
 
 	durationMs = mediaDurationMs(*context);
 	return true;
+}
+
+void logExportResult(const ClipExportRequest &request, const ClipExportResult &result)
+{
+	const QFileInfo destinationInfo(request.destinationPath);
+	if (destinationInfo.absolutePath().isEmpty()) {
+		return;
+	}
+	if (!QDir().mkpath(destinationInfo.absolutePath())) {
+		return;
+	}
+
+	QFile log(QDir(destinationInfo.absolutePath()).filePath(QStringLiteral("export.log")));
+	if (!log.open(QIODevice::Append | QIODevice::WriteOnly | QIODevice::Text)) {
+		return;
+	}
+
+	QTextStream stream(&log);
+	stream << QDateTime::currentDateTime().toString(Qt::ISODate) << QLatin1Char(' ')
+	       << (result.succeeded ? QStringLiteral("ok")
+				    : result.cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed"))
+	       << QStringLiteral(" range=") << request.startMs << QStringLiteral("..") << request.endMs
+	       << QStringLiteral(" durationMs=") << result.durationMs;
+	if (!result.error.isEmpty()) {
+		stream << QStringLiteral(" error=") << result.error;
+	}
+	stream << QLatin1Char('\n');
 }
 
 /* Re-encodes one audio stream to apply mute/gain. The output is a plain AAC
@@ -490,8 +519,13 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 		return result;
 	}
 	if (QFile::exists(request.destinationPath)) {
-		setError(result, QStringLiteral("Export destination already exists: %1").arg(request.destinationPath));
-		return result;
+		/* The destination is a regenerable export of this clip; re-exporting
+		 * with new trim, mute or gain must overwrite the previous result. */
+		if (!QFile::remove(request.destinationPath)) {
+			setError(result,
+				 QStringLiteral("Unable to replace previous export: %1").arg(request.destinationPath));
+			return result;
+		}
 	}
 
 	const QFileInfo destinationInfo(request.destinationPath);
@@ -545,6 +579,7 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 		QFile::remove(partPath);
 		result.cancelled = cancelled;
 		setError(result, message);
+		logExportResult(request, result);
 		return result;
 	};
 	const QByteArray encodedDestination = QFile::encodeName(request.destinationPath);
@@ -753,6 +788,7 @@ ClipExportResult FfmpegClipExportService::exportClip(const ClipExportRequest &re
 	}
 
 	result.succeeded = true;
+	logExportResult(request, result);
 	return result;
 }
 

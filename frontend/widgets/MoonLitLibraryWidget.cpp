@@ -21,6 +21,7 @@
 #include <QProcess>
 #include <QPixmap>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
@@ -113,7 +114,8 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	clipList_->setMinimumWidth(420);
 	content->addWidget(clipList_, 2);
 
-	auto *details = new QVBoxLayout();
+	auto *detailsContainer = new QWidget(this);
+	auto *details = new QVBoxLayout(detailsContainer);
 	detailsLabel_ = new QLabel(QStringLiteral("Selecciona un clip"), this);
 	detailsLabel_->setObjectName(QStringLiteral("libraryDetails"));
 	detailsLabel_->setWordWrap(true);
@@ -131,7 +133,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 
 	previewImage_ = new QLabel(this);
 	previewImage_->setObjectName(QStringLiteral("libraryPreview"));
-	previewImage_->setFixedHeight(110);
+	previewImage_->setFixedHeight(90);
 	previewImage_->setAlignment(Qt::AlignCenter);
 	previewImage_->setStyleSheet(QStringLiteral("background: #000000; border: 1px solid #343b49;"));
 	previewImage_->setText(QStringLiteral("Vista previa"));
@@ -176,7 +178,12 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	cancelButton_->setEnabled(false);
 	details->addWidget(cancelButton_);
 	details->addStretch(1);
-	content->addLayout(details, 1);
+
+	auto *detailsScroll = new QScrollArea(this);
+	detailsScroll->setWidgetResizable(true);
+	detailsScroll->setFrameShape(QFrame::NoFrame);
+	detailsScroll->setWidget(detailsContainer);
+	content->addWidget(detailsScroll, 1);
 	root->addLayout(content, 1);
 
 	statusLabel_ = new QLabel(this);

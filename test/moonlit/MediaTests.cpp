@@ -99,11 +99,15 @@ bool writeEncodedFrame(AVFormatContext *output, AVCodecContext *codec, AVStream 
 	return true;
 }
 
-/* Encodes a 2 second h264 + aac MP4 test clip with a time-varying color. */
-bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
+/* Encodes a 2 second h264 + aac clip with a time-varying color. When
+ * `maxBFrames` is positive the output uses B-frames and an MKV container,
+ * mimicking OBS replay-buffer output. */
+bool generateTestMediaEx(const QString &path, const QString &container, int maxBFrames, bool &hasAudio,
+			 QString *error)
 {
 	AVFormatContext *rawOutput = nullptr;
-	if (avformat_alloc_output_context2(&rawOutput, nullptr, "mp4", path.toUtf8().constData()) < 0) {
+	if (avformat_alloc_output_context2(&rawOutput, nullptr, container.toUtf8().constData(),
+					   path.toUtf8().constData()) < 0) {
 		*error = QStringLiteral("unable to create output context");
 		return false;
 	}
@@ -122,13 +126,15 @@ bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
 	video->framerate = AVRational{kFps, 1};
 	video->pix_fmt = AV_PIX_FMT_YUV420P;
 	video->bit_rate = 400000;
-	video->gop_size = kFps;
-	video->max_b_frames = 0;
+	video->gop_size = kFps * 2;
+	video->max_b_frames = maxBFrames;
+	video->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	if (avcodec_open2(video.get(), videoCodec, nullptr) < 0) {
 		*error = QStringLiteral("unable to open video encoder");
 		return false;
 	}
 	avcodec_parameters_from_context(videoStream->codecpar, video.get());
+	videoStream->time_base = video->time_base;
 
 	const AVCodec *audioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
 	CodecContextPtr audio;
@@ -141,11 +147,13 @@ bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
 		audio->bit_rate = 128000;
 		av_channel_layout_default(&audio->ch_layout, 2);
 		audio->time_base = AVRational{1, kSampleRate};
+		audio->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		if (avcodec_open2(audio.get(), audioCodec, nullptr) < 0) {
 			audio.reset();
 			audioStream = nullptr;
 		} else {
 			avcodec_parameters_from_context(audioStream->codecpar, audio.get());
+			audioStream->time_base = audio->time_base;
 			hasAudio = true;
 		}
 	}
@@ -154,8 +162,11 @@ bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
 		*error = QStringLiteral("unable to open output file");
 		return false;
 	}
-	if (avformat_write_header(output.get(), nullptr) < 0) {
-		*error = QStringLiteral("unable to write header");
+	const int headerResult = avformat_write_header(output.get(), nullptr);
+	if (headerResult < 0) {
+		char buffer[AV_ERROR_MAX_STRING_SIZE] = {};
+		av_strerror(headerResult, buffer, sizeof(buffer));
+		*error = QStringLiteral("unable to write header (%1)").arg(QString::fromUtf8(buffer));
 		return false;
 	}
 
@@ -213,6 +224,12 @@ bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
 
 	av_write_trailer(output.get());
 	return true;
+}
+
+/* Encodes a 2 second h264 + aac MP4 test clip with a time-varying color. */
+bool generateTestMedia(const QString &path, bool &hasAudio, QString *error)
+{
+	return generateTestMediaEx(path, QStringLiteral("mp4"), 0, hasAudio, error);
 }
 
 } // namespace
@@ -297,6 +314,107 @@ MOONLIT_TEST(media_export_full_length_matches_source)
 	}
 	ok &= expect(result.durationMs >= 1500 && result.durationMs <= 13000,
 		     "full export duration is close to the source", failure);
+	return ok;
+}
+
+MOONLIT_TEST(media_export_trims_obs_like_mkv)
+{
+	QTemporaryDir directory;
+	const QString source = QDir(directory.path()).filePath(QStringLiteral("obs-like.mkv"));
+	bool hasAudio = false;
+	QString error;
+	if (!generateTestMediaEx(source, QStringLiteral("matroska"), 2, hasAudio, &error)) {
+		*failure = QStringLiteral("MKV test media generation failed: %1").arg(error);
+		return false;
+	}
+
+	const QString destination = QDir(directory.path()).filePath(QStringLiteral("trim-mkv.mp4"));
+	ClipExportRequest request;
+	request.sourcePath = source;
+	request.destinationPath = destination;
+	request.startMs = 500;
+	request.endMs = 1500;
+
+	const ClipExportResult result = FfmpegClipExportService().exportClip(request);
+	bool ok = expect(result.succeeded, "trim export of MKV with B-frames succeeds", failure);
+	if (!result.succeeded) {
+		*failure = QStringLiteral("export error: %1").arg(result.error);
+		return false;
+	}
+	ok &= expect(result.durationMs >= 950 && result.durationMs <= 11000,
+		     "MKV export duration matches the range within tolerance", failure);
+	ok &= expect(!QFileInfo::exists(destination + QStringLiteral(".part")), "no partial file remains", failure);
+	return ok;
+}
+
+MOONLIT_TEST(media_export_full_obs_like_mkv_matches_source)
+{
+	QTemporaryDir directory;
+	const QString source = QDir(directory.path()).filePath(QStringLiteral("obs-like.mkv"));
+	bool hasAudio = false;
+	QString error;
+	if (!generateTestMediaEx(source, QStringLiteral("matroska"), 2, hasAudio, &error)) {
+		*failure = QStringLiteral("MKV test media generation failed: %1").arg(error);
+		return false;
+	}
+
+	const QString destination = QDir(directory.path()).filePath(QStringLiteral("full-mkv.mp4"));
+	ClipExportRequest request;
+	request.sourcePath = source;
+	request.destinationPath = destination;
+	request.startMs = 0;
+
+	const ClipExportResult result = FfmpegClipExportService().exportClip(request);
+	bool ok = expect(result.succeeded, "full export of MKV succeeds", failure);
+	if (!result.succeeded) {
+		*failure = QStringLiteral("export error: %1").arg(result.error);
+		return false;
+	}
+	ok &= expect(result.durationMs >= 1500 && result.durationMs <= 13000,
+		     "full MKV export duration is close to the source", failure);
+	return ok;
+}
+
+MOONLIT_TEST(media_export_replaces_previous_result)
+{
+	QTemporaryDir directory;
+	const QString source = QDir(directory.path()).filePath(QStringLiteral("test.mp4"));
+	bool hasAudio = false;
+	QString error;
+	if (!generateTestMedia(source, hasAudio, &error)) {
+		*failure = QStringLiteral("test media generation failed: %1").arg(error);
+		return false;
+	}
+
+	const QString destination = QDir(directory.path()).filePath(QStringLiteral("replace.mp4"));
+	FfmpegClipExportService service;
+
+	ClipExportRequest first;
+	first.sourcePath = source;
+	first.destinationPath = destination;
+	first.startMs = 500;
+	first.endMs = 1500;
+	const ClipExportResult firstResult = service.exportClip(first);
+	bool ok = expect(firstResult.succeeded, "first export succeeds", failure);
+	if (!firstResult.succeeded) {
+		*failure = QStringLiteral("first export error: %1").arg(firstResult.error);
+		return false;
+	}
+
+	/* The same clip, different range: the previous export is replaced. */
+	ClipExportRequest second;
+	second.sourcePath = source;
+	second.destinationPath = destination;
+	second.startMs = 0;
+	second.endMs = 1000;
+	const ClipExportResult secondResult = service.exportClip(second);
+	ok &= expect(secondResult.succeeded, "re-export overwrites the previous result", failure);
+	if (!secondResult.succeeded) {
+		*failure = QStringLiteral("re-export error: %1").arg(secondResult.error);
+		return false;
+	}
+	ok &= expect(secondResult.durationMs >= 950 && secondResult.durationMs <= 11000,
+		     "re-export duration matches the new range", failure);
 	return ok;
 }
 
