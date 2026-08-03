@@ -291,6 +291,54 @@ obs_source_t *createMoonLitDesktopSource()
 	return source;
 }
 
+/* Krisp-like noise suppression for the microphone: RNNoise at a strong
+ * suppression level plus a fast noise gate, both native obs-filters. */
+void applyMoonLitNoiseSuppression(obs_source_t *mic)
+{
+	if (!mic) {
+		return;
+	}
+
+	const bool enabled = config_get_bool(OBSBasic::Get()->Config(), "MoonLit", "NoiseSuppression");
+	const char *const suppressName = "MoonLit Supresion de ruido";
+	const char *const gateName = "MoonLit Noise Gate";
+
+	OBSSourceAutoRelease existingSuppress = obs_source_get_filter_by_name(mic, suppressName);
+	OBSSourceAutoRelease existingGate = obs_source_get_filter_by_name(mic, gateName);
+
+	if (enabled) {
+		if (!existingSuppress) {
+			OBSDataAutoRelease settings = obs_data_create();
+			obs_data_set_string(settings, "method", "rnnoise");
+			obs_data_set_int(settings, "suppress_level", -40);
+			OBSSourceAutoRelease filter =
+				obs_source_create_private("noise_suppress_filter", suppressName, settings);
+			if (filter) {
+				obs_source_filter_add(mic, filter);
+			}
+		}
+		if (!existingGate) {
+			OBSDataAutoRelease settings = obs_data_create();
+			obs_data_set_int(settings, "open_threshold", -40);
+			obs_data_set_int(settings, "close_threshold", -45);
+			obs_data_set_int(settings, "attack_time", 10);
+			obs_data_set_int(settings, "hold_time", 20);
+			obs_data_set_int(settings, "release_time", 50);
+			OBSSourceAutoRelease filter = obs_source_create_private("noise_gate_filter", gateName, settings);
+			if (filter) {
+				obs_source_filter_add(mic, filter);
+			}
+		}
+	} else {
+		if (existingSuppress) {
+			obs_source_filter_remove(mic, existingSuppress);
+		}
+		if (existingGate) {
+			obs_source_filter_remove(mic, existingGate);
+		}
+	}
+}
+
 void RemoveMoonLitAudioItems()
 {
 	if (moonlitAudioItem) {
@@ -736,6 +784,7 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 			moonlitMicItem = obs_scene_add(scene, mic);
 			if (!moonlitMicItem)
 				moonlitMicSource = nullptr;
+			applyMoonLitNoiseSuppression(moonlitMicSource);
 		}
 	}
 
@@ -806,6 +855,11 @@ void OBSBasic::UpdateMoonLitMixer()
 	mixer->addSource(QStringLiteral("Juego"), moonlitAudioSource);
 	mixer->addSource(QStringLiteral("Microfono"), moonlitMicSource);
 	mixer->addSource(QStringLiteral("Chat"), moonlitChatSource);
+}
+
+void OBSBasic::ApplyMoonLitNoiseSuppression()
+{
+	applyMoonLitNoiseSuppression(moonlitMicSource);
 }
 
 void OBSBasic::ShieldMoonLitCapture()

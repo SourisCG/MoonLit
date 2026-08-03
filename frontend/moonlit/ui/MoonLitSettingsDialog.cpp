@@ -210,6 +210,8 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	clipSound = new QCheckBox(QStringLiteral("Sonido al guardar clip"), this);
 
+	noiseSuppression = new QCheckBox(QStringLiteral("Supresion de ruido (tipo Krisp)"), this);
+
 	QLabel *formatNote = new QLabel(
 		QStringLiteral("Formato de grabación: MKV (autoritativo; MP4 solo como exportación)."), this);
 	formatNote->setWordWrap(true);
@@ -249,6 +251,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
 	form->addRow(autoStart);
 	form->addRow(clipSound);
+	form->addRow(noiseSuppression);
 	form->addRow(formatNote);
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -308,6 +311,7 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 	autoStart->setChecked(IsAutoStartEnabled());
 
 	clipSound->setChecked(config_get_bool(config, "MoonLit", "ClipSound"));
+	noiseSuppression->setChecked(config_get_bool(config, "MoonLit", "NoiseSuppression"));
 }
 
 void MoonLitSettingsDialog::SaveValues()
@@ -359,9 +363,11 @@ void MoonLitSettingsDialog::SaveValues()
 	}
 
 	config_set_bool(config, "MoonLit", "ClipSound", clipSound->isChecked());
+	config_set_bool(config, "MoonLit", "NoiseSuppression", noiseSuppression->isChecked());
 	config_save_safe(config, "tmp", nullptr);
 	SetAutoStartEnabled(autoStart->isChecked());
 	main_->ResetOutputs();
+	main_->ApplyMoonLitNoiseSuppression();
 }
 
 void MoonLitSettingsDialog::SaveAndAccept()

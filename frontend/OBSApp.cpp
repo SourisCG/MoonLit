@@ -376,6 +376,7 @@ void OBSApp::InitUserConfigDefaults()
 	 * running (replay included). */
 	config_set_default_bool(userConfig, "BasicWindow", "SysTrayMinimizeToTray", true);
 	config_set_default_bool(userConfig, "MoonLit", "ClipSound", true);
+	config_set_default_bool(userConfig, "MoonLit", "NoiseSuppression", true);
 #endif
 	config_set_default_bool(userConfig, "BasicWindow", "SaveProjectors", false);
 	config_set_default_bool(userConfig, "BasicWindow", "ShowTransitions", true);

@@ -801,6 +801,9 @@ private:
 public:
 	bool Active() const;
 	void ResetOutputs();
+#ifdef MOONLIT_BUILD
+	void ApplyMoonLitNoiseSuppression();
+#endif
 
 	inline void EnableOutputs(bool enable)
 	{

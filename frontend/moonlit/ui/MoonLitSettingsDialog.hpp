@@ -40,4 +40,5 @@ private:
 	QLineEdit *chatExe = nullptr;
 	QCheckBox *autoStart = nullptr;
 	QCheckBox *clipSound = nullptr;
+	QCheckBox *noiseSuppression = nullptr;
 };

@@ -50,12 +50,19 @@ if ($process.HasExited) {
     exit 1
 }
 
+# Poll for the main window (it may take a moment after the shutdown dialog).
 $root = [System.Windows.Automation.AutomationElement]::RootElement
-$windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
-    [System.Windows.Automation.Condition]::TrueCondition) |
-    Where-Object { $_.Current.ProcessId -eq $process.Id }
-$mainWindow = $windows | Where-Object { $_.Current.Name -eq 'MoonLit' -and $_.Current.ClassName -eq 'OBSBasic' } |
-    Select-Object -First 1
+$mainWindow = $null
+for ($i = 0; $i -lt 20 -and -not $mainWindow; $i++) {
+    $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+        [System.Windows.Automation.Condition]::TrueCondition) |
+        Where-Object { $_.Current.ProcessId -eq $process.Id }
+    $mainWindow = $windows | Where-Object { $_.Current.Name -eq 'MoonLit' -and $_.Current.ClassName -eq 'OBSBasic' } |
+        Select-Object -First 1
+    if (-not $mainWindow) {
+        Start-Sleep -Milliseconds 500
+    }
+}
 
 if (-not $mainWindow) {
     Write-Host "FAIL S4: no MoonLit main window (found: $($windows | ForEach-Object { $_.Current.Name }))"
