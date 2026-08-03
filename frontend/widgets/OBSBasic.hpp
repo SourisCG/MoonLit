@@ -729,6 +729,8 @@ private:
 				QIcon trayMask = QIcon(":/res/images/tray_active_macos.svg");
 				trayMask.setIsMask(true);
 				trayIcon->setIcon(QIcon::fromTheme("obs-tray", trayMask));
+#elif defined(MOONLIT_BUILD)
+				trayIcon->setIcon(QIcon(":/res/images/moonlit-icon.png"));
 #else
 				trayIcon->setIcon(
 					QIcon::fromTheme("obs-tray-active", QIcon(":/res/images/tray_active.png")));
@@ -750,6 +752,8 @@ private:
 #ifdef __APPLE__
 				QIcon trayIconFile = QIcon(":/res/images/obs_macos.svg");
 				trayIconFile.setIsMask(true);
+#elif defined(MOONLIT_BUILD)
+				QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.png");
 #else
 				QIcon trayIconFile = QIcon(":/res/images/obs.png");
 #endif
@@ -760,6 +764,8 @@ private:
 #ifdef __APPLE__
 				QIcon trayIconFile = QIcon(":/res/images/obs_paused_macos.svg");
 				trayIconFile.setIsMask(true);
+#elif defined(MOONLIT_BUILD)
+				QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.png");
 #else
 				QIcon trayIconFile = QIcon(":/res/images/obs_paused.png");
 #endif
@@ -769,6 +775,8 @@ private:
 #ifdef __APPLE__
 				QIcon trayIconFile = QIcon(":/res/images/tray_active_macos.svg");
 				trayIconFile.setIsMask(true);
+#elif defined(MOONLIT_BUILD)
+				QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.png");
 #else
 				QIcon trayIconFile = QIcon(":/res/images/tray_active.png");
 #endif

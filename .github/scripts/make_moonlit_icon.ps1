@@ -53,3 +53,8 @@ $bw.Flush()
 $target = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\frontend\cmake\windows")).Path "MoonLit.ico"
 [System.IO.File]::WriteAllBytes($target, $ms.ToArray())
 Write-Host "wrote $target ($($ms.ToArray().Length) bytes)"
+
+# PNG version used by the UI resources (tray, window, library).
+$pngTarget = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\frontend\forms\images")).Path "moonlit-icon.png"
+[System.IO.File]::WriteAllBytes($pngTarget, $pngBytes)
+Write-Host "wrote $pngTarget ($($pngBytes.Length) bytes)"

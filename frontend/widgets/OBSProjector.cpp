@@ -44,7 +44,11 @@ OBSProjector::OBSProjector(QWidget *widget, obs_source_t *source_, int monitor, 
 
 	type = type_;
 #ifndef __APPLE__
+#ifdef MOONLIT_BUILD
+	setWindowIcon(QIcon(":/res/images/moonlit-icon.png"));
+#else
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
+#endif
 #endif
 
 	if (monitor == -1) {

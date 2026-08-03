@@ -350,6 +350,8 @@ void OBSBasic::UnpauseRecording()
 #ifdef __APPLE__
 			QIcon trayIconFile = QIcon(":/res/images/tray_active_macos.svg");
 			trayIconFile.setIsMask(true);
+#elif defined(MOONLIT_BUILD)
+			QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.png");
 #else
 			QIcon trayIconFile = QIcon(":/res/images/tray_active.png");
 #endif

@@ -173,7 +173,11 @@ OBSBasicStats::OBSBasicStats(QWidget *parent, bool closable)
 
 	setWindowTitle(QTStr("Basic.Stats"));
 #ifndef __APPLE__
+#ifdef MOONLIT_BUILD
+	setWindowIcon(QIcon(":/res/images/moonlit-icon.png"));
+#else
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
+#endif
 #endif
 
 	setWindowModality(Qt::NonModal);
