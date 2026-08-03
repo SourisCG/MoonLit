@@ -125,6 +125,8 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	autoStart = new QCheckBox(QStringLiteral("Iniciar MoonLit con Windows (oculto en la bandeja)"), this);
 
+	clipSound = new QCheckBox(QStringLiteral("Sonido al guardar clip"), this);
+
 	QLabel *formatNote = new QLabel(
 		QStringLiteral("Formato de grabación: MKV (autoritativo; MP4 solo como exportación)."), this);
 	formatNote->setWordWrap(true);
@@ -162,6 +164,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Micrófono (ID de dispositivo):"), micDevice);
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
 	form->addRow(autoStart);
+	form->addRow(clipSound);
 	form->addRow(formatNote);
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -214,6 +217,8 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 	chatExe->setText(QString::fromUtf8(chat ? chat : ""));
 
 	autoStart->setChecked(IsAutoStartEnabled());
+
+	clipSound->setChecked(config_get_bool(config, "MoonLit", "ClipSound"));
 }
 
 void MoonLitSettingsDialog::SaveValues()
@@ -255,6 +260,7 @@ void MoonLitSettingsDialog::SaveValues()
 		config_set_string(config, "MoonLit", "ChatExe", chat.c_str());
 	}
 
+	config_set_bool(config, "MoonLit", "ClipSound", clipSound->isChecked());
 	config_save_safe(config, "tmp", nullptr);
 	SetAutoStartEnabled(autoStart->isChecked());
 	main_->ResetOutputs();

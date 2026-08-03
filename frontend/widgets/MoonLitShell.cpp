@@ -18,6 +18,8 @@
 
 #include <moonlit/ui/MoonLitSettingsDialog.hpp>
 
+#include <obs-hotkey.h>
+
 #include <cstdint>
 #include <QElapsedTimer>
 #include <QStringList>
@@ -368,6 +370,26 @@ void OBSBasic::InitializeMoonLitShell()
 	if (!moonlitDashboard) {
 		setWindowTitle(QStringLiteral("MoonLit"));
 		setObjectName(QStringLiteral("MoonLitMainWindow"));
+
+#ifdef MOONLIT_BUILD
+		/* Medal-style clip hotkey: works while a game has focus through the
+		 * low-level obs hotkey hook (windowed and borderless games). */
+		const obs_hotkey_id saveClipHotkey = obs_hotkey_register_frontend(
+			"MoonLit.SaveClip", "Guardar clip",
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (!pressed) {
+					return;
+				}
+				auto *main = static_cast<OBSBasic *>(data);
+				QMetaObject::invokeMethod(main, [main]() { main->ReplayBufferSave(); },
+							  Qt::QueuedConnection);
+			},
+			this);
+		if (saveClipHotkey != OBS_INVALID_HOTKEY_ID) {
+			obs_key_combination_t defaultCombo = {0, OBS_KEY_F8};
+			obs_hotkey_load_bindings(saveClipHotkey, &defaultCombo, 1);
+		}
+#endif
 
 		moonlitDashboard = new MoonLitDashboard(this);
 		ui->previewLayout->addWidget(moonlitDashboard);

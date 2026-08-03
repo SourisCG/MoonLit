@@ -46,6 +46,13 @@ extern volatile bool replaybuf_active;
 
 void OBSBasic::AutoRemux(QString input, bool no_show)
 {
+#ifdef MOONLIT_BUILD
+	/* MoonLit keeps MKV authoritative and never remuxes automatically; the
+	 * remux window would steal focus from the game while clipping. */
+	UNUSED_PARAMETER(input);
+	UNUSED_PARAMETER(no_show);
+	return;
+#else
 	auto config = Config();
 
 	bool autoRemux = config_get_bool(config, "Video", "AutoRemux");
@@ -108,6 +115,7 @@ void OBSBasic::AutoRemux(QString input, bool no_show)
 		remux->show();
 	}
 	remux->AutoRemux(input, output);
+#endif
 }
 
 void OBSBasic::StartRecording()

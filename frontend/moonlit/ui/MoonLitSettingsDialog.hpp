@@ -38,4 +38,5 @@ private:
 	QLineEdit *micDevice = nullptr;
 	QLineEdit *chatExe = nullptr;
 	QCheckBox *autoStart = nullptr;
+	QCheckBox *clipSound = nullptr;
 };

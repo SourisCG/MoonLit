@@ -371,6 +371,12 @@ void OBSApp::InitUserConfigDefaults()
 	config_set_default_bool(userConfig, "BasicWindow", "KeepRecordingWhenStreamStops", false);
 	config_set_default_bool(userConfig, "BasicWindow", "SysTrayEnabled", true);
 	config_set_default_bool(userConfig, "BasicWindow", "SysTrayWhenStarted", false);
+#ifdef MOONLIT_BUILD
+	/* Medal-style behavior: minimizing hides to the tray and the app keeps
+	 * running (replay included). */
+	config_set_default_bool(userConfig, "BasicWindow", "SysTrayMinimizeToTray", true);
+	config_set_default_bool(userConfig, "MoonLit", "ClipSound", true);
+#endif
 	config_set_default_bool(userConfig, "BasicWindow", "SaveProjectors", false);
 	config_set_default_bool(userConfig, "BasicWindow", "ShowTransitions", true);
 	config_set_default_bool(userConfig, "BasicWindow", "ShowListboxToolbars", true);

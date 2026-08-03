@@ -36,6 +36,13 @@ Copy-Item -Path (Join-Path $Rundir "*") -Destination $staging -Recurse -Force
 Get-ChildItem -LiteralPath $staging -Recurse -File | Where-Object {
     $_.Extension -in @('.pdb') -or $_.Name -eq 'SHA256SUMS.txt'
 } | Remove-Item -Force
+# Make sure the clip feedback sound is always in the package even when the
+# rundir predates it.
+$soundSource = Join-Path $repoRoot "frontend\data\obs-studio\sounds\moonlit-clip.wav"
+if (Test-Path -LiteralPath $soundSource) {
+    New-Item -ItemType Directory -Path (Join-Path $staging "data\obs-studio\sounds") -Force | Out-Null
+    Copy-Item -LiteralPath $soundSource -Destination (Join-Path $staging "data\obs-studio\sounds\moonlit-clip.wav") -Force
+}
 Write-Host "staged: $((Get-ChildItem -LiteralPath $staging -Recurse -File | Measure-Object).Count) files"
 
 Write-Host "== release-gate audit =="

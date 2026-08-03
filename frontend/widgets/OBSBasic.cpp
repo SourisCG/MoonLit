@@ -762,7 +762,13 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "RecRB", true);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBSize", 512);
+#ifdef MOONLIT_BUILD
+	/* MKV is authoritative; MP4 only via explicit export. Remuxing after
+	 * every clip would pop a window over the game and steal its focus. */
+	config_set_default_bool(activeConfiguration, "Video", "AutoRemux", false);
+#else
 	config_set_default_bool(activeConfiguration, "Video", "AutoRemux", true);
+#endif
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecRBPrefix", "Replay");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecAudioEncoder", "aac");

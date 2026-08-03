@@ -195,7 +195,8 @@
         "ENABLE_VST": false,
         "ENABLE_WEBRTC": false,
         "ENABLE_WEBSOCKET": false,
-        "ENABLE_WHATSNEW": false
+        "ENABLE_WHATSNEW": false,
+        "OBS_VERSION_OVERRIDE": "1.0.0"
       }
     },
     {

@@ -24,6 +24,16 @@
 #include <qt-wrappers.hpp>
 
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+
+#ifdef MOONLIT_BUILD
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
+#endif
 
 #define REPLAY_BUFFER_START "==== Replay Buffer Start ==========================================="
 #define REPLAY_BUFFER_STOP "==== Replay Buffer Stop ============================================"
@@ -189,6 +199,16 @@ void OBSBasic::ReplayBufferSaved()
 	ShowStatusBarMessage(msg);
 	SysTrayNotify(QTStr("Basic.StatusBar.ReplayBufferSavedTo").arg(QT_UTF8(path.c_str())),
 		      QSystemTrayIcon::Information);
+#ifdef MOONLIT_BUILD
+	if (config_get_bool(App()->GetUserConfig(), "MoonLit", "ClipSound")) {
+		const QString soundPath = QCoreApplication::applicationDirPath() +
+					  QStringLiteral("/../../data/obs-studio/sounds/moonlit-clip.wav");
+		if (QFile::exists(soundPath)) {
+			PlaySoundA(QDir::toNativeSeparators(soundPath).toUtf8().constData(), nullptr,
+				   SND_FILENAME | SND_ASYNC);
+		}
+	}
+#endif
 	lastReplay = path;
 	emit ReplayClipSaved(QT_UTF8(path.c_str()));
 	calldata_free(&cd);
