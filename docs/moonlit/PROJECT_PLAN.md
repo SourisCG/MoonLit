@@ -441,6 +441,14 @@ with a real game window) are pending user execution.
 | 2026-08-02 | P6 | Clip editor: frame-strip preview, trim handles, mute/gain with AAC re-encode; media tests | aebd9853f |
 | 2026-08-02 | P8 | True portable ZIP (self-contained config and data) | a6cdd107a |
 | 2026-08-02 | P9 | Signing procedure docs, automated matrix smoke, release v1.0.0 published | published |
+| 2026-08-02 | P6 | Editor fixes: overwrite re-export, OBS-like MKV tests, scrollable details, export log | dc8590764 |
+| 2026-08-02 | P7/P5 | Clip hotkey (F8), clip sound, no remux focus theft, minimize-to-tray, version override | 486260f14 |
+| 2026-08-02 | P2 | Every registered video codec listed in settings; resolver tests | 692fba9e5 |
+| 2026-08-02 | P7 | MoonLit logo everywhere (tray, windows, stats, projector) | 60dd6a009 |
+| 2026-08-02 | P5/P7 | Medal-style dashboard with record button and recents; library thumbnail grid | 64bf71935 |
+| 2026-08-02 | P4 | Desktop audio capture, device menus and compact mixer | dfd14f838 |
+| 2026-08-02 | P4 | Krisp-style noise suppression on the microphone | 88af00c39 |
+| 2026-08-02 | P0 | README and project documentation | pending |
 
 ## GitHub Release Procedure
 
