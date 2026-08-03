@@ -24,21 +24,9 @@
 
 #include <string>
 
+#include <set>
+
 namespace {
-
-bool VideoEncoderRegistered(const char *id)
-{
-	const char *val;
-	size_t i = 0;
-
-	while (obs_enum_encoder_types(i++, &val)) {
-		if (strcmp(val, id) == 0) {
-			return true;
-		}
-	}
-
-	return false;
-}
 
 /* Registry key used for per-user login startup (HKCU\...\Run). */
 QString AutoStartRegistryValue()
@@ -65,15 +53,28 @@ void SetAutoStartEnabled(bool enabled)
 	}
 }
 
-/* Maps an obs encoder id back to the simple output token used in config. */
+/* Maps an obs encoder id back to the simple output token used in config.
+ * Encoders without a simple-output token (e.g. ffmpeg svt/aom) keep their
+ * obs id: the resolver treats those ids directly and falls back if the
+ * encoder cannot be created at runtime. */
 std::string EncoderIdToToken(const std::string &id)
 {
 	if (id == "obs_nvenc_h264_tex" || id == "ffmpeg_nvenc" || id == "obs_nvenc")
 		return "nvenc";
+	if (id == "obs_nvenc_hevc_tex" || id == "ffmpeg_hevc_nvenc")
+		return "nvenc_hevc";
+	if (id == "obs_nvenc_av1_tex")
+		return "nvenc_av1";
 	if (id == "obs_qsv11_v2" || id == "obs_qsv11")
 		return "qsv";
+	if (id == "obs_qsv11_av1")
+		return "qsv_av1";
 	if (id == "h264_texture_amf" || id == "ffmpeg_amf_h264")
 		return "amd";
+	if (id == "h265_texture_amf")
+		return "amd_hevc";
+	if (id == "av1_texture_amf")
+		return "amd_av1";
 	if (id == "obs_x264")
 		return "x264";
 	return id;
@@ -90,13 +91,20 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	encoderCombo = new QComboBox(this);
 	encoderCombo->addItem(QStringLiteral("Auto (recomendar)"), QString());
 
-	for (const std::string &id : MoonLit::EncoderResolver::FallbackChain()) {
-		if (!VideoEncoderRegistered(id.c_str()))
+	/* Every video encoder OBS has registered, not just the fallback chain:
+	 * NVENC/QSV/AMF in H.264, HEVC and AV1, x264, and ffmpeg svt/aom. */
+	std::set<std::string> seenTokens;
+	const char *encoderId = nullptr;
+	for (size_t index = 0; obs_enum_encoder_types(index, &encoderId); ++index) {
+		if (obs_get_encoder_type(encoderId) != OBS_ENCODER_VIDEO)
 			continue;
 
-		const char *display = obs_encoder_get_display_name(id.c_str());
-		std::string token = EncoderIdToToken(id);
-		encoderCombo->addItem(QString::fromUtf8(display ? display : id.c_str()),
+		const std::string token = EncoderIdToToken(encoderId);
+		if (!seenTokens.insert(token).second)
+			continue;
+
+		const char *display = obs_encoder_get_display_name(encoderId);
+		encoderCombo->addItem(QString::fromUtf8(display ? display : encoderId),
 				      QString::fromStdString(token));
 	}
 
