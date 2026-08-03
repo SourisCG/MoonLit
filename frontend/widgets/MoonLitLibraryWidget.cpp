@@ -5,17 +5,16 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
-#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QProcess>
@@ -34,14 +33,6 @@
 #include <cmath>
 
 namespace {
-
-QString clipSummary(const MoonLit::Clip &clip)
-{
-	const QString duration = clip.metadata.durationMs > 0
-				? QStringLiteral("%1 s").arg(clip.metadata.durationMs / 1000)
-				: QStringLiteral("duracion desconocida");
-	return QStringLiteral("%1\n%2 | %3").arg(clip.title, duration, QFileInfo(clip.mediaPath).fileName());
-}
 
 /* Pick a destination inside clipsDir that does not collide with an existing
  * file, so an import never overwrites a clip that is already in the library. */
@@ -110,9 +101,17 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	root->addLayout(searchRow);
 
 	auto *content = new QHBoxLayout();
-	clipList_ = new QListWidget(this);
-	clipList_->setMinimumWidth(420);
-	content->addWidget(clipList_, 2);
+	gridScroll_ = new QScrollArea(this);
+	gridScroll_->setWidgetResizable(true);
+	gridScroll_->setFrameShape(QFrame::NoFrame);
+	gridContainer_ = new QWidget(gridScroll_);
+	gridLayout_ = new QGridLayout(gridContainer_);
+	gridLayout_->setContentsMargins(4, 4, 4, 4);
+	gridLayout_->setSpacing(10);
+	gridLayout_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	gridScroll_->setWidget(gridContainer_);
+	gridScroll_->setMinimumWidth(460);
+	content->addWidget(gridScroll_, 2);
 
 	auto *detailsContainer = new QWidget(this);
 	auto *details = new QVBoxLayout(detailsContainer);
@@ -197,8 +196,6 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
 		&MoonLitLibraryWidget::onFilterChanged);
 	connect(searchEdit_, &QLineEdit::textChanged, this, [this]() { searchDebounceTimer_->start(); });
-	connect(clipList_, &QListWidget::currentRowChanged, this, &MoonLitLibraryWidget::updateSelection);
-	connect(clipList_, &QListWidget::itemDoubleClicked, this, [this]() { openSelected(); });
 	connect(openButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::openSelected);
 	connect(revealButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::revealSelected);
 	connect(removeButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::removeSelected);
@@ -296,23 +293,41 @@ void MoonLitLibraryWidget::ingestClip(const QString &path)
 
 std::optional<MoonLit::Clip> MoonLitLibraryWidget::selectedClip() const
 {
-	const QListWidgetItem *item = clipList_->currentItem();
-	if (!item)
+	if (selectedId_.isEmpty()) {
 		return std::nullopt;
+	}
 
-	const QString id = item->data(Qt::UserRole).toString();
 	for (const MoonLit::Clip &clip : clips_) {
-		if (clip.id == id)
+		if (clip.id == selectedId_) {
 			return clip;
+		}
 	}
 	return std::nullopt;
+}
+
+void MoonLitLibraryWidget::selectClip(const QString &id)
+{
+	selectedId_ = id;
+	updateSelection();
+	if (gridScroll_ && gridCards_.contains(id)) {
+		gridScroll_->ensureWidgetVisible(gridCards_.value(id));
+	}
 }
 
 void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 {
 	clips_ = clips;
 	const LibraryFilter filter = static_cast<LibraryFilter>(filterCombo_->currentIndex());
-	clipList_->clear();
+
+	while (QLayoutItem *item = gridLayout_->takeAt(0)) {
+		delete item->widget();
+		delete item;
+	}
+	gridCards_.clear();
+	if (selectedId_.isEmpty() && !clips.isEmpty()) {
+		selectedId_ = clips.first().id;
+	}
+
 	int shown = 0;
 	for (const MoonLit::Clip &clip : clips) {
 		const bool missing = clip.missing;
@@ -321,22 +336,64 @@ void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 		if (filter == LibraryFilter::Missing && !missing)
 			continue;
 
-		auto *item = new QListWidgetItem(clipSummary(clip), clipList_);
-		item->setData(Qt::UserRole, clip.id);
-		if (QFileInfo::exists(clip.thumbnailPath))
-			item->setIcon(QIcon(clip.thumbnailPath));
-		if (missing)
-			item->setForeground(QColor(QStringLiteral("#e98b8b")));
+		QString text = clip.title;
+		if (clip.metadata.durationMs > 0) {
+			text += QStringLiteral("\n%1 s").arg(clip.metadata.durationMs / 1000);
+		}
+		if (missing) {
+			text += QStringLiteral("\n[Faltante]");
+		}
+
+		auto *card = new QPushButton(text, gridContainer_);
+		card->setProperty("clipId", clip.id);
+		card->setFixedSize(190, 120);
+		card->setIconSize(QSize(176, 66));
+		card->setToolTip(clip.mediaPath);
+		if (QFileInfo::exists(clip.thumbnailPath)) {
+			card->setIcon(QIcon(clip.thumbnailPath));
+		} else {
+			card->setIcon(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")));
+		}
+		card->setStyleSheet(QStringLiteral(
+			"QPushButton { background: #1b1e25; border: 1px solid #2b303b; border-radius: 8px;"
+			" text-align: center; color: #f2f4f8; padding: 4px; font-size: 11px; }"
+			"QPushButton:hover { border-color: #7667f5; }"
+			"QPushButton[selected=\"true\"] { border: 2px solid #7667f5; }"));
+		card->setCheckable(true);
+		card->setChecked(clip.id == selectedId_);
+		card->setProperty("selected", clip.id == selectedId_);
+
+		connect(card, &QPushButton::clicked, this, [this, id = clip.id]() {
+			selectedId_ = id;
+			updateSelection();
+			for (auto it = gridCards_.cbegin(); it != gridCards_.cend(); ++it) {
+				const bool selected = it.key() == id;
+				it.value()->setChecked(selected);
+				it.value()->setProperty("selected", selected);
+				it.value()->style()->unpolish(it.value());
+				it.value()->style()->polish(it.value());
+			}
+			/* A second click shortly after the first opens the clip. */
+			if (lastCardClick_.isValid() && lastCardClick_.elapsed() < 400) {
+				openSelected();
+			}
+			lastCardClick_.restart();
+		});
+
+		gridLayout_->addWidget(card, shown / 3, shown % 3);
+		gridCards_.insert(clip.id, card);
 		++shown;
 	}
+	gridLayout_->setRowStretch(shown / 3, 1);
 
 	setStatus(QStringLiteral("%1 clip(s) local(es)").arg(shown));
+	emit libraryUpdated(clips);
 	updateSelection();
 }
 
 void MoonLitLibraryWidget::onFilterChanged(int)
 {
-	if (!clipList_)
+	if (!gridScroll_)
 		return;
 	populateList(clips_);
 }

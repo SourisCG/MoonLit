@@ -1,5 +1,5 @@
 /******************************************************************************
-    MoonLit dashboard
+    MoonLit dashboard (Medal-style)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,13 +15,17 @@
 #include "MoonLitDashboard.hpp"
 
 #include <QFileInfo>
-#include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace {
 
@@ -32,12 +36,15 @@ QLabel *makeLabel(const QString &text, QWidget *parent = nullptr)
 	return label;
 }
 
-QFrame *makeCard(QWidget *parent)
+QPushButton *makeCardButton(QWidget *parent)
 {
-	auto *card = new QFrame(parent);
-	card->setObjectName(QStringLiteral("moonlitCard"));
-	card->setFrameShape(QFrame::StyledPanel);
-	return card;
+	auto *button = new QPushButton(parent);
+	button->setFixedSize(150, 92);
+	button->setIconSize(QSize(142, 58));
+	button->setStyleSheet(QStringLiteral(
+		"QPushButton { background: #1b1e25; border: 1px solid #2b303b; border-radius: 8px; }"
+		"QPushButton:hover { border-color: #7667f5; }"));
+	return button;
 }
 
 } // namespace
@@ -49,41 +56,41 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 
 	setStyleSheet(QStringLiteral(R"(
         #moonlitDashboard {
-            background: #111318;
+            background: #0f1014;
             color: #f2f4f8;
-        }
-        #moonlitCard {
-            background: #1b1e25;
-            border: 1px solid #2b303b;
-            border-radius: 12px;
         }
         QLabel#moonlitTitle {
             color: #ffffff;
             font-size: 26px;
             font-weight: 700;
         }
-        QLabel#moonlitSubtitle, QLabel#moonlitHint, QLabel#moonlitDetail {
+        QLabel#moonlitSubtitle, QLabel#moonlitHint, QLabel#moonlitDetail,
+        QLabel#moonlitSection {
             color: #9ba3b4;
+        }
+        QLabel#moonlitSection {
+            font-size: 13px;
+            font-weight: 600;
         }
         QLabel#moonlitState {
             color: #83d89b;
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 600;
         }
         QPushButton {
             min-height: 38px;
             padding: 0 16px;
-            border: 1px solid #343b49;
+            border: 1px solid #2b303b;
             border-radius: 8px;
-            background: #252a34;
+            background: #1b1e25;
             color: #f2f4f8;
         }
         QPushButton:hover {
-            background: #303746;
+            border-color: #7667f5;
         }
         QPushButton:disabled {
             color: #697180;
-            background: #1d2027;
+            background: #16181e;
         }
         QPushButton#moonlitPrimary {
             border: 0;
@@ -93,42 +100,83 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
         QPushButton#moonlitPrimary:hover {
             background: #887bf7;
         }
+        QPushButton#moonlitRecord {
+            min-width: 0;
+            min-height: 0;
+            width: 120px;
+            height: 120px;
+            border-radius: 60px;
+            border: 3px solid #e5484d;
+            background: #1b1e25;
+            font-size: 20px;
+            font-weight: 700;
+            color: #e5484d;
+        }
+        QPushButton#moonlitRecord:hover {
+            background: #23262f;
+        }
+        QPushButton#moonlitRecord[active="true"] {
+            background: #e5484d;
+            color: #ffffff;
+        }
     )"));
 
 	auto *root = new QVBoxLayout(this);
-	root->setContentsMargins(32, 28, 32, 28);
-	root->setSpacing(18);
+	root->setContentsMargins(32, 24, 32, 24);
+	root->setSpacing(16);
 
-	auto *header = new QVBoxLayout();
-	header->setSpacing(4);
+	auto *header = new QHBoxLayout();
+	header->setSpacing(10);
+	auto *logo = new QLabel(this);
+	logo->setPixmap(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")).pixmap(34, 34));
 	auto *title = makeLabel(QStringLiteral("MoonLit"), this);
 	title->setObjectName(QStringLiteral("moonlitTitle"));
-	auto *subtitle = makeLabel(QStringLiteral("Clips locales, sin escenas ni controles innecesarios"), this);
-	subtitle->setObjectName(QStringLiteral("moonlitSubtitle"));
+	auto *settingsButton = new QPushButton(QStringLiteral("Ajustes"), this);
+	header->addWidget(logo);
 	header->addWidget(title);
-	header->addWidget(subtitle);
+	header->addStretch(1);
+	header->addWidget(settingsButton);
 	root->addLayout(header);
 
-	auto *statusCard = makeCard(this);
-	auto *statusLayout = new QVBoxLayout(statusCard);
-	statusLayout->setContentsMargins(20, 18, 20, 18);
-	statusLayout->setSpacing(10);
-
-	stateLabel = makeLabel(QStringLiteral("Buffer detenido"), statusCard);
+	/* Center: the big record button and the current state. */
+	auto *center = new QVBoxLayout();
+	center->setSpacing(10);
+	center->setAlignment(Qt::AlignHCenter);
+	recordButton = new QPushButton(QStringLiteral("REC"), this);
+	recordButton->setObjectName(QStringLiteral("moonlitRecord"));
+	recordButton->setCursor(Qt::PointingHandCursor);
+	center->addWidget(recordButton, 0, Qt::AlignHCenter);
+	stateLabel = makeLabel(QStringLiteral("Buffer detenido"), this);
 	stateLabel->setObjectName(QStringLiteral("moonlitState"));
-	gameLabel = makeLabel(QStringLiteral("Sin juego detectado"), statusCard);
+	stateLabel->setAlignment(Qt::AlignCenter);
+	center->addWidget(stateLabel);
+	gameLabel = makeLabel(QStringLiteral("Sin juego detectado"), this);
 	gameLabel->setObjectName(QStringLiteral("moonlitDetail"));
-	captureLabel = makeLabel(QStringLiteral("Captura: esperando configuracion"), statusCard);
-	captureLabel->setObjectName(QStringLiteral("moonlitDetail"));
-	encoderLabel = makeLabel(QStringLiteral("Encoder: se enumerara desde OBS"), statusCard);
-	encoderLabel->setObjectName(QStringLiteral("moonlitDetail"));
+	gameLabel->setAlignment(Qt::AlignCenter);
+	center->addWidget(gameLabel);
+	root->addLayout(center);
 
-	statusLayout->addWidget(stateLabel);
-	statusLayout->addWidget(gameLabel);
-	statusLayout->addWidget(captureLabel);
-	statusLayout->addWidget(encoderLabel);
-	root->addWidget(statusCard);
+	/* Actions: save clip (primary) and open the library. */
+	auto *actions = new QHBoxLayout();
+	actions->setSpacing(10);
+	saveButton = new QPushButton(QStringLiteral("Guardar clip"), this);
+	saveButton->setObjectName(QStringLiteral("moonlitPrimary"));
+	saveButton->setEnabled(false);
+	auto *libraryButton = new QPushButton(QStringLiteral("Biblioteca"), this);
+	actions->addStretch(1);
+	actions->addWidget(saveButton, 2);
+	actions->addWidget(libraryButton, 1);
+	actions->addStretch(1);
+	root->addLayout(actions);
 
+	/* Recent clips, Medal-style. */
+	auto *recentTitle = makeLabel(QStringLiteral("Recientes"), this);
+	recentTitle->setObjectName(QStringLiteral("moonlitSection"));
+	root->addWidget(recentTitle);
+	recentGrid = new QGridLayout();
+	recentGrid->setSpacing(8);
+	recentGrid->setAlignment(Qt::AlignLeft);
+	root->addLayout(recentGrid);
 	root->addStretch(1);
 
 	clipNoticeLabel = makeLabel(QString(), this);
@@ -136,26 +184,17 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	clipNoticeLabel->setAlignment(Qt::AlignCenter);
 	root->addWidget(clipNoticeLabel);
 
-	auto *actions = new QHBoxLayout();
-	actions->setSpacing(10);
-	replayButton = new QPushButton(QStringLiteral("Iniciar buffer"), this);
-	replayButton->setObjectName(QStringLiteral("moonlitPrimary"));
-	saveButton = new QPushButton(QStringLiteral("Guardar clip"), this);
-	saveButton->setEnabled(false);
-	auto *libraryButton = new QPushButton(QStringLiteral("Biblioteca"), this);
-	auto *settingsButton = new QPushButton(QStringLiteral("Configuracion"), this);
-	actions->addWidget(replayButton, 2);
-	actions->addWidget(saveButton, 1);
-	actions->addWidget(libraryButton, 1);
-	actions->addWidget(settingsButton, 1);
-	root->addLayout(actions);
+	auto *details = new QHBoxLayout();
+	captureLabel = makeLabel(QStringLiteral("Captura: esperando configuracion"), this);
+	captureLabel->setObjectName(QStringLiteral("moonlitDetail"));
+	encoderLabel = makeLabel(QStringLiteral("Encoder: se enumerara desde OBS"), this);
+	encoderLabel->setObjectName(QStringLiteral("moonlitDetail"));
+	details->addWidget(captureLabel);
+	details->addStretch(1);
+	details->addWidget(encoderLabel);
+	root->addLayout(details);
 
-	hintLabel = makeLabel(QStringLiteral("El buffer se inicia al detectar un juego compatible."), this);
-	hintLabel->setObjectName(QStringLiteral("moonlitHint"));
-	hintLabel->setAlignment(Qt::AlignCenter);
-	root->addWidget(hintLabel);
-
-	connect(replayButton, &QPushButton::clicked, this, &MoonLitDashboard::replayActionRequested);
+	connect(recordButton, &QPushButton::clicked, this, &MoonLitDashboard::replayActionRequested);
 	connect(saveButton, &QPushButton::clicked, this, &MoonLitDashboard::saveClipRequested);
 	connect(libraryButton, &QPushButton::clicked, this, &MoonLitDashboard::libraryRequested);
 	connect(settingsButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
@@ -170,13 +209,16 @@ void MoonLitDashboard::setReplayState(bool active, bool stopping)
 {
 	if (stopping) {
 		stateLabel->setText(QStringLiteral("Deteniendo buffer..."));
-		replayButton->setEnabled(false);
+		recordButton->setEnabled(false);
 		return;
 	}
 
+	recordButton->setEnabled(true);
+	recordButton->setProperty("active", active);
+	recordButton->setText(active ? QStringLiteral("■") : QStringLiteral("REC"));
+	recordButton->style()->unpolish(recordButton);
+	recordButton->style()->polish(recordButton);
 	stateLabel->setText(active ? QStringLiteral("Buffer activo") : QStringLiteral("Buffer detenido"));
-	replayButton->setText(active ? QStringLiteral("Detener buffer") : QStringLiteral("Iniciar buffer"));
-	replayButton->setEnabled(true);
 	saveButton->setEnabled(active);
 }
 
@@ -208,4 +250,35 @@ void MoonLitDashboard::setClipError(const QString &message)
 	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #e98b8b; font-weight: 600;"));
 	clipNoticeLabel->setText(QStringLiteral("Error: %1").arg(message));
 	noticeTimer->start();
+}
+
+void MoonLitDashboard::setRecentClips(const QVector<MoonLit::Clip> &clips)
+{
+	recentClips_ = clips;
+	rebuildRecentClips();
+}
+
+void MoonLitDashboard::rebuildRecentClips()
+{
+	while (QLayoutItem *item = recentGrid->takeAt(0)) {
+		delete item->widget();
+		delete item;
+	}
+
+	const int count = std::min<int>(9, recentClips_.size());
+	for (int index = 0; index < count; ++index) {
+		const MoonLit::Clip &clip = recentClips_[index];
+		auto *card = makeCardButton(this);
+		if (QFileInfo::exists(clip.thumbnailPath)) {
+			card->setIcon(QIcon(clip.thumbnailPath));
+		} else {
+			card->setIcon(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")));
+		}
+		card->setToolTip(clip.title);
+		connect(card, &QPushButton::clicked, this,
+			[this, id = clip.id]() { emit recentClipRequested(id); });
+		recentGrid->addWidget(card, index / 3, index % 3);
+	}
+
+	recentGrid->setColumnStretch(3, 1);
 }

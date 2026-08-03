@@ -16,6 +16,9 @@
 
 #include <QWidget>
 
+#include <moonlit/Clip.hpp>
+
+class QGridLayout;
 class QLabel;
 class QPushButton;
 class QTimer;
@@ -32,21 +35,26 @@ public:
 	void setEncoderStatus(const QString &status);
 	void setClipSaved(const QString &path);
 	void setClipError(const QString &message);
+	void setRecentClips(const QVector<MoonLit::Clip> &clips);
 
 signals:
 	void replayActionRequested();
 	void saveClipRequested();
 	void settingsRequested();
 	void libraryRequested();
+	void recentClipRequested(const QString &id);
 
 private:
+	void rebuildRecentClips();
+
 	QLabel *stateLabel = nullptr;
 	QLabel *gameLabel = nullptr;
 	QLabel *captureLabel = nullptr;
 	QLabel *encoderLabel = nullptr;
 	QLabel *clipNoticeLabel = nullptr;
-	QLabel *hintLabel = nullptr;
-	QPushButton *replayButton = nullptr;
+	QPushButton *recordButton = nullptr;
 	QPushButton *saveButton = nullptr;
 	QTimer *noticeTimer = nullptr;
+	QGridLayout *recentGrid = nullptr;
+	QVector<MoonLit::Clip> recentClips_;
 };

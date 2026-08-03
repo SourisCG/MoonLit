@@ -6,14 +6,18 @@
 #include <moonlit/MoonLitPaths.hpp>
 #include <moonlit/services/ClipJobs.hpp>
 
+#include <QHash>
+#include <QElapsedTimer>
+
 #include <optional>
 
 class QCheckBox;
 class QComboBox;
+class QGridLayout;
 class QLabel;
 class QLineEdit;
-class QListWidget;
 class QPushButton;
+class QScrollArea;
 class QSlider;
 class QSpinBox;
 class QThread;
@@ -30,9 +34,11 @@ public:
 public slots:
 	void refresh();
 	void ingestClip(const QString &path);
+	void selectClip(const QString &id);
 
 signals:
 	void backRequested();
+	void libraryUpdated(QVector<MoonLit::Clip> clips);
 
 private slots:
 	void updateSelection();
@@ -68,7 +74,12 @@ private:
 
 	QLineEdit *searchEdit_ = nullptr;
 	QComboBox *filterCombo_ = nullptr;
-	QListWidget *clipList_ = nullptr;
+	QScrollArea *gridScroll_ = nullptr;
+	QWidget *gridContainer_ = nullptr;
+	QGridLayout *gridLayout_ = nullptr;
+	QHash<QString, QPushButton *> gridCards_;
+	QString selectedId_;
+	QElapsedTimer lastCardClick_;
 	QLabel *detailsLabel_ = nullptr;
 	QLabel *statusLabel_ = nullptr;
 	QLabel *previewImage_ = nullptr;

@@ -25,6 +25,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <algorithm>
+
 #ifdef _WIN32
 #include "MoonLitGameDetector.hpp"
 
@@ -406,6 +408,20 @@ void OBSBasic::InitializeMoonLitShell()
 		});
 		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, &OBSBasic::ShowMoonLitLibrary);
 		connect(moonlitLibrary, &MoonLitLibraryWidget::backRequested, this, &OBSBasic::ShowMoonLitDashboard);
+		connect(moonlitLibrary, &MoonLitLibraryWidget::libraryUpdated, moonlitDashboard,
+			[this](const QVector<MoonLit::Clip> &clips) {
+				QVector<MoonLit::Clip> recent = clips;
+				std::sort(recent.begin(), recent.end(),
+					  [](const MoonLit::Clip &left, const MoonLit::Clip &right) {
+						  return left.createdAtUtc > right.createdAtUtc;
+					  });
+				moonlitDashboard->setRecentClips(recent);
+			});
+		connect(moonlitDashboard, &MoonLitDashboard::recentClipRequested, this,
+			[this](const QString &id) {
+				ShowMoonLitLibrary();
+				moonlitLibrary->selectClip(id);
+			});
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitLibrary, &MoonLitLibraryWidget::ingestClip);
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitDashboard,
 			[this](const QString &path) { moonlitDashboard->setClipSaved(path); });
