@@ -12,6 +12,8 @@ target_sources(
   PRIVATE
     widgets/ClipFrameStrip.cpp
     widgets/ClipFrameStrip.hpp
+    widgets/MoonLitMixer.cpp
+    widgets/MoonLitMixer.hpp
     widgets/AudioMixer.cpp
     widgets/AudioMixer.hpp
     widgets/ColorSelect.cpp

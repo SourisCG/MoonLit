@@ -14,6 +14,8 @@
 
 #include "MoonLitDashboard.hpp"
 
+#include "MoonLitMixer.hpp"
+
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -177,6 +179,13 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	recentGrid->setSpacing(8);
 	recentGrid->setAlignment(Qt::AlignLeft);
 	root->addLayout(recentGrid);
+
+	/* Compact mixer for the audio channels. */
+	auto *mixerTitle = makeLabel(QStringLiteral("Mezclador"), this);
+	mixerTitle->setObjectName(QStringLiteral("moonlitSection"));
+	root->addWidget(mixerTitle);
+	mixer_ = new MoonLitMixer(this);
+	root->addWidget(mixer_);
 	root->addStretch(1);
 
 	clipNoticeLabel = makeLabel(QString(), this);

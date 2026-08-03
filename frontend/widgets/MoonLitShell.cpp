@@ -15,6 +15,7 @@
 #include "OBSBasic.hpp"
 #include "MoonLitDashboard.hpp"
 #include "MoonLitLibraryWidget.hpp"
+#include "MoonLitMixer.hpp"
 
 #include <moonlit/ui/MoonLitSettingsDialog.hpp>
 
@@ -105,6 +106,8 @@ OBSSceneItem moonlitMicItem;
 OBSSource moonlitMicSource;
 OBSSceneItem moonlitChatItem;
 OBSSource moonlitChatSource;
+OBSSceneItem moonlitDesktopItem;
+OBSSource moonlitDesktopSource;
 MoonLitTarget moonlitTarget;
 QElapsedTimer moonlitWgcTimer;
 bool moonlitTargetFocused = false;
@@ -269,6 +272,25 @@ obs_source_t *createMoonLitChatSource()
 	return source;
 }
 
+/* Track 1 (mixed): the desktop audio output device (what comes out of the
+ * speakers/headphones), like the native OBS "Desktop Audio" source. */
+obs_source_t *createMoonLitDesktopSource()
+{
+	static const char *const audioType = "wasapi_output_capture";
+	if (!obs_get_latest_input_type_id(audioType))
+		return nullptr;
+
+	const char *deviceId = config_get_string(OBSBasic::Get()->Config(), "MoonLit", "DesktopDeviceId");
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_string(settings, "device_id", deviceId && *deviceId ? deviceId : "default");
+
+	obs_source_t *source = obs_source_create_private(audioType, "MoonLit Audio de escritorio", settings);
+	if (source) {
+		obs_source_set_audio_mixers(source, (1u << 0));
+	}
+	return source;
+}
+
 void RemoveMoonLitAudioItems()
 {
 	if (moonlitAudioItem) {
@@ -286,6 +308,11 @@ void RemoveMoonLitAudioItems()
 		moonlitChatItem = nullptr;
 	}
 	moonlitChatSource = nullptr;
+	if (moonlitDesktopItem) {
+		obs_sceneitem_remove(moonlitDesktopItem);
+		moonlitDesktopItem = nullptr;
+	}
+	moonlitDesktopSource = nullptr;
 }
 
 struct MoonLitMonitorSelection {
@@ -720,6 +747,14 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 			moonlitChatSource = nullptr;
 	}
 
+	OBSSourceAutoRelease desktop = createMoonLitDesktopSource();
+	if (desktop) {
+		moonlitDesktopSource = desktop;
+		moonlitDesktopItem = obs_scene_add(scene, desktop);
+		if (!moonlitDesktopItem)
+			moonlitDesktopSource = nullptr;
+	}
+
 	createMoonLitShield(scene);
 	if (!moonlitShieldItem) {
 		blog(LOG_ERROR, "MoonLit: capture shield could not be installed");
@@ -754,6 +789,23 @@ void OBSBasic::ConfigureMoonLitCapture(const MoonLitTarget &target)
 		moonlitDashboard->setDetectedGame(target.executable);
 		moonlitDashboard->setCaptureStatus(QStringLiteral("captura de ventana inicializando"));
 	}
+	UpdateMoonLitMixer();
+}
+
+void OBSBasic::UpdateMoonLitMixer()
+{
+	if (!moonlitDashboard)
+		return;
+
+	MoonLitMixer *mixer = moonlitDashboard->mixer();
+	if (!mixer)
+		return;
+
+	mixer->clearSources();
+	mixer->addSource(QStringLiteral("Escritorio"), moonlitDesktopSource);
+	mixer->addSource(QStringLiteral("Juego"), moonlitAudioSource);
+	mixer->addSource(QStringLiteral("Microfono"), moonlitMicSource);
+	mixer->addSource(QStringLiteral("Chat"), moonlitChatSource);
 }
 
 void OBSBasic::ShieldMoonLitCapture()
@@ -785,5 +837,8 @@ void OBSBasic::ClearMoonLitCapture()
 	moonlitWgcTimer.invalidate();
 	moonlitReplayRetryTimer.invalidate();
 	moonlitConfigureRetryTimer.invalidate();
+	if (moonlitDashboard) {
+		moonlitDashboard->mixer()->clearSources();
+	}
 }
 #endif

@@ -274,6 +274,7 @@ private:
 	bool moonlitSessionEnding = false;
 	void ShowMoonLitLibrary();
 	void ShowMoonLitDashboard();
+	void UpdateMoonLitMixer();
 #endif
 
 	void InitializeMoonLitShell();

@@ -22,6 +22,7 @@ class QGridLayout;
 class QLabel;
 class QPushButton;
 class QTimer;
+class MoonLitMixer;
 
 class MoonLitDashboard final : public QWidget {
 	Q_OBJECT
@@ -36,6 +37,7 @@ public:
 	void setClipSaved(const QString &path);
 	void setClipError(const QString &message);
 	void setRecentClips(const QVector<MoonLit::Clip> &clips);
+	MoonLitMixer *mixer() const { return mixer_; }
 
 signals:
 	void replayActionRequested();
@@ -57,4 +59,5 @@ private:
 	QTimer *noticeTimer = nullptr;
 	QGridLayout *recentGrid = nullptr;
 	QVector<MoonLit::Clip> recentClips_;
+	MoonLitMixer *mixer_ = nullptr;
 };

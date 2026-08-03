@@ -20,13 +20,76 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
 #include <string>
 
 #include <set>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <mmdeviceapi.h>
+#include <propkey.h>
+#include <windows.h>
+#pragma comment(lib, "ole32.lib")
+#endif
+
 namespace {
+
+#ifdef _WIN32
+/* PKEY_Device_FriendlyName defined inline to avoid the DEFINE_PROPERTYKEY
+ * header conflict between propkey.h and functiondiscoverykeys_devpkey.h. */
+static const PROPERTYKEY kDeviceFriendlyName = {
+	{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+
+/* Windows Core Audio has no OBS-native input device list, so MoonLit
+ * enumerates capture endpoints the same way win-wasapi does internally. */
+QVector<std::pair<QString, QString>> AudioInputDevices()
+{
+	QVector<std::pair<QString, QString>> devices;
+	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+	IMMDeviceEnumerator *enumerator = nullptr;
+	if (CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+			     __uuidof(IMMDeviceEnumerator), reinterpret_cast<void **>(&enumerator)) != S_OK) {
+		return devices;
+	}
+
+	IMMDeviceCollection *collection = nullptr;
+	if (SUCCEEDED(enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection))) {
+		UINT count = 0;
+		collection->GetCount(&count);
+		for (UINT index = 0; index < count; ++index) {
+			IMMDevice *device = nullptr;
+			if (!SUCCEEDED(collection->Item(index, &device)))
+				continue;
+
+			LPWSTR id = nullptr;
+			device->GetId(&id);
+			IPropertyStore *store = nullptr;
+			QString name;
+			if (SUCCEEDED(device->OpenPropertyStore(STGM_READ, &store))) {
+				PROPVARIANT value;
+				PropVariantInit(&value);
+				if (SUCCEEDED(store->GetValue(kDeviceFriendlyName, &value)) &&
+				    value.vt == VT_LPWSTR) {
+					name = QString::fromWCharArray(value.pwszVal);
+				}
+				PropVariantClear(&value);
+				store->Release();
+			}
+			devices.append({name, id ? QString::fromWCharArray(id) : QString()});
+			CoTaskMemFree(id);
+			device->Release();
+		}
+		collection->Release();
+	}
+	enumerator->Release();
+	CoUninitialize();
+	return devices;
+}
+#endif
 
 /* Registry key used for per-user login startup (HKCU\...\Run). */
 QString AutoStartRegistryValue()
@@ -125,8 +188,20 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	QPushButton *browse = new QPushButton(QStringLiteral("Examinar…"), this);
 	connect(browse, &QPushButton::clicked, this, &MoonLitSettingsDialog::BrowseOutputPath);
 
-	micDevice = new QLineEdit(this);
-	micDevice->setPlaceholderText(QStringLiteral("default"));
+	micDevice = new QComboBox(this);
+	micDevice->addItem(QStringLiteral("Predeterminado"), QStringLiteral("default"));
+	for (const auto &[name, id] : AudioInputDevices()) {
+		micDevice->addItem(name, id);
+	}
+
+	desktopDevice = new QComboBox(this);
+	desktopDevice->addItem(QStringLiteral("Predeterminado"), QStringLiteral("default"));
+	auto enumMonitoring = [](void *param, const char *name, const char *id) {
+		auto *combo = static_cast<QComboBox *>(param);
+		combo->addItem(QString::fromUtf8(name), QString::fromUtf8(id));
+		return true;
+	};
+	obs_enum_audio_monitoring_devices(enumMonitoring, desktopDevice);
 
 	chatExe = new QLineEdit(this);
 	chatExe->setPlaceholderText(QStringLiteral("Discord.exe"));
@@ -169,7 +244,8 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Pista 4 (chat):"), trackChat);
 	form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
 	form->addRow(audioNote);
-	form->addRow(QStringLiteral("Micrófono (ID de dispositivo):"), micDevice);
+	form->addRow(QStringLiteral("Microfono (entrada):"), micDevice);
+	form->addRow(QStringLiteral("Audio de escritorio (salida):"), desktopDevice);
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
 	form->addRow(autoStart);
 	form->addRow(clipSound);
@@ -219,7 +295,12 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 	outputPath->setText(QString::fromUtf8(path ? path : ""));
 
 	const char *mic = config_get_string(config, "MoonLit", "MicDeviceId");
-	micDevice->setText(QString::fromUtf8(mic ? mic : "default"));
+	const int micIndex = micDevice->findData(QString::fromUtf8(mic ? mic : "default"));
+	micDevice->setCurrentIndex(micIndex >= 0 ? micIndex : 0);
+
+	const char *desktop = config_get_string(config, "MoonLit", "DesktopDeviceId");
+	const int desktopIndex = desktopDevice->findData(QString::fromUtf8(desktop ? desktop : "default"));
+	desktopDevice->setCurrentIndex(desktopIndex >= 0 ? desktopIndex : 0);
 
 	const char *chat = config_get_string(config, "MoonLit", "ChatExe");
 	chatExe->setText(QString::fromUtf8(chat ? chat : ""));
@@ -256,9 +337,18 @@ void MoonLitSettingsDialog::SaveValues()
 		config_set_string(config, "SimpleOutput", "FilePath", path.c_str());
 	}
 
-	const std::string mic = micDevice->text().trimmed().toStdString();
-	if (!mic.empty()) {
+	const std::string mic = micDevice->currentData().toString().toStdString();
+	if (mic.empty()) {
+		config_remove_value(config, "MoonLit", "MicDeviceId");
+	} else {
 		config_set_string(config, "MoonLit", "MicDeviceId", mic.c_str());
+	}
+
+	const std::string desktop = desktopDevice->currentData().toString().toStdString();
+	if (desktop.empty() || desktop == "default") {
+		config_remove_value(config, "MoonLit", "DesktopDeviceId");
+	} else {
+		config_set_string(config, "MoonLit", "DesktopDeviceId", desktop.c_str());
 	}
 
 	const std::string chat = chatExe->text().trimmed().toStdString();
