@@ -19,6 +19,6 @@ add_test(NAME moonlit-tests COMMAND moonlit-tests)
 if(WIN32)
   set_tests_properties(
     moonlit-tests
-    PROPERTIES ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
+    PROPERTIES ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$<TARGET_FILE_DIR:FFmpeg::avutil>"
   )
 endif()
