@@ -23,6 +23,7 @@ class QLabel;
 class QPushButton;
 class QTimer;
 class MoonLitMixer;
+class MoonLitRecordButton;
 
 class MoonLitDashboard final : public QWidget {
 	Q_OBJECT
@@ -54,7 +55,7 @@ private:
 	QLabel *captureLabel = nullptr;
 	QLabel *encoderLabel = nullptr;
 	QLabel *clipNoticeLabel = nullptr;
-	QPushButton *recordButton = nullptr;
+	MoonLitRecordButton *recordButton = nullptr;
 	QPushButton *saveButton = nullptr;
 	QTimer *noticeTimer = nullptr;
 	QGridLayout *recentGrid = nullptr;

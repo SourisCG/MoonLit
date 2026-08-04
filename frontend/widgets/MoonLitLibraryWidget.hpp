@@ -84,7 +84,6 @@ private:
 	MoonLit::ClipJobs *jobs_ = nullptr;
 	MoonLit::ExportQueue *queue_ = nullptr;
 	QThread *workerThread_ = nullptr;
-	QThread *queueThread_ = nullptr;
 	QTimer *searchDebounceTimer_ = nullptr;
 	QVector<MoonLit::Clip> clips_;
 	QStackedWidget *stack_ = nullptr;

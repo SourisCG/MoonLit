@@ -15,12 +15,15 @@
 #include "MoonLitDashboard.hpp"
 
 #include "MoonLitMixer.hpp"
+#include "MoonLitTheme.hpp"
 
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPushButton>
 #include <QSizePolicy>
 #include <QStyle>
@@ -29,7 +32,57 @@
 
 #include <algorithm>
 
+/* The record button is a custom-painted widget with no stylesheet at all:
+ * Qt style sheets rewrite a widget's minimum/maximum sizes through their own
+ * box model, which made the layout overlap the state labels with the button.
+ * A plain painted widget keeps the exact 120x120 geometry in code. */
+class MoonLitRecordButton final : public QWidget {
+	Q_OBJECT
+
+public:
+	explicit MoonLitRecordButton(QWidget *parent = nullptr) : QWidget(parent)
+	{
+		setFixedSize(120, 120);
+		setCursor(Qt::PointingHandCursor);
+	}
+
+	void setActive(bool active)
+	{
+		active_ = active;
+		update();
+	}
+
+signals:
+	void clicked();
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter painter(this);
+		painter.setRenderHint(QPainter::Antialiasing);
+
+		const QColor ring = active_ ? QColor(0xff, 0x6e, 0x6e) : MoonLitTheme::rec();
+		painter.setPen(QPen(ring, 3));
+		painter.setBrush(active_ ? MoonLitTheme::rec() : MoonLitTheme::bgSurface());
+		painter.drawEllipse(QRectF(1.5, 1.5, 117, 117));
+
+		QFont font = painter.font();
+		font.setPixelSize(22);
+		font.setBold(true);
+		painter.setFont(font);
+		painter.setPen(active_ ? QColor(Qt::white) : ring);
+		painter.drawText(rect(), Qt::AlignCenter, active_ ? QStringLiteral("\u25A0") : QStringLiteral("REC"));
+	}
+
+	void mousePressEvent(QMouseEvent *) override { emit clicked(); }
+
+private:
+	bool active_ = false;
+};
+
 namespace {
+
+using namespace MoonLitTheme;
 
 QLabel *makeLabel(const QString &text, QWidget *parent = nullptr)
 {
@@ -44,8 +97,9 @@ QPushButton *makeCardButton(QWidget *parent)
 	button->setFixedSize(150, 92);
 	button->setIconSize(QSize(142, 58));
 	button->setStyleSheet(QStringLiteral(
-		"QPushButton { background: #1b1e25; border: 1px solid #2b303b; border-radius: 8px; }"
-		"QPushButton:hover { border-color: #7667f5; }"));
+		"QPushButton { background: %1; border: 1px solid %2; border-radius: 8px; }"
+		"QPushButton:hover { border-color: %3; }")
+				      .arg(css(bgSurface()), css(border()), css(accent())));
 	return button;
 }
 
@@ -58,8 +112,8 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 
 	setStyleSheet(QStringLiteral(R"(
         #moonlitDashboard {
-            background: #0f1014;
-            color: #f2f4f8;
+            background: %1;
+            color: %2;
         }
         QLabel#moonlitTitle {
             color: #ffffff;
@@ -68,60 +122,56 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
         }
         QLabel#moonlitSubtitle, QLabel#moonlitHint, QLabel#moonlitDetail,
         QLabel#moonlitSection {
-            color: #9ba3b4;
+            color: %3;
         }
         QLabel#moonlitSection {
             font-size: 13px;
             font-weight: 600;
         }
         QLabel#moonlitState {
-            color: #83d89b;
+            color: %4;
             font-size: 16px;
             font-weight: 600;
         }
         QPushButton {
             min-height: 38px;
             padding: 0 16px;
-            border: 1px solid #2b303b;
+            border: 1px solid %5;
             border-radius: 8px;
-            background: #1b1e25;
-            color: #f2f4f8;
+            background: %6;
+            color: %2;
+            font-weight: 500;
         }
         QPushButton:hover {
-            border-color: #7667f5;
+            border-color: %7;
+            background: %8;
+        }
+        QPushButton:pressed {
+            background: %9;
         }
         QPushButton:disabled {
-            color: #697180;
-            background: #16181e;
+            color: %3;
+            background: %10;
+            border-color: %11;
         }
         QPushButton#moonlitPrimary {
             border: 0;
-            background: #7667f5;
+            background: %7;
+            color: #ffffff;
             font-weight: 600;
         }
         QPushButton#moonlitPrimary:hover {
-            background: #887bf7;
+            background: %12;
         }
-        QPushButton#moonlitRecord {
-            min-width: 0;
-            min-height: 0;
-            width: 120px;
-            height: 120px;
-            border-radius: 60px;
-            border: 3px solid #e5484d;
-            background: #1b1e25;
-            font-size: 20px;
-            font-weight: 700;
-            color: #e5484d;
+        QPushButton#moonlitPrimary:disabled {
+            background: %8;
+            color: %3;
         }
-        QPushButton#moonlitRecord:hover {
-            background: #23262f;
-        }
-        QPushButton#moonlitRecord[active="true"] {
-            background: #e5484d;
-            color: #ffffff;
-        }
-    )"));
+    )")
+			.arg(css(bgDeep()), css(text()), css(textMuted()), css(ok()), css(border()),
+			     css(bgSurface()), css(accent()), css(bgElevated()), QColor(0x2f, 0x31, 0x42).name(),
+			     QColor(0x24, 0x25, 0x2f).name(), QColor(0x3a, 0x3d, 0x4d).name(), css(accentHover()),
+			     css(rec()), QColor(0xff, 0x6e, 0x6e).name()));
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(32, 24, 32, 24);
@@ -140,22 +190,25 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	header->addWidget(settingsButton);
 	root->addLayout(header);
 
-	/* Center: the big record button and the current state. */
+	/* Center: the big record button and the current state, stacked with
+	 * explicit sizes so the labels can never overlap the button. */
 	auto *center = new QVBoxLayout();
-	center->setSpacing(10);
-	center->setAlignment(Qt::AlignHCenter);
-	recordButton = new QPushButton(QStringLiteral("REC"), this);
-	recordButton->setObjectName(QStringLiteral("moonlitRecord"));
-	recordButton->setCursor(Qt::PointingHandCursor);
+	center->setSpacing(12);
+	center->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+	recordButton = new MoonLitRecordButton(this);
 	center->addWidget(recordButton, 0, Qt::AlignHCenter);
 	stateLabel = makeLabel(QStringLiteral("Buffer detenido"), this);
 	stateLabel->setObjectName(QStringLiteral("moonlitState"));
 	stateLabel->setAlignment(Qt::AlignCenter);
-	center->addWidget(stateLabel);
+	stateLabel->setWordWrap(false);
+	stateLabel->setFixedHeight(24);
+	center->addWidget(stateLabel, 0, Qt::AlignHCenter);
 	gameLabel = makeLabel(QStringLiteral("Sin juego detectado"), this);
 	gameLabel->setObjectName(QStringLiteral("moonlitDetail"));
 	gameLabel->setAlignment(Qt::AlignCenter);
-	center->addWidget(gameLabel);
+	gameLabel->setWordWrap(false);
+	gameLabel->setFixedHeight(22);
+	center->addWidget(gameLabel, 0, Qt::AlignHCenter);
 	root->addLayout(center);
 
 	/* Actions: save clip (primary) and open the library. */
@@ -203,7 +256,7 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	details->addWidget(encoderLabel);
 	root->addLayout(details);
 
-	connect(recordButton, &QPushButton::clicked, this, &MoonLitDashboard::replayActionRequested);
+	connect(recordButton, &MoonLitRecordButton::clicked, this, &MoonLitDashboard::replayActionRequested);
 	connect(saveButton, &QPushButton::clicked, this, &MoonLitDashboard::saveClipRequested);
 	connect(libraryButton, &QPushButton::clicked, this, &MoonLitDashboard::libraryRequested);
 	connect(settingsButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
@@ -223,10 +276,7 @@ void MoonLitDashboard::setReplayState(bool active, bool stopping)
 	}
 
 	recordButton->setEnabled(true);
-	recordButton->setProperty("active", active);
-	recordButton->setText(active ? QStringLiteral("■") : QStringLiteral("REC"));
-	recordButton->style()->unpolish(recordButton);
-	recordButton->style()->polish(recordButton);
+	recordButton->setActive(active);
 	stateLabel->setText(active ? QStringLiteral("Buffer activo") : QStringLiteral("Buffer detenido"));
 	saveButton->setEnabled(active);
 }
@@ -291,3 +341,6 @@ void MoonLitDashboard::rebuildRecentClips()
 
 	recentGrid->setColumnStretch(3, 1);
 }
+
+#include "MoonLitDashboard.moc"
+

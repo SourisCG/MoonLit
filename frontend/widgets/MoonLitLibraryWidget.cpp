@@ -1,7 +1,10 @@
 #include "MoonLitLibraryWidget.hpp"
 
 #include "ClipFrameStrip.hpp"
+#include "MoonLitTheme.hpp"
 #include "MoonLitTimelineEditor.hpp"
+
+#include <obs.h>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -55,18 +58,26 @@ QString uniqueClipDestination(const QDir &clipsDir, const QString &fileName)
 
 MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 {
+	using namespace MoonLitTheme;
 	setObjectName(QStringLiteral("moonlitLibrary"));
 	setStyleSheet(QStringLiteral(R"(
-        #moonlitLibrary { background: #111318; color: #f2f4f8; }
+        #moonlitLibrary { background: %1; color: %2; }
         QLabel#libraryTitle { color: #ffffff; font-size: 24px; font-weight: 700; }
-        QLabel#libraryDetails, QLabel#libraryStatus { color: #9ba3b4; }
-        QLineEdit, QListWidget, QSpinBox { background: #1b1e25; color: #f2f4f8; border: 1px solid #343b49; border-radius: 7px; padding: 7px; }
-        QListWidget::item { padding: 8px; border-bottom: 1px solid #2b303b; }
-        QListWidget::item:selected { background: #303746; }
-        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid #343b49; border-radius: 7px; background: #252a34; color: #f2f4f8; }
-        QPushButton:hover { background: #303746; }
-        QPushButton:disabled { color: #697180; background: #1d2027; }
-    )"));
+        QLabel#libraryDetails, QLabel#libraryStatus { color: %3; }
+        QLineEdit, QListWidget, QSpinBox, QComboBox { background: %4; color: %2; border: 1px solid %5; border-radius: 7px; padding: 7px; }
+        QComboBox::drop-down { border: 0; }
+        QComboBox QAbstractItemView { background: %6; color: %2; selection-background-color: %7; }
+        QListWidget::item { padding: 8px; border-bottom: 1px solid %8; }
+        QListWidget::item:selected { background: %9; }
+        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid %5; border-radius: 7px; background: %4; color: %2; font-weight: 500; }
+        QPushButton:hover { background: %9; border-color: %7; }
+        QPushButton:pressed { background: %10; }
+        QPushButton:disabled { color: %3; background: %11; border-color: %12; }
+    )")
+			.arg(css(bgDeep()), css(text()), css(textMuted()), css(bgSurface()), css(border()),
+			     QColor(0x2f, 0x31, 0x42).name(), css(accent()), QColor(0x3a, 0x3d, 0x4d).name(),
+			     css(bgElevated()), QColor(0x2f, 0x31, 0x42).name(), QColor(0x24, 0x25, 0x2f).name(),
+			     QColor(0x3a, 0x3d, 0x4d).name()));
 
 	searchDebounceTimer_ = new QTimer(this);
 	searchDebounceTimer_->setSingleShot(true);
@@ -144,7 +155,8 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	previewImage_->setObjectName(QStringLiteral("libraryPreview"));
 	previewImage_->setFixedHeight(90);
 	previewImage_->setAlignment(Qt::AlignCenter);
-	previewImage_->setStyleSheet(QStringLiteral("background: #000000; border: 1px solid #343b49;"));
+	previewImage_->setStyleSheet(QStringLiteral("background: #000000; border: 1px solid %1;")
+						 .arg(MoonLitTheme::css(MoonLitTheme::border())));
 	previewImage_->setText(QStringLiteral("Vista previa"));
 	details->addWidget(previewImage_);
 
@@ -278,10 +290,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 		repository_.open(&openError);
 	}
 
-	queueThread_ = new QThread(this);
-	queue_ = new MoonLit::ExportQueue(&repository_, this);
-	queue_->moveToThread(queueThread_);
-	connect(queueThread_, &QThread::finished, queue_, &QObject::deleteLater);
+	queue_ = new MoonLit::ExportQueue(&repository_);
 	connect(queue_, &MoonLit::ExportQueue::exportProgress, this, &MoonLitLibraryWidget::onExportProgress);
 	connect(queue_, &MoonLit::ExportQueue::exportFinished, this, &MoonLitLibraryWidget::onExportFinished);
 	qRegisterMetaType<QVector<QImage>>("QVector<QImage>");
@@ -304,7 +313,6 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	});
 
 	workerThread_->start();
-	queueThread_->start();
 	queue_->start();
 
 	refresh();
@@ -312,20 +320,25 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 
 MoonLitLibraryWidget::~MoonLitLibraryWidget()
 {
-	if (workerThread_ && workerThread_->isRunning()) {
+	if (workerThread_ && workerThread_->isRunning() && QThread::currentThread() != workerThread_) {
 		QMetaObject::invokeMethod(jobs_, []() {}, Qt::BlockingQueuedConnection);
 		workerThread_->quit();
 		workerThread_->wait();
 	}
-	if (queue_ && queueThread_ && queueThread_->isRunning()) {
+	/* The queue owns its worker thread; stop it and release the object
+	 * before the shared repository member is destroyed. */
+	if (queue_) {
 		queue_->shutdown();
+		delete queue_;
+		queue_ = nullptr;
 	}
 }
 
 void MoonLitLibraryWidget::setStatus(const QString &status, bool error)
 {
 	statusLabel_->setText(status);
-	statusLabel_->setStyleSheet(error ? QStringLiteral("color: #e98b8b;") : QString());
+	statusLabel_->setStyleSheet(error ? QStringLiteral("color: %1;").arg(MoonLitTheme::css(MoonLitTheme::rec()))
+					  : QString());
 }
 
 void MoonLitLibraryWidget::refresh()
@@ -413,10 +426,14 @@ void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 			card->setIcon(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")));
 		}
 		card->setStyleSheet(QStringLiteral(
-			"QPushButton { background: #1b1e25; border: 1px solid #2b303b; border-radius: 8px;"
-			" text-align: center; color: #f2f4f8; padding: 4px; font-size: 11px; }"
-			"QPushButton:hover { border-color: #7667f5; }"
-			"QPushButton[selected=\"true\"] { border: 2px solid #7667f5; }"));
+			"QPushButton { background: %1; border: 1px solid %2; border-radius: 8px;"
+			" text-align: center; color: %3; padding: 4px; font-size: 11px; }"
+			"QPushButton:hover { border-color: %4; }"
+			"QPushButton[selected=\"true\"] { border: 2px solid %4; }")
+					      .arg(MoonLitTheme::css(MoonLitTheme::bgSurface()),
+						   MoonLitTheme::css(MoonLitTheme::border()),
+						   MoonLitTheme::css(MoonLitTheme::text()),
+						   MoonLitTheme::css(MoonLitTheme::accent())));
 		card->setCheckable(true);
 		card->setChecked(clip.id == selectedId_);
 		card->setProperty("selected", clip.id == selectedId_);

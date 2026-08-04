@@ -9,6 +9,8 @@
 
 #include "TimelineStrip.hpp"
 
+#include "MoonLitTheme.hpp"
+
 #include <QMouseEvent>
 #include <QPainter>
 
@@ -19,10 +21,7 @@ namespace {
 
 constexpr int kMarginX = 6;
 constexpr int kTrackTop = 4;
-constexpr QColor kSegmentColor(43, 48, 59);
-constexpr QColor kSegmentSelected(118, 103, 245);
-constexpr QColor kTrackBackground(27, 30, 37);
-constexpr QColor kHandleColor(200, 190, 255);
+constexpr int kSegmentGap = 2;
 
 double msToX(qint64 ms, qint64 totalMs, int width)
 {
@@ -59,15 +58,21 @@ void TimelineStrip::setSelected(int index)
 	update();
 }
 
+/* Positions are derived locally from the source lengths (a cumulative pass)
+ * instead of trusting the model's timelineStartMs, so stale or unresolved
+ * segments can never produce overlapping rects. */
 QRect TimelineStrip::segmentRect(int index) const
 {
 	if (index < 0 || index >= segments_.size()) {
 		return {};
 	}
-	const MoonLit::TimelineSegment &segment = segments_.at(index);
-	const int xStart = static_cast<int>(std::round(msToX(segment.timelineStartMs, totalDurationMs_, width())));
-	const int xEnd = static_cast<int>(
-		std::round(msToX(segment.timelineStartMs + segment.sourceLengthMs(), totalDurationMs_, width())));
+	qint64 position = 0;
+	for (int previous = 0; previous < index; ++previous) {
+		position += std::max<qint64>(kMinSegmentMs, segments_.at(previous).sourceLengthMs());
+	}
+	const qint64 length = std::max<qint64>(kMinSegmentMs, segments_.at(index).sourceLengthMs());
+	const int xStart = static_cast<int>(std::round(msToX(position, totalDurationMs_, width())));
+	const int xEnd = static_cast<int>(std::round(msToX(position + length, totalDurationMs_, width())));
 	return QRect(xStart, kTrackTop, std::max(4, xEnd - xStart), kTrackHeight);
 }
 
@@ -84,13 +89,15 @@ int TimelineStrip::indexAt(int x) const
 void TimelineStrip::paintEvent(QPaintEvent *event)
 {
 	Q_UNUSED(event)
+	using namespace MoonLitTheme;
 	QPainter painter(this);
 	painter.setRenderHint(QPainter::Antialiasing, false);
 
-	painter.fillRect(QRect(0, kTrackTop, width(), kTrackHeight), kTrackBackground);
+	painter.fillRect(QRect(0, kTrackTop, width(), kTrackHeight), QColor(0x21, 0x22, 0x2c));
 
 	for (int index = 0; index < segments_.size(); ++index) {
-		const QRect rect = segmentRect(index);
+		QRect rect = segmentRect(index);
+		rect.setWidth(std::max(2, rect.width() - kSegmentGap));
 		const bool selected = index == selectedIndex_;
 
 		QImage image = thumbnails_.value(segments_.at(index).clipId);
@@ -101,16 +108,16 @@ void TimelineStrip::paintEvent(QPaintEvent *event)
 					  QRect(0, 0, image.width(), image.height()));
 			painter.fillRect(target, QColor(0, 0, 0, 90));
 		} else {
-			painter.fillRect(rect.adjusted(1, 1, -1, -1), kSegmentColor);
+			painter.fillRect(rect.adjusted(1, 1, -1, -1), bgSurface());
 		}
 
-		painter.setPen(selected ? QPen(kSegmentSelected, 2) : QPen(QColor(52, 59, 73), 1));
+		painter.setPen(selected ? QPen(accent(), 2) : QPen(border(), 1));
 		painter.drawRect(rect);
 
 		if (selected && segments_.size() > 1) {
-			painter.fillRect(QRect(rect.left(), kTrackTop, kHandleWidth, kTrackHeight), kHandleColor);
+			painter.fillRect(QRect(rect.left(), kTrackTop, kHandleWidth, kTrackHeight), textMuted());
 			painter.fillRect(QRect(rect.right() - kHandleWidth + 1, kTrackTop, kHandleWidth, kTrackHeight),
-					 kHandleColor);
+					 textMuted());
 		}
 	}
 }

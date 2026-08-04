@@ -9,6 +9,7 @@
 
 #include "MoonLitTimelineEditor.hpp"
 
+#include "MoonLitTheme.hpp"
 #include "TimelineStrip.hpp"
 
 #include <QCheckBox>
@@ -31,15 +32,22 @@ constexpr qint64 kMinSegmentMs = 100;
 
 MoonLitTimelineEditor::MoonLitTimelineEditor(QWidget *parent) : QWidget(parent)
 {
+	using namespace MoonLitTheme;
 	setObjectName(QStringLiteral("moonlitTimelineEditor"));
 	setStyleSheet(QStringLiteral(R"(
         QLabel#timelineTitle { color: #ffffff; font-size: 24px; font-weight: 700; }
-        QLabel#timelineDetail { color: #9ba3b4; }
-        QLineEdit, QComboBox, QSpinBox { background: #1b1e25; color: #f2f4f8; border: 1px solid #343b49; border-radius: 7px; padding: 7px; }
-        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid #343b49; border-radius: 7px; background: #252a34; color: #f2f4f8; }
-        QPushButton:hover { background: #303746; }
-        QPushButton:disabled { color: #697180; background: #1d2027; }
-    )"));
+        QLabel#timelineDetail { color: %1; }
+        QLineEdit, QComboBox, QSpinBox { background: %2; color: %3; border: 1px solid %4; border-radius: 7px; padding: 7px; }
+        QComboBox::drop-down { border: 0; }
+        QComboBox QAbstractItemView { background: %5; color: %3; selection-background-color: %6; }
+        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid %4; border-radius: 7px; background: %2; color: %3; font-weight: 500; }
+        QPushButton:hover { background: %7; border-color: %6; }
+        QPushButton:pressed { background: %5; }
+        QPushButton:disabled { color: %1; background: %8; border-color: %9; }
+    )")
+			.arg(css(textMuted()), css(bgSurface()), css(text()), css(border()),
+			     QColor(0x2f, 0x31, 0x42).name(), css(accent()), css(bgElevated()),
+			     QColor(0x24, 0x25, 0x2f).name(), QColor(0x3a, 0x3d, 0x4d).name()));
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(28, 24, 28, 24);
