@@ -3,12 +3,17 @@
 #include <QWidget>
 
 #include <moonlit/Clip.hpp>
+#include <moonlit/editor/Timeline.hpp>
 #include <moonlit/MoonLitPaths.hpp>
+#include <moonlit/persistence/SqliteClipRepository.hpp>
+#include <moonlit/platform/IPlatformServices.hpp>
 #include <moonlit/services/ClipJobs.hpp>
+#include <moonlit/services/ExportQueue.hpp>
 
 #include <QHash>
 #include <QElapsedTimer>
 
+#include <memory>
 #include <optional>
 
 class QCheckBox;
@@ -23,6 +28,8 @@ class QSpinBox;
 class QThread;
 class QTimer;
 class ClipFrameStrip;
+class MoonLitTimelineEditor;
+class QStackedWidget;
 
 class MoonLitLibraryWidget final : public QWidget {
 	Q_OBJECT
@@ -58,6 +65,10 @@ private slots:
 	void onExportFinished(bool succeeded, bool cancelled, const QString &outputPath, const QString &error);
 	void onPreviewStripReady(const QString &path, const QVector<QImage> &images, const QString &error);
 	void onPreviewFrameReady(const QString &path, qint64 positionMs, const QImage &image, const QString &error);
+	void onTimelineSaved(const QString &id, const QString &error);
+	void onTimelinesLoaded(const QVector<MoonLit::TimelineProject> &projects, const QString &error);
+	void onTimelineDeleted(const QString &id, const QString &error);
+	void onTimelineLoaded(const MoonLit::TimelineProject &project, const QString &error);
 
 private:
 	enum class LibraryFilter { All, Available, Missing };
@@ -65,12 +76,20 @@ private:
 	void setStatus(const QString &status, bool error = false);
 	std::optional<MoonLit::Clip> selectedClip() const;
 	void populateList(const QVector<MoonLit::Clip> &clips);
+	void openTimelineEditor();
 
 	MoonLit::MoonLitPaths paths_ = MoonLit::MoonLitPaths::defaultPaths();
+	MoonLit::SqliteClipRepository repository_{paths_};
+	std::unique_ptr<MoonLit::IPlatformServices> platform_ = MoonLit::IPlatformServices::create();
 	MoonLit::ClipJobs *jobs_ = nullptr;
+	MoonLit::ExportQueue *queue_ = nullptr;
 	QThread *workerThread_ = nullptr;
+	QThread *queueThread_ = nullptr;
 	QTimer *searchDebounceTimer_ = nullptr;
 	QVector<MoonLit::Clip> clips_;
+	QStackedWidget *stack_ = nullptr;
+	QWidget *libraryPage_ = nullptr;
+	MoonLitTimelineEditor *timelineEditor_ = nullptr;
 
 	QLineEdit *searchEdit_ = nullptr;
 	QComboBox *filterCombo_ = nullptr;

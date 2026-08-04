@@ -1,6 +1,7 @@
 #include "MoonLitLibraryWidget.hpp"
 
 #include "ClipFrameStrip.hpp"
+#include "MoonLitTimelineEditor.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -17,12 +18,12 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QMetaObject>
-#include <QProcess>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
@@ -82,12 +83,21 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	title->setObjectName(QStringLiteral("libraryTitle"));
 	auto *refreshButton = new QPushButton(QStringLiteral("Actualizar"), this);
 	auto *importButton = new QPushButton(QStringLiteral("Importar"), this);
+	auto *timelineButton = new QPushButton(QStringLiteral("Timeline"), this);
 	header->addWidget(backButton);
 	header->addWidget(title);
 	header->addStretch(1);
+	header->addWidget(timelineButton);
 	header->addWidget(importButton);
 	header->addWidget(refreshButton);
 	root->addLayout(header);
+
+	/* Library page and timeline editor share the space below the header. */
+	stack_ = new QStackedWidget(this);
+	libraryPage_ = new QWidget(stack_);
+	auto *libraryLayout = new QVBoxLayout(libraryPage_);
+	libraryLayout->setContentsMargins(0, 0, 0, 0);
+	libraryLayout->setSpacing(12);
 
 	searchEdit_ = new QLineEdit(this);
 	searchEdit_->setPlaceholderText(QStringLiteral("Buscar clips, juegos o archivos..."));
@@ -98,10 +108,10 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	auto *searchRow = new QHBoxLayout();
 	searchRow->addWidget(searchEdit_, 1);
 	searchRow->addWidget(filterCombo_);
-	root->addLayout(searchRow);
+	libraryLayout->addLayout(searchRow);
 
 	auto *content = new QHBoxLayout();
-	gridScroll_ = new QScrollArea(this);
+	gridScroll_ = new QScrollArea(libraryPage_);
 	gridScroll_->setWidgetResizable(true);
 	gridScroll_->setFrameShape(QFrame::NoFrame);
 	gridContainer_ = new QWidget(gridScroll_);
@@ -113,7 +123,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	gridScroll_->setMinimumWidth(460);
 	content->addWidget(gridScroll_, 2);
 
-	auto *detailsContainer = new QWidget(this);
+	auto *detailsContainer = new QWidget(libraryPage_);
 	auto *details = new QVBoxLayout(detailsContainer);
 	detailsLabel_ = new QLabel(QStringLiteral("Selecciona un clip"), this);
 	detailsLabel_->setObjectName(QStringLiteral("libraryDetails"));
@@ -178,12 +188,17 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	details->addWidget(cancelButton_);
 	details->addStretch(1);
 
-	auto *detailsScroll = new QScrollArea(this);
+	auto *detailsScroll = new QScrollArea(libraryPage_);
 	detailsScroll->setWidgetResizable(true);
 	detailsScroll->setFrameShape(QFrame::NoFrame);
 	detailsScroll->setWidget(detailsContainer);
 	content->addWidget(detailsScroll, 1);
-	root->addLayout(content, 1);
+	libraryLayout->addLayout(content, 1);
+	stack_->addWidget(libraryPage_);
+
+	timelineEditor_ = new MoonLitTimelineEditor(stack_);
+	stack_->addWidget(timelineEditor_);
+	root->addWidget(stack_, 1);
 
 	statusLabel_ = new QLabel(this);
 	statusLabel_->setObjectName(QStringLiteral("libraryStatus"));
@@ -193,6 +208,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(backButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::backRequested);
 	connect(refreshButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::refresh);
 	connect(importButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::importFiles);
+	connect(timelineButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::openTimelineEditor);
 	connect(filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
 		&MoonLitLibraryWidget::onFilterChanged);
 	connect(searchEdit_, &QLineEdit::textChanged, this, [this]() { searchDebounceTimer_->start(); });
@@ -200,8 +216,12 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(revealButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::revealSelected);
 	connect(removeButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::removeSelected);
 	connect(exportButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::exportSelected);
-	connect(cancelButton_, &QPushButton::clicked, this,
-		[this]() { setStatus(QStringLiteral("Cancelando...")); jobs_->cancelExport(); });
+	connect(cancelButton_, &QPushButton::clicked, this, [this]() {
+		setStatus(QStringLiteral("Cancelando..."));
+		if (queue_) {
+			queue_->cancelCurrent();
+		}
+	});
 	connect(saveEditsButton_, &QPushButton::clicked, this, &MoonLitLibraryWidget::saveEdits);
 	connect(startSeconds_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
 		if (frameStrip_ && previewDurationMs_ > 0) {
@@ -237,7 +257,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 		[this](bool checked) { gainSlider_->setEnabled(!checked); });
 
 	workerThread_ = new QThread(this);
-	jobs_ = new MoonLit::ClipJobs(paths_);
+	jobs_ = new MoonLit::ClipJobs(paths_, &repository_);
 	jobs_->moveToThread(workerThread_);
 	connect(workerThread_, &QThread::finished, jobs_, &QObject::deleteLater);
 	connect(jobs_, &MoonLit::ClipJobs::libraryLoaded, this, &MoonLitLibraryWidget::onLibraryLoaded);
@@ -245,12 +265,47 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	connect(jobs_, &MoonLit::ClipJobs::clipRemoved, this, &MoonLitLibraryWidget::onClipRemoved);
 	connect(jobs_, &MoonLit::ClipJobs::clipEditsSaved, this, &MoonLitLibraryWidget::onClipEditsSaved);
 	connect(jobs_, &MoonLit::ClipJobs::searchResults, this, &MoonLitLibraryWidget::onSearchResults);
-	connect(jobs_, &MoonLit::ClipJobs::exportProgress, this, &MoonLitLibraryWidget::onExportProgress);
-	connect(jobs_, &MoonLit::ClipJobs::exportFinished, this, &MoonLitLibraryWidget::onExportFinished);
 	connect(jobs_, &MoonLit::ClipJobs::previewFrameReady, this, &MoonLitLibraryWidget::onPreviewFrameReady);
 	connect(jobs_, &MoonLit::ClipJobs::previewStripReady, this, &MoonLitLibraryWidget::onPreviewStripReady);
+	connect(jobs_, &MoonLit::ClipJobs::timelineSaved, this, &MoonLitLibraryWidget::onTimelineSaved);
+	connect(jobs_, &MoonLit::ClipJobs::timelinesLoaded, this, &MoonLitLibraryWidget::onTimelinesLoaded);
+	connect(jobs_, &MoonLit::ClipJobs::timelineDeleted, this, &MoonLitLibraryWidget::onTimelineDeleted);
+	connect(jobs_, &MoonLit::ClipJobs::timelineLoaded, this, &MoonLitLibraryWidget::onTimelineLoaded);
+
+	/* The repository is opened once here and shared by the two workers. */
+	{
+		QString openError;
+		repository_.open(&openError);
+	}
+
+	queueThread_ = new QThread(this);
+	queue_ = new MoonLit::ExportQueue(&repository_, this);
+	queue_->moveToThread(queueThread_);
+	connect(queueThread_, &QThread::finished, queue_, &QObject::deleteLater);
+	connect(queue_, &MoonLit::ExportQueue::exportProgress, this, &MoonLitLibraryWidget::onExportProgress);
+	connect(queue_, &MoonLit::ExportQueue::exportFinished, this, &MoonLitLibraryWidget::onExportFinished);
 	qRegisterMetaType<QVector<QImage>>("QVector<QImage>");
+	qRegisterMetaType<MoonLit::TimelineProject>("MoonLit::TimelineProject");
+
+	connect(timelineEditor_, &MoonLitTimelineEditor::backRequested, this,
+		[this]() { stack_->setCurrentWidget(libraryPage_); });
+	connect(timelineEditor_, &MoonLitTimelineEditor::statusMessage, this, &MoonLitLibraryWidget::setStatus);
+	connect(timelineEditor_, &MoonLitTimelineEditor::saveRequested, this,
+		[this](const MoonLit::TimelineProject &project) {
+			QMetaObject::invokeMethod(jobs_, [this, project]() { jobs_->saveTimeline(project); },
+						  Qt::QueuedConnection);
+		});
+	connect(timelineEditor_, &MoonLitTimelineEditor::exportRequested, this, [this](const QString &timelineId) {
+		cancelButton_->setEnabled(true);
+		setStatus(QStringLiteral("Exportando timeline..."));
+		if (queue_) {
+			queue_->enqueueTimeline(timelineId);
+		}
+	});
+
 	workerThread_->start();
+	queueThread_->start();
+	queue_->start();
 
 	refresh();
 }
@@ -261,6 +316,9 @@ MoonLitLibraryWidget::~MoonLitLibraryWidget()
 		QMetaObject::invokeMethod(jobs_, []() {}, Qt::BlockingQueuedConnection);
 		workerThread_->quit();
 		workerThread_->wait();
+	}
+	if (queue_ && queueThread_ && queueThread_->isRunning()) {
+		queue_->shutdown();
 	}
 }
 
@@ -594,12 +652,9 @@ void MoonLitLibraryWidget::revealSelected()
 	if (!clip || clip->missing)
 		return;
 
-#ifdef Q_OS_WIN
-	QProcess::startDetached(QStringLiteral("explorer.exe"),
-				{QStringLiteral("/select,"), QDir::toNativeSeparators(clip->mediaPath)});
-#else
-	QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(clip->mediaPath).absolutePath()));
-#endif
+	if (platform_) {
+		platform_->revealInFileManager(clip->mediaPath.toStdWString());
+	}
 }
 
 void MoonLitLibraryWidget::removeSelected()
@@ -635,10 +690,60 @@ void MoonLitLibraryWidget::exportSelected()
 
 	cancelButton_->setEnabled(true);
 	setStatus(QStringLiteral("Exportando..."));
-	QMetaObject::invokeMethod(jobs_,
-				  [this, id = clip->id, startMs = static_cast<qint64>(start) * 1000,
-				   endMs = end > 0 ? static_cast<qint64>(end) * 1000 : -1]() {
-					  jobs_->exportClip(id, startMs, endMs);
-				  },
+	if (queue_) {
+		queue_->enqueueTrim(clip->id, static_cast<qint64>(start) * 1000,
+				    end > 0 ? static_cast<qint64>(end) * 1000 : -1);
+	}
+}
+
+void MoonLitLibraryWidget::openTimelineEditor()
+{
+	if (!stack_ || !timelineEditor_) {
+		return;
+	}
+	timelineEditor_->setClips(clips_);
+	stack_->setCurrentWidget(timelineEditor_);
+	QMetaObject::invokeMethod(jobs_, [this]() { jobs_->listTimelines(); }, Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::onTimelineSaved(const QString &, const QString &error)
+{
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	setStatus(QStringLiteral("Timeline guardado"));
+}
+
+void MoonLitLibraryWidget::onTimelinesLoaded(const QVector<MoonLit::TimelineProject> &projects,
+					     const QString &error)
+{
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	if (projects.isEmpty()) {
+		timelineEditor_->setProject(MoonLit::TimelineProject::create(QStringLiteral("Nuevo timeline")));
+		return;
+	}
+	QMetaObject::invokeMethod(jobs_, [this, id = projects.first().id]() { jobs_->loadTimeline(id); },
 				  Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::onTimelineDeleted(const QString &, const QString &error)
+{
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	setStatus(QStringLiteral("Timeline eliminado"));
+}
+
+void MoonLitLibraryWidget::onTimelineLoaded(const MoonLit::TimelineProject &project, const QString &error)
+{
+	if (!error.isEmpty()) {
+		setStatus(error, true);
+		return;
+	}
+	timelineEditor_->setProject(project);
 }

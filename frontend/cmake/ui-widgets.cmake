@@ -63,6 +63,10 @@ target_sources(
     widgets/MoonLitLibraryWidget.cpp
     widgets/MoonLitLibraryWidget.hpp
     widgets/MoonLitShell.cpp
+    widgets/MoonLitTimelineEditor.cpp
+    widgets/MoonLitTimelineEditor.hpp
+    widgets/TimelineStrip.cpp
+    widgets/TimelineStrip.hpp
     widgets/OBSMainWindow.hpp
     widgets/OBSProjector.cpp
     widgets/OBSProjector.hpp
