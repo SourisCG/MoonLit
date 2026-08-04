@@ -10,17 +10,26 @@ endif()
 set_property(GLOBAL APPEND PROPERTY OBS_FEATURES_ENABLED "Plugin Support")
 
 if(MOONLIT_BUILD)
-  # MoonLit ships only local capture, audio, replay and encoder modules.
+  # MoonLit ships only local capture, audio, replay and encoder modules,
+  # selected per platform: WGC/WASAPI on Windows, PipeWire/XSHM/PulseAudio
+  # on Linux.
   add_obs_plugin(image-source)
   add_obs_plugin(obs-ffmpeg)
   add_obs_plugin(obs-filters)
-  add_obs_plugin(obs-nvenc PLATFORMS WINDOWS ARCHITECTURES x64)
   add_obs_plugin(obs-outputs)
-  add_obs_plugin(obs-qsv11 PLATFORMS WINDOWS ARCHITECTURES x64)
   add_obs_plugin(obs-transitions)
   add_obs_plugin(obs-x264)
-  add_obs_plugin(win-capture PLATFORMS WINDOWS)
-  add_obs_plugin(win-wasapi PLATFORMS WINDOWS)
+  if(OS_WINDOWS)
+    add_obs_plugin(obs-nvenc PLATFORMS WINDOWS ARCHITECTURES x64)
+    add_obs_plugin(obs-qsv11 PLATFORMS WINDOWS ARCHITECTURES x64)
+    add_obs_plugin(win-capture PLATFORMS WINDOWS)
+    add_obs_plugin(win-wasapi PLATFORMS WINDOWS)
+  elseif(OS_LINUX)
+    add_obs_plugin(linux-pipewire)
+    add_obs_plugin(linux-capture)
+    add_obs_plugin(linux-pulseaudio)
+    add_obs_plugin(linux-alsa)
+  endif()
   return()
 endif()
 

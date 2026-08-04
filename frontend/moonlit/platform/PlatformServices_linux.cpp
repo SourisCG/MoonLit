@@ -7,6 +7,7 @@
 #include <QStandardPaths>
 #include <QTextStream>
 
+#include <cerrno>
 #include <sys/resource.h>
 
 namespace MoonLit {

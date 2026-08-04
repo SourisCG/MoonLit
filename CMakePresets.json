@@ -153,6 +153,33 @@
       }
     },
     {
+      "name": "ubuntu-moonlit-x64",
+      "displayName": "Ubuntu x64 (MoonLit)",
+      "description": "MoonLit Linux x64 build with network and hook features disabled",
+      "inherits": ["ubuntu"],
+      "binaryDir": "${sourceDir}/build_moonlit_ubuntu",
+      "cacheVariables": {
+        "MOONLIT_BUILD": true,
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_AJA": false,
+        "ENABLE_BROWSER": false,
+        "ENABLE_BROWSER_PANELS": false,
+        "ENABLE_DECKLINK": false,
+        "ENABLE_SCRIPTING": false,
+        "ENABLE_SCRIPTING_LUA": false,
+        "ENABLE_SCRIPTING_PYTHON": false,
+        "ENABLE_SERVICE_UPDATES": false,
+        "ENABLE_UPDATER": false,
+        "ENABLE_VLC": false,
+        "ENABLE_VIRTUALCAM": false,
+        "ENABLE_VST": false,
+        "ENABLE_WEBRTC": false,
+        "ENABLE_WEBSOCKET": false,
+        "ENABLE_WHATSNEW": false,
+        "OBS_VERSION_OVERRIDE": "1.0.0"
+      }
+    },
+    {
       "name": "windows-x64",
       "displayName": "Windows x64",
       "description": "Default Windows build (x64)",
@@ -255,6 +282,13 @@
       "configurePreset": "windows-moonlit-x64",
       "displayName": "MoonLit Windows 64-bit",
       "description": "MoonLit Windows build for 64-bit (aka x64)",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "ubuntu-moonlit-x64",
+      "configurePreset": "ubuntu-moonlit-x64",
+      "displayName": "MoonLit Ubuntu 64-bit",
+      "description": "MoonLit Ubuntu build for 64-bit",
       "configuration": "RelWithDebInfo"
     },
     {

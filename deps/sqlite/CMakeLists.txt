@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.28...3.30)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(SQLite3 LANGUAGES C)
+else()
+  enable_language(C)
 endif()
 
 # Vendored from https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip and

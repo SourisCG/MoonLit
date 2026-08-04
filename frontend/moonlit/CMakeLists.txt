@@ -2,12 +2,15 @@ cmake_minimum_required(VERSION 3.28...3.30)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(MoonLitClipCore LANGUAGES CXX)
+  set(MOONLIT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+else()
+  set(MOONLIT_REPO_ROOT "${CMAKE_SOURCE_DIR}")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/finders")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat swscale)
+find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat swscale swresample)
 
 add_library(moonlit-clip-core STATIC)
 add_library(MoonLit::ClipCore ALIAS moonlit-clip-core)
@@ -60,7 +63,12 @@ else()
   target_sources(moonlit-clip-core PRIVATE platform/PlatformServices_linux.cpp)
 endif()
 
-add_subdirectory("${CMAKE_SOURCE_DIR}/deps/sqlite" "${CMAKE_BINARY_DIR}/deps/sqlite")
+add_subdirectory("${MOONLIT_REPO_ROOT}/deps/sqlite" "${CMAKE_BINARY_DIR}/deps/sqlite")
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  enable_testing()
+  add_subdirectory("${MOONLIT_REPO_ROOT}/test/moonlit" "${CMAKE_BINARY_DIR}/test/moonlit")
+endif()
 
 target_include_directories(moonlit-clip-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
