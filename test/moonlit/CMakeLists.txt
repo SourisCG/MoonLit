@@ -3,6 +3,7 @@ add_executable(
   CaptureStateMachineTests.cpp
   EncoderResolverTests.cpp
   ExportMathTests.cpp
+  ExportQueueTests.cpp
   JsonImportTests.cpp
   MediaTests.cpp
   MoonLitPathsTests.cpp

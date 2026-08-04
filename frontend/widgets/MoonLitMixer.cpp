@@ -1,23 +1,34 @@
 #include "MoonLitMixer.hpp"
 
+#include "MoonLitTheme.hpp"
+
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
 #include <QTimer>
+#include <QVBoxLayout>
 
 #include <algorithm>
 
 MoonLitMixer::MoonLitMixer(QWidget *parent) : QWidget(parent)
 {
+	auto *layout = new QVBoxLayout(this);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(8);
+
+	using namespace MoonLitTheme;
 	setStyleSheet(QStringLiteral(
-		"QLabel { color: #9ba3b4; }"
-		"QPushButton { min-height: 26px; padding: 0 10px; border: 1px solid #2b303b;"
-		" border-radius: 6px; background: #1b1e25; color: #f2f4f8; }"
-		"QPushButton:checked { background: #e5484d; border-color: #e5484d; }"
-		"QSlider::groove:horizontal { height: 4px; background: #2b303b; border-radius: 2px; }"
+		"QLabel { color: %1; }"
+		"QPushButton { min-height: 26px; padding: 0 10px; border: 1px solid %2;"
+		" border-radius: 6px; background: %3; color: %4; }"
+		"QPushButton:hover { border-color: %5; }"
+		"QPushButton:checked { background: %6; border-color: %6; color: #ffffff; }"
+		"QSlider::groove:horizontal { height: 4px; background: %2; border-radius: 2px; }"
 		"QSlider::handle:horizontal { width: 12px; margin: -5px 0; border-radius: 6px;"
-		" background: #7667f5; }"));
+		" background: %5; }")
+				      .arg(css(textMuted()), css(border()), css(bgSurface()), css(text()),
+					   css(accent()), css(rec())));
 
 	syncTimer_ = new QTimer(this);
 	syncTimer_->setInterval(400);

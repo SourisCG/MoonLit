@@ -1100,6 +1100,24 @@ int main(int argc, char *argv[])
 	}
 #endif
 
+#ifdef MOONLIT_BUILD
+#ifdef _WIN32
+	/* MoonLit resolves data, plugin and script paths relative to the working
+	 * directory (OBS_DATA_PATH, OBS_PLUGIN_PATH); pin the working directory to
+	 * the executable folder so launching from any shell, terminal or shortcut
+	 * behaves exactly like a double click in Explorer. */
+	{
+		wchar_t executablePath[MAX_PATH] = {};
+		if (GetModuleFileNameW(nullptr, executablePath, MAX_PATH) > 0) {
+			if (wchar_t *slash = wcsrchr(executablePath, L'\\')) {
+				*slash = L'\0';
+			}
+			SetCurrentDirectoryW(executablePath);
+		}
+	}
+#endif
+#endif
+
 	fstream logFile;
 
 	curl_global_init(CURL_GLOBAL_ALL);

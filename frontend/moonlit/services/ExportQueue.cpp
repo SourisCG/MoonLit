@@ -43,6 +43,7 @@ ExportQueue::ExportQueue(SqliteClipRepository *repository, QObject *parent)
 
 ExportQueue::~ExportQueue()
 {
+	qDebug("MoonLit-DBG ~ExportQueue on thread %p", (void*)QThread::currentThread());
 	shutdown();
 }
 
@@ -63,7 +64,18 @@ void ExportQueue::shutdown()
 		return;
 	}
 	cancelCurrent_.store(true);
-	QMetaObject::invokeMethod(this, &ExportQueue::processNext, Qt::BlockingQueuedConnection);
+
+	/* The destructor can run on the worker thread itself (deferred delete
+	 * processed when the thread finishes): never wait on our own thread. */
+	if (QThread::currentThread() == &workerThread_) {
+		started_ = false;
+		return;
+	}
+
+	/* Drain only when the worker loop is reachable from another thread. */
+	if (workerThread_.isRunning()) {
+		QMetaObject::invokeMethod(this, &ExportQueue::processNext, Qt::BlockingQueuedConnection);
+	}
 	workerThread_.quit();
 	workerThread_.wait();
 	started_ = false;
