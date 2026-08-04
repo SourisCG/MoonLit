@@ -1,0 +1,19 @@
+target_sources(
+  obs-studio
+  PRIVATE
+    moonlit/hotkeys/HotkeyManager.cpp
+    moonlit/hotkeys/HotkeyManager.hpp
+)
+
+if(OS_WINDOWS)
+  target_sources(
+    obs-studio
+    PRIVATE
+      moonlit/capture/CaptureController.cpp
+      moonlit/capture/CaptureController.hpp
+      moonlit/capture/ICaptureBackend.hpp
+      moonlit/capture/ICaptureHost.hpp
+      moonlit/capture/WindowsCaptureBackend.cpp
+      moonlit/capture/WindowsCaptureBackend.hpp
+  )
+endif()

@@ -20,6 +20,8 @@
 #include "ui_OBSBasic.h"
 #include "OBSMainWindow.hpp"
 
+#include <moonlit/capture/ICaptureHost.hpp>
+
 #include <OBSApp.hpp>
 #include <components/AccessibleAlignmentSelector.hpp>
 #include <oauth/Auth.hpp>
@@ -63,6 +65,11 @@ class MoonLitLibraryWidget;
 #ifdef _WIN32
 class MoonLitGameDetector;
 #endif
+
+namespace MoonLit {
+class CaptureController;
+class HotkeyManager;
+}
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
 #endif
@@ -188,7 +195,7 @@ static inline void ClearProcessPriority()
 	} while (false)
 #endif
 
-class OBSBasic : public OBSMainWindow {
+class OBSBasic : public OBSMainWindow, public MoonLit::ICaptureHost {
 	Q_OBJECT
 	Q_PROPERTY(QIcon imageIcon READ GetImageIcon WRITE SetImageIcon DESIGNABLE true)
 	Q_PROPERTY(QIcon colorIcon READ GetColorIcon WRITE SetColorIcon DESIGNABLE true)
@@ -275,18 +282,20 @@ private:
 	void ShowMoonLitLibrary();
 	void ShowMoonLitDashboard();
 	void UpdateMoonLitMixer();
+	QPointer<MoonLit::HotkeyManager> moonlitHotkeys;
 #endif
 
 	void InitializeMoonLitShell();
+	/* MoonLit::ICaptureHost */
+	OBSScene moonlitCurrentScene() override;
+	bool replayBufferActive() override;
+	void startReplayBuffer() override;
+	void stopReplayBuffer() override;
+	config_t *activeConfig() override;
 #ifdef _WIN32
-	QPointer<MoonLitGameDetector> moonlitDetector;
-	OBSSource moonlitCaptureSource;
-	OBSSceneItem moonlitCaptureItem;
+	MoonLit::CaptureController *moonlitCaptureController = nullptr;
 
 	void InitializeMoonLitDetection();
-	void ConfigureMoonLitCapture(const struct MoonLitTarget &target);
-	void ShieldMoonLitCapture();
-	void ClearMoonLitCapture();
 #endif
 
 	void OnEvent(enum obs_frontend_event event);
@@ -342,7 +351,7 @@ public:
 
 	void saveAll();
 	bool shouldPromptForClose();
-	inline bool isClosing() { return isClosing_; }
+	inline bool isClosing() const override { return isClosing_; }
 	inline bool isClosePromptOpen() { return isClosePromptOpen_; }
 	void closeWindow();
 

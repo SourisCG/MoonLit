@@ -19,6 +19,10 @@ target_sources(
     Clip.hpp
     MoonLitPaths.cpp
     MoonLitPaths.hpp
+    capture/CaptureStateMachine.cpp
+    capture/CaptureStateMachine.hpp
+    capture/CaptureTypes.cpp
+    capture/CaptureTypes.hpp
     editor/ClipExportService.cpp
     editor/ClipExportService.hpp
     editor/ExportMath.hpp
@@ -38,9 +42,16 @@ target_sources(
     persistence/JsonImport.hpp
     persistence/SqliteClipRepository.cpp
     persistence/SqliteClipRepository.hpp
+    platform/IPlatformServices.hpp
     services/ClipJobs.cpp
     services/ClipJobs.hpp
 )
+
+if(WIN32)
+  target_sources(moonlit-clip-core PRIVATE platform/PlatformServices_win.cpp)
+else()
+  target_sources(moonlit-clip-core PRIVATE platform/PlatformServices_linux.cpp)
+endif()
 
 add_subdirectory("${CMAKE_SOURCE_DIR}/deps/sqlite" "${CMAKE_BINARY_DIR}/deps/sqlite")
 

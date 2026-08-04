@@ -1,5 +1,6 @@
 add_executable(
   moonlit-tests
+  CaptureStateMachineTests.cpp
   EncoderResolverTests.cpp
   ExportMathTests.cpp
   JsonImportTests.cpp

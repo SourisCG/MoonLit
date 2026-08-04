@@ -40,6 +40,9 @@
 #include <models/SceneCollection.hpp>
 #ifdef MOONLIT_BUILD
 #include <moonlit/output/MoonLitOutputConfig.hpp>
+#ifdef _WIN32
+#include <moonlit/capture/CaptureController.hpp>
+#endif
 #endif
 #include <settings/OBSBasicSettings.hpp>
 #include <utility/QuickTransition.hpp>
@@ -2078,15 +2081,9 @@ void OBSBasic::closeWindow()
 
 #ifdef _WIN32
 	disableSaving++;
-	if (moonlitDetector) {
-		moonlitDetector->blockSignals(true);
-		moonlitDetector->stop();
-		moonlitDetector->blockSignals(false);
+	if (moonlitCaptureController) {
+		moonlitCaptureController->shutdown();
 	}
-	ShieldMoonLitCapture();
-	if (ReplayBufferActive())
-		StopReplayBuffer();
-	ClearMoonLitCapture();
 	disableSaving--;
 #endif
 

@@ -1,6 +1,7 @@
 #include "MoonLitSettingsDialog.hpp"
 
 #include <moonlit/output/EncoderResolver.hpp>
+#include <moonlit/platform/IPlatformServices.hpp>
 
 #include <widgets/OBSBasic.hpp>
 
@@ -91,28 +92,19 @@ QVector<std::pair<QString, QString>> AudioInputDevices()
 }
 #endif
 
-/* Registry key used for per-user login startup (HKCU\...\Run). */
-QString AutoStartRegistryValue()
-{
-	return QStringLiteral("\"%1\" --minimize-to-tray")
-		.arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
-}
-
+/* Login startup is platform policy: HKCU Run on Windows, XDG autostart
+ * desktop entry on Linux, behind the platform services abstraction. */
 bool IsAutoStartEnabled()
 {
-	QSettings settings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-			   QSettings::NativeFormat);
-	return settings.contains(QStringLiteral("MoonLit"));
+	const auto platform = MoonLit::IPlatformServices::create();
+	return platform && platform->isLoginStartupEnabled();
 }
 
 void SetAutoStartEnabled(bool enabled)
 {
-	QSettings settings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-			   QSettings::NativeFormat);
-	if (enabled) {
-		settings.setValue(QStringLiteral("MoonLit"), AutoStartRegistryValue());
-	} else {
-		settings.remove(QStringLiteral("MoonLit"));
+	const auto platform = MoonLit::IPlatformServices::create();
+	if (platform) {
+		platform->setLoginStartup(enabled);
 	}
 }
 
