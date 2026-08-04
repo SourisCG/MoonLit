@@ -12,6 +12,7 @@ struct ReconcileSummary {
 	int scanned{0};
 	int nowMissing{0};
 	int restored{0};
+	int discovered{0};
 };
 
 class ClipRepository {

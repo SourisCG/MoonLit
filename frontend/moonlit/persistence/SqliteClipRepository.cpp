@@ -19,7 +19,7 @@ namespace MoonLit {
 
 namespace {
 
-constexpr int kSchemaVersion = 2;
+constexpr int kSchemaVersion = 3;
 
 const char *kSchema = R"(
 CREATE TABLE IF NOT EXISTS clips (
@@ -61,6 +61,24 @@ CREATE TRIGGER IF NOT EXISTS clips_au AFTER UPDATE ON clips BEGIN
 	INSERT INTO clips_fts(clips_fts, rowid, title, media_path) VALUES ('delete', old.rowid, old.title, old.media_path);
 	INSERT INTO clips_fts(rowid, title, media_path) VALUES (new.rowid, new.title, new.media_path);
 END;
+CREATE TABLE IF NOT EXISTS timelines (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT 'Sin titulo',
+	segments TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_timelines_updated ON timelines(updated_at);
+CREATE TABLE IF NOT EXISTS export_jobs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind TEXT NOT NULL,
+	params TEXT NOT NULL,
+	state TEXT NOT NULL DEFAULT 'queued',
+	progress REAL NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	finished_at TEXT
+);
 )";
 
 const char *kSelectColumns =
@@ -208,6 +226,9 @@ SqliteClipRepository::~SqliteClipRepository()
 bool SqliteClipRepository::close()
 {
 	if (db_) {
+		/* Run the FTS/statistics optimizer while closing; it is safe to
+		 * ignore errors here. */
+		execute(db_, "PRAGMA optimize;", nullptr);
 		sqlite3_close(db_);
 		db_ = nullptr;
 	}
@@ -232,7 +253,13 @@ bool SqliteClipRepository::open(QString *error)
 		return false;
 	}
 
-	if (!execute(db_, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;", error)) {
+	/* The repository is the single logical writer, but second connections
+	 * (tests, future readers) must wait instead of failing instantly. */
+	sqlite3_busy_timeout(db_, 5000);
+
+	if (!execute(db_, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=1000; "
+			  "PRAGMA journal_size_limit=-1; PRAGMA cache_size=-64000;",
+		      error)) {
 		close();
 		return false;
 	}
@@ -266,7 +293,10 @@ bool SqliteClipRepository::migrate(QString *error)
 
 	if (version < 1) {
 		// Version 0: a freshly created database. Nothing to import.
-		return execute(db_, "PRAGMA user_version = 2;", error);
+		if (!execute(db_, "PRAGMA user_version = 3;", error)) {
+			return false;
+		}
+		version = 3;
 	}
 
 	// Version 1 was the JSON index. Import it once, then preserve the file.
@@ -278,7 +308,15 @@ bool SqliteClipRepository::migrate(QString *error)
 			}
 			QFile::rename(indexPath, indexPath + QStringLiteral(".migrated"));
 		}
-		if (!execute(db_, "PRAGMA user_version = 2;", error)) {
+	}
+
+	// Version 3 adds timelines and export_jobs (created by kSchema) and
+	// requires a full FTS rebuild so older indexes are structurally valid.
+	if (version < 3) {
+		if (!execute(db_, "INSERT INTO clips_fts(clips_fts, rank) VALUES('rebuild', 0);", error)) {
+			return false;
+		}
+		if (!execute(db_, "PRAGMA user_version = 3;", error)) {
 			return false;
 		}
 	}
@@ -492,16 +530,23 @@ bool SqliteClipRepository::reconcile(ReconcileSummary *summary, QString *error)
 	}
 
 	ReconcileSummary result;
+	if (!execute(db_, "BEGIN IMMEDIATE;", error)) {
+		return false;
+	}
+
+	/* Phase 1 + 2: refresh file state, mark missing, restore survivors. */
 	Statement query;
 	const QString sql =
 		QStringLiteral("SELECT id, media_path, file_size, file_modified_at, missing FROM clips;");
 	if (!prepare(db_, &query.stmt, sql.toUtf8().constData(), error)) {
+		execute(db_, "ROLLBACK;", nullptr);
 		return false;
 	}
 
 	Statement update;
 	const QString updateSql = QStringLiteral("UPDATE clips SET file_size = ?2, file_modified_at = ?3, missing = ?4 WHERE id = ?1;");
 	if (!prepare(db_, &update.stmt, updateSql.toUtf8().constData(), error)) {
+		execute(db_, "ROLLBACK;", nullptr);
 		return false;
 	}
 
@@ -535,15 +580,154 @@ bool SqliteClipRepository::reconcile(ReconcileSummary *summary, QString *error)
 			sqlite3_bind_int(update.stmt, 4, clip.missing ? 1 : 0);
 			if (sqlite3_step(update.stmt) != SQLITE_DONE) {
 				detail::setError(error, QStringLiteral("SQLite: %1").arg(sqlite3_errmsg(db_)));
+				execute(db_, "ROLLBACK;", nullptr);
 				return false;
 			}
 		}
+	}
+
+	/* Phase 3: discover media files placed directly into the clips
+	 * directory by the user (file manager, launcher) and index them. */
+	if (!reconcileDiscover(&result, error)) {
+		execute(db_, "ROLLBACK;", nullptr);
+		return false;
+	}
+
+	if (!execute(db_, "COMMIT;", error)) {
+		execute(db_, "ROLLBACK;", nullptr);
+		return false;
 	}
 
 	if (summary) {
 		*summary = result;
 	}
 	return true;
+}
+
+bool SqliteClipRepository::reconcileDiscover(ReconcileSummary *summary, QString *error)
+{
+	QDir clipsDirectory(paths_.clipsPath());
+	if (!clipsDirectory.exists()) {
+		return true;
+	}
+
+	const QStringList filters = {QStringLiteral("*.mkv"), QStringLiteral("*.mp4"), QStringLiteral("*.mov")};
+	const QFileInfoList entries = clipsDirectory.entryInfoList(filters, QDir::Files);
+	if (entries.isEmpty()) {
+		return true;
+	}
+
+	Statement exists;
+	if (!prepare(db_, &exists.stmt, "SELECT 1 FROM clips WHERE media_path = ?1 COLLATE NOCASE;", error)) {
+		return false;
+	}
+
+	for (const QFileInfo &entry : entries) {
+		const QString normalized = detail::normalizedPath(entry.absoluteFilePath());
+		sqlite3_reset(exists.stmt);
+		sqlite3_bind_text(exists.stmt, 1, normalized.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+		if (sqlite3_step(exists.stmt) == SQLITE_ROW) {
+			continue;
+		}
+
+		const std::optional<Clip> clip = upsert(Clip::create(normalized), error);
+		if (!clip) {
+			return false;
+		}
+		++summary->discovered;
+	}
+	return true;
+}
+
+std::optional<qint64> SqliteClipRepository::enqueueExportJob(const QString &kind, const QString &paramsJson,
+							     QString *error)
+{
+	if (!db_) {
+		detail::setError(error, QStringLiteral("Clip repository is not open"));
+		return std::nullopt;
+	}
+
+	Statement write;
+	if (!prepare(db_, &write.stmt, "INSERT INTO export_jobs (kind, params) VALUES (?1, ?2);", error)) {
+		return std::nullopt;
+	}
+	sqlite3_bind_text(write.stmt, 1, kind.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(write.stmt, 2, paramsJson.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	if (!step(db_, write.stmt, error)) {
+		return std::nullopt;
+	}
+	return sqlite3_last_insert_rowid(db_);
+}
+
+bool SqliteClipRepository::updateExportJob(qint64 jobId, const QString &state, double progress,
+					   const QString &jobError, QString *error)
+{
+	if (!db_) {
+		detail::setError(error, QStringLiteral("Clip repository is not open"));
+		return false;
+	}
+
+	Statement write;
+	const char *sql = "UPDATE export_jobs SET state = ?2, progress = ?3, error = ?4, "
+			  "finished_at = CASE WHEN ?2 IN ('done','failed','cancelled') "
+			  "THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE finished_at END "
+			  "WHERE id = ?1;";
+	if (!prepare(db_, &write.stmt, sql, error)) {
+		return false;
+	}
+	sqlite3_bind_int64(write.stmt, 1, jobId);
+	sqlite3_bind_text(write.stmt, 2, state.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	sqlite3_bind_double(write.stmt, 3, progress);
+	sqlite3_bind_text(write.stmt, 4, jobError.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(write.stmt) != SQLITE_DONE) {
+		detail::setError(error, QStringLiteral("SQLite: %1").arg(sqlite3_errmsg(db_)));
+		return false;
+	}
+	return true;
+}
+
+QVector<ExportJobRecord> SqliteClipRepository::listExportJobs(QString *error) const
+{
+	QVector<ExportJobRecord> result;
+	if (!db_) {
+		return result;
+	}
+
+	Statement query;
+	if (!prepare(db_, &query.stmt,
+		      "SELECT id, kind, params, state, progress, error, created_at, finished_at "
+		      "FROM export_jobs ORDER BY id ASC;",
+		      error)) {
+		return result;
+	}
+
+	while (sqlite3_step(query.stmt) == SQLITE_ROW) {
+		ExportJobRecord record;
+		record.id = sqlite3_column_int64(query.stmt, 0);
+		record.kind = textAt(query.stmt, 1);
+		record.params = textAt(query.stmt, 2);
+		record.state = textAt(query.stmt, 3);
+		record.progress = sqlite3_column_double(query.stmt, 4);
+		record.error = textAt(query.stmt, 5);
+		record.createdAtUtc = isoToUtc(textAt(query.stmt, 6));
+		record.finishedAtUtc = isoToUtc(textAt(query.stmt, 7));
+		result.append(record);
+	}
+	return result;
+}
+
+bool SqliteClipRepository::failInterruptedExportJobs(QString *error)
+{
+	if (!db_) {
+		detail::setError(error, QStringLiteral("Clip repository is not open"));
+		return false;
+	}
+
+	return execute(db_, "UPDATE export_jobs SET state = 'failed', "
+			   "error = 'interrupted by restart', "
+			   "finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+			   "WHERE state = 'running';",
+		       error);
 }
 
 } // namespace MoonLit

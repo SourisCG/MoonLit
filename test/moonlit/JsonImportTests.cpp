@@ -140,7 +140,7 @@ MOONLIT_TEST(json_import_migrates_legacy_index)
 	const QVector<Clip> clips = repository.list();
 	bool ok = expect(clips.size() == 2, "imported exactly the two valid records", failure);
 	ok &= expect(repository.search(QStringLiteral("first")).size() == 1, "search hits an imported clip", failure);
-	ok &= expect(userVersion(paths.databasePath()) == 2, "schema version bumped to 2", failure);
+	ok &= expect(userVersion(paths.databasePath()) == 3, "schema version bumped to 3", failure);
 	ok &= expect(!QFile::exists(paths.indexPath()) && QFile::exists(paths.indexPath() + QStringLiteral(".migrated")),
 		     "legacy index preserved as .migrated", failure);
 	return ok;
