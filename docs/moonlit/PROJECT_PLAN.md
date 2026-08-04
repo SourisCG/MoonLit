@@ -450,6 +450,35 @@ with a real game window) are pending user execution.
 | 2026-08-02 | P4 | Krisp-style noise suppression on the microphone | 88af00c39 |
 | 2026-08-02 | P0 | README and project documentation | pending |
 
+## P10 - Architecture Hardening (2026-08-04)
+
+Deliverables: SQLite busy_timeout + WAL PRAGMAs + `PRAGMA optimize` on close;
+reconcile in a single IMMEDIATE transaction with orphan discovery
+(`discovered`); schema v3 (`timelines`, `export_jobs`) + versioned FTS rebuild;
+persistent export queue (running→failed on restart); shared
+`FFmpegPipeline.hpp`; `platform/` services (Windows/Linux) with autostart +
+reveal + thread priority; pure capture state machine + `CaptureController` +
+`WindowsCaptureBackend` + `ICaptureHost` refactor of MoonLitShell; HotkeyManager;
+timeline model/JSON/repository + `FfmpegTimelineExporter` (decode-encode,
+timeline-absolute pts, monotonic dts fix) + `TimelineStrip` +
+`MoonLitTimelineEditor` UI; `linux-moonlit-x64` preset, platform plugin
+allowlist, standalone core configure (CI-ready) and `moonlit-ci.yml`.
+
+Result: 44 unit tests green; smoke S3/S4/S7 pass; timeline concat/trim/mute
+export verified end-to-end over generated clips. Linux backend code
+(PipeWire/XSHM, portal hotkeys) deliberately deferred to a machine that can
+compile and test it; CI enforces the multiplatform core.
+
+Execution log:
+
+| Date | Phase | Result | Commit |
+|---|---|---|---|
+| 2026-08-04 | P10 | SQLite hardening, reconcile discover, v3 migration, export jobs API | bbbe2e622 |
+| 2026-08-04 | P10 | Capture state machine, platform services, capture controller refactor | aef1541ea |
+| 2026-08-04 | P10 | Timeline model, persistent export queue, timeline exporter | 61c1a3507 |
+| 2026-08-04 | P10 | Timeline editor UI (strip, trim, reorder) | 9d45faf25 |
+| 2026-08-04 | P10 | Linux preset, platform allowlist, MoonLit CI | 618d70d45 |
+
 ## GitHub Release Procedure
 
 The local GitHub CLI is currently unauthenticated. Before publication:

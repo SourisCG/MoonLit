@@ -83,6 +83,24 @@ cmake --build build_moonlit_v1_x64 --config RelWithDebInfo --target obs-studio -
 
 The app runs from `build_moonlit_v1_x64\rundir\RelWithDebInfo\bin\64bit\MoonLit.exe`.
 
+### Linux (design-time preparation)
+
+MoonLit is Windows-first; the core library is platform-neutral and a Linux
+preset exists for when the capture backends land:
+
+```bash
+cmake --preset ubuntu-moonlit-x64        # needs Qt6, FFmpeg and PipeWire dev packages
+cmake --build build_moonlit_ubuntu --target obs-studio
+```
+
+The core can also be built standalone on any OS (this is what CI does):
+
+```bash
+cmake -S frontend/moonlit -B build-core -G Ninja
+cmake --build build-core --target moonlit-tests
+ctest --test-dir build-core --output-on-failure
+```
+
 ### Tests
 
 ```powershell
@@ -90,6 +108,11 @@ cmake --build build_moonlit_v1_x64 --config RelWithDebInfo --target moonlit-test
 $env:PATH = ".deps\obs-deps-2026-07-15-x64\bin;.deps\obs-deps-qt6-2026-07-15-x64\bin;$env:PATH"
 ctest --test-dir build_moonlit_v1_x64 -C RelWithDebInfo --output-on-failure
 ```
+
+### CI
+
+`.github/workflows/moonlit-ci.yml` builds and tests the core standalone on
+Ubuntu (GCC) and Windows (MSVC), keeping the library multiplatform-safe.
 
 ### Packaging and signing
 
@@ -102,6 +125,7 @@ pwsh -NoProfile -File .github\scripts\matrix-smoke.ps1
 
 ## Project documentation
 
+- `docs/moonlit/ARCHITECTURE.md` — session context block for future sessions.
 - `docs/moonlit/PROJECT_PLAN.md` — product plan, phase ledger and execution log.
 - `docs/moonlit/MANUAL_MATRIX.md` — manual test matrix and signing procedure.
 
