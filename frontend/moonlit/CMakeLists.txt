@@ -26,6 +26,11 @@ target_sources(
     editor/ClipExportService.cpp
     editor/ClipExportService.hpp
     editor/ExportMath.hpp
+    editor/FFmpegPipeline.hpp
+    editor/FfmpegTimelineExporter.cpp
+    editor/FfmpegTimelineExporter.hpp
+    editor/Timeline.cpp
+    editor/Timeline.hpp
     media/ClipPreviewService.cpp
     media/ClipPreviewService.hpp
     media/MediaProbe.cpp
@@ -45,6 +50,8 @@ target_sources(
     platform/IPlatformServices.hpp
     services/ClipJobs.cpp
     services/ClipJobs.hpp
+    services/ExportQueue.cpp
+    services/ExportQueue.hpp
 )
 
 if(WIN32)

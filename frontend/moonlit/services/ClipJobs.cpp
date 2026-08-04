@@ -4,7 +4,8 @@
 
 namespace MoonLit {
 
-ClipJobs::ClipJobs(MoonLitPaths paths, QObject *parent) : QObject(parent), paths_(std::move(paths)), repository_(paths_)
+ClipJobs::ClipJobs(MoonLitPaths paths, SqliteClipRepository *repository, QObject *parent)
+	: QObject(parent), paths_(std::move(paths)), repository_(repository)
 {
 }
 
@@ -12,13 +13,13 @@ ClipJobs::~ClipJobs() = default;
 
 void ClipJobs::reload()
 {
-	QString error;
-	if (!repository_.open(&error)) {
-		emit libraryLoaded({}, error);
+	if (!repository_) {
+		emit libraryLoaded({}, QStringLiteral("Repository not available"));
 		return;
 	}
-	repository_.reconcile(nullptr, &error);
-	emit libraryLoaded(repository_.list(true), error);
+	QString error;
+	repository_->reconcile(nullptr, &error);
+	emit libraryLoaded(repository_->list(true), error);
 }
 
 void ClipJobs::ingest(const QString &path)
@@ -28,11 +29,7 @@ void ClipJobs::ingest(const QString &path)
 		emit clipIngested(QString(), QStringLiteral("Ruta vacia"));
 		return;
 	}
-	if (!repository_.open(&error)) {
-		emit clipIngested(QString(), error);
-		return;
-	}
-	if (repository_.findByMediaPath(path)) {
+	if (!repository_ || repository_->findByMediaPath(path)) {
 		emit clipIngested(QString(), QString());
 		return;
 	}
@@ -43,7 +40,7 @@ void ClipJobs::ingest(const QString &path)
 	}
 	clip.thumbnailPath = paths_.thumbnailPath(clip.id);
 
-	const auto stored = repository_.upsert(clip, &error);
+	const auto stored = repository_->upsert(clip, &error);
 	if (!stored) {
 		emit clipIngested(QString(), error);
 		return;
@@ -64,11 +61,7 @@ void ClipJobs::ingest(const QString &path)
 void ClipJobs::removeClip(const QString &id)
 {
 	QString error;
-	if (!repository_.open(&error)) {
-		emit clipRemoved(id, error);
-		return;
-	}
-	if (!repository_.remove(id, &error)) {
+	if (!repository_ || !repository_->remove(id, &error)) {
 		emit clipRemoved(id, error);
 		return;
 	}
@@ -78,22 +71,22 @@ void ClipJobs::removeClip(const QString &id)
 void ClipJobs::search(const QString &query)
 {
 	QString error;
-	if (!repository_.open(&error)) {
+	if (!repository_) {
 		emit searchResults({}, query);
 		return;
 	}
-	repository_.reconcile(nullptr, &error);
-	emit searchResults(repository_.search(query), query);
+	repository_->reconcile(nullptr, &error);
+	emit searchResults(repository_->search(query), query);
 }
 
 void ClipJobs::saveEdits(const QString &id, qint64 startMs, qint64 endMs, bool muted, double gainDb)
 {
 	QString error;
-	if (!repository_.open(&error)) {
-		emit clipEditsSaved(id, error);
+	if (!repository_) {
+		emit clipEditsSaved(id, QStringLiteral("Repository not available"));
 		return;
 	}
-	const auto clip = repository_.find(id);
+	const auto clip = repository_->find(id);
 	if (!clip) {
 		emit clipEditsSaved(id, QStringLiteral("Clip no encontrado"));
 		return;
@@ -105,7 +98,7 @@ void ClipJobs::saveEdits(const QString &id, qint64 startMs, qint64 endMs, bool m
 	edited.muted = muted;
 	edited.gainDb = gainDb;
 
-	if (!repository_.upsert(edited, &error)) {
+	if (!repository_->upsert(edited, &error)) {
 		emit clipEditsSaved(id, error);
 		return;
 	}
@@ -126,39 +119,57 @@ void ClipJobs::previewStrip(const QString &path, int count)
 	emit previewStripReady(path, images, error);
 }
 
-void ClipJobs::exportClip(const QString &id, qint64 startMs, qint64 endMs)
+void ClipJobs::saveTimeline(const TimelineProject &project)
 {
-	cancelExport_.store(false);
-
 	QString error;
-	if (!repository_.open(&error)) {
-		emit exportFinished(false, false, QString(), error);
+	if (!repository_) {
+		emit timelineSaved(project.id, QStringLiteral("Repository not available"));
 		return;
 	}
-	const auto clip = repository_.find(id);
-	if (!clip || clip->missing) {
-		emit exportFinished(false, false, QString(), QStringLiteral("Clip no disponible"));
+	if (!project.isValid(&error)) {
+		emit timelineSaved(project.id, error);
 		return;
 	}
-	if (endMs > 0 && endMs <= startMs) {
-		emit exportFinished(false, false, QString(), QStringLiteral("El final debe ser mayor que el inicio"));
+	if (!repository_->saveTimeline(project, &error)) {
+		emit timelineSaved(project.id, error);
 		return;
 	}
+	emit timelineSaved(project.id, QString());
+}
 
-	ClipExportRequest request;
-	request.sourcePath = clip->mediaPath;
-	request.destinationPath = paths_.exportPath(clip->id, QStringLiteral("mp4"));
-	request.startMs = startMs;
-	request.endMs = endMs;
-	request.muted = clip->muted;
-	request.gainDb = clip->gainDb;
-	request.progress = [this](double fraction) { emit exportProgress(fraction); };
-
-	const ClipExportResult result = exporter_.exportClip(request, [this] { return cancelExport_.load(); });
-	if (result.succeeded || result.cancelled) {
-		emit exportProgress(1.0);
+void ClipJobs::listTimelines()
+{
+	QString error;
+	if (!repository_) {
+		emit timelinesLoaded({}, QStringLiteral("Repository not available"));
+		return;
 	}
-	emit exportFinished(result.succeeded, result.cancelled, result.outputPath, result.error);
+	emit timelinesLoaded(repository_->listTimelines(&error), error);
+}
+
+void ClipJobs::deleteTimeline(const QString &id)
+{
+	QString error;
+	if (!repository_ || !repository_->deleteTimeline(id, &error)) {
+		emit timelineDeleted(id, error);
+		return;
+	}
+	emit timelineDeleted(id, QString());
+}
+
+void ClipJobs::loadTimeline(const QString &id)
+{
+	QString error;
+	if (!repository_) {
+		emit timelineLoaded(TimelineProject{}, QStringLiteral("Repository not available"));
+		return;
+	}
+	const auto project = repository_->loadTimeline(id, &error);
+	if (!project) {
+		emit timelineLoaded(TimelineProject{}, error);
+		return;
+	}
+	emit timelineLoaded(*project, QString());
 }
 
 } // namespace MoonLit

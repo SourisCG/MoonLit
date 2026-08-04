@@ -2,6 +2,7 @@
 
 #include "ClipRepository.hpp"
 
+#include <moonlit/editor/Timeline.hpp>
 #include <moonlit/MoonLitPaths.hpp>
 
 #include <optional>
@@ -57,6 +58,12 @@ public:
 	QVector<ExportJobRecord> listExportJobs(QString *error = nullptr) const;
 	/* Marks jobs left in "running" by a previous process as "failed". */
 	bool failInterruptedExportJobs(QString *error = nullptr);
+
+	/* Timelines: segments are stored as JSON inside the timelines table. */
+	bool saveTimeline(const TimelineProject &project, QString *error = nullptr);
+	std::optional<TimelineProject> loadTimeline(const QString &id, QString *error = nullptr) const;
+	QVector<TimelineProject> listTimelines(QString *error = nullptr) const;
+	bool deleteTimeline(const QString &id, QString *error = nullptr);
 
 private:
 	bool close();

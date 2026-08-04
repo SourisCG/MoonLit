@@ -8,6 +8,9 @@ add_executable(
   MoonLitPathsTests.cpp
   MoonLitTest.hpp
   SqliteRepositoryTests.cpp
+  TestMedia.hpp
+  TimelineExportTests.cpp
+  TimelineTests.cpp
   main.cpp
 )
 

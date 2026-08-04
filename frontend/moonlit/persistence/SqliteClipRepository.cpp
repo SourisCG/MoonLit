@@ -730,4 +730,93 @@ bool SqliteClipRepository::failInterruptedExportJobs(QString *error)
 		       error);
 }
 
+bool SqliteClipRepository::saveTimeline(const TimelineProject &project, QString *error)
+{
+	if (!db_) {
+		detail::setError(error, QStringLiteral("Clip repository is not open"));
+		return false;
+	}
+
+	const QString segments = timelineToJson(project);
+	Statement write;
+	if (!prepare(db_, &write.stmt,
+		      "INSERT INTO timelines (id, name, segments) VALUES (?1, ?2, ?3) "
+		      "ON CONFLICT(id) DO UPDATE SET name = excluded.name, segments = excluded.segments, "
+		      "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now');",
+		      error)) {
+		return false;
+	}
+	sqlite3_bind_text(write.stmt, 1, project.id.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(write.stmt, 2, project.name.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(write.stmt, 3, segments.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(write.stmt) != SQLITE_DONE) {
+		detail::setError(error, QStringLiteral("SQLite: %1").arg(sqlite3_errmsg(db_)));
+		return false;
+	}
+	return true;
+}
+
+std::optional<TimelineProject> SqliteClipRepository::loadTimeline(const QString &id, QString *error) const
+{
+	if (!db_ || id.isEmpty()) {
+		return std::nullopt;
+	}
+
+	Statement query;
+	if (!prepare(db_, &query.stmt, "SELECT segments FROM timelines WHERE id = ?1;", error)) {
+		return std::nullopt;
+	}
+	sqlite3_bind_text(query.stmt, 1, id.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(query.stmt) != SQLITE_ROW) {
+		return std::nullopt;
+	}
+
+	TimelineProject project;
+	if (!timelineFromJson(textAt(query.stmt, 0), project)) {
+		detail::setError(error, QStringLiteral("Stored timeline is not valid JSON"));
+		return std::nullopt;
+	}
+	return project;
+}
+
+QVector<TimelineProject> SqliteClipRepository::listTimelines(QString *error) const
+{
+	QVector<TimelineProject> result;
+	if (!db_) {
+		return result;
+	}
+
+	Statement query;
+	if (!prepare(db_, &query.stmt, "SELECT segments FROM timelines ORDER BY updated_at DESC;", error)) {
+		return result;
+	}
+
+	while (sqlite3_step(query.stmt) == SQLITE_ROW) {
+		TimelineProject project;
+		if (timelineFromJson(textAt(query.stmt, 0), project)) {
+			result.append(project);
+		}
+	}
+	return result;
+}
+
+bool SqliteClipRepository::deleteTimeline(const QString &id, QString *error)
+{
+	if (!db_) {
+		detail::setError(error, QStringLiteral("Clip repository is not open"));
+		return false;
+	}
+
+	Statement write;
+	if (!prepare(db_, &write.stmt, "DELETE FROM timelines WHERE id = ?1;", error)) {
+		return false;
+	}
+	sqlite3_bind_text(write.stmt, 1, id.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(write.stmt) != SQLITE_DONE) {
+		detail::setError(error, QStringLiteral("SQLite: %1").arg(sqlite3_errmsg(db_)));
+		return false;
+	}
+	return true;
+}
+
 } // namespace MoonLit
