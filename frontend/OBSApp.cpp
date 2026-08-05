@@ -965,7 +965,10 @@ OBSApp::OBSApp(int &argc, char **argv, profiler_name_store_t *store)
 
 #ifndef __APPLE__
 #ifdef MOONLIT_BUILD
-	setWindowIcon(QIcon(":/res/images/moonlit-icon.svg"));
+	/* Application-wide icon: parentless dialogs (crash/safe-mode) fall back
+	 * to QApplication::windowIcon(); the PNG is deterministic where the SVG
+	 * renderer output varies per size. */
+	setWindowIcon(QIcon(":/res/images/moonlit-icon.png"));
 #else
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
 #endif

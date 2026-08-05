@@ -5,10 +5,18 @@
       <stop offset="90%" stop-color="#3b82f6"/>
     </linearGradient>
   </defs>
-  <!-- Crescent moon: full circle minus the play-hole circle (evenodd) -->
-  <path fill="url(#moonlitGrad)" fill-rule="evenodd"
-        d="M128 0 a128 128 0 1 1 0 256 a128 128 0 1 1 0 -256 z
-           M174 71.7 a56.3 56.3 0 1 1 0 112.6 a56.3 56.3 0 1 1 0 -112.6 z"/>
+  <!-- Crescent moon: outer circle (clockwise) + play-hole circle
+       (counter-clockwise); opposite winding creates the hole with the
+       default nonzero fill rule, which every SVG renderer handles. -->
+  <path fill="url(#moonlitGrad)" d="
+    M128 0
+    A128 128 0 1 1 128 256
+    A128 128 0 1 1 128 0
+    Z
+    M174 71.7
+    A56.3 56.3 0 1 0 174 184.3
+    A56.3 56.3 0 1 0 174 71.7
+    Z"/>
   <!-- Play triangle inside the crescent hollow -->
   <path fill="#ffffff" d="M110 87 L110 169 L174 128 Z"/>
 </svg>
