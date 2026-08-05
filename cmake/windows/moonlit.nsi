@@ -9,6 +9,15 @@ Unicode true
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
+!ifndef MOONLIT_ICON
+  ; Relative to this script (cmake/windows/moonlit.nsi).
+  !define MOONLIT_ICON "..\..\frontend\cmake\windows\MoonLit.ico"
+!endif
+
+; MoonLit product icons (crescent moon + play).
+Icon "${MOONLIT_ICON}"
+UninstallIcon "${MOONLIT_ICON}"
+
 !ifndef VERSION
   !define VERSION "1.0.0"
 !endif

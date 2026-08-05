@@ -1,4 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <circle cx="32" cy="32" r="30" fill="#1b1e25" stroke="#7667f5" stroke-width="3"/>
-  <path d="M 38 11 A 22 22 0 1 0 38 53 A 17 17 0 0 1 38 11 Z" fill="#f2d35c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="moonlitGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="10%" stop-color="#ef4444"/>
+      <stop offset="90%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <!-- Crescent moon: full circle minus the play-hole circle (evenodd) -->
+  <path fill="url(#moonlitGrad)" fill-rule="evenodd"
+        d="M128 0 a128 128 0 1 1 0 256 a128 128 0 1 1 0 -256 z
+           M174 71.7 a56.3 56.3 0 1 1 0 112.6 a56.3 56.3 0 1 1 0 -112.6 z"/>
+  <!-- Play triangle inside the crescent hollow -->
+  <path fill="#ffffff" d="M110 87 L110 169 L174 128 Z"/>
 </svg>
