@@ -479,6 +479,32 @@ Execution log:
 | 2026-08-04 | P10 | Timeline editor UI (strip, trim, reorder) | 9d45faf25 |
 | 2026-08-04 | P10 | Linux preset, platform allowlist, MoonLit CI | 618d70d45 |
 
+## P11 - Estabilidad, UI y Branding (2026-08-04, noche)
+
+Entregables: fix del locale dependiente del CWD (`SetCurrentDirectoryW`);
+layout del mixer (crash de salida/detección); deadlock de cierre de la
+ExportQueue (self-wait en el destructor) con test de regresión; botón REC
+pintado a mano (120x120, sin QSS — el box-model de QSS reescribe min/max);
+TimelineStrip robusto (pasada acumulativa + gap); tema Dracula×MoonLit
+(`MoonLitTheme.hpp`); icono oficial (luna rojo→azul + play, del repo
+SourisCG/MoonLit-Page) en ventanas, tray, exe, instalador y About;
+branding del diálogo de crash y Safe Mode ("MoonLit has crashed!",
+CrashHandling.* → MoonLit); icono de aplicación en PNG para diálogos sin
+parent.
+
+Resultado: 45 tests verdes; cierre limpio exit 0; crash dialog y ventana
+principal con el logo nuevo verificado por píxeles (rojo/azul); smoke S3/S4/S7
+pasan. Pendiente: matriz manual con juego real (C/A/L/P/R) y re-empaquetado.
+
+Execution log:
+
+| Date | Phase | Result | Commit |
+|---|---|---|---|
+| 2026-08-04 | P11 | Locale CWD, mixer layout, ExportQueue shutdown fix | f2fac1087 |
+| 2026-08-04 | P11 | REC button custom, timeline strip robusto, tema Dracula | 0f1431030 |
+| 2026-08-04 | P11 | Icono oficial (logo, ico, .ui, NSIS) | 895c6d8be |
+| 2026-08-04 | P11 | Crash dialog branding + app icon PNG | 3696b1a64 |
+
 ## GitHub Release Procedure
 
 The local GitHub CLI is currently unauthenticated. Before publication:

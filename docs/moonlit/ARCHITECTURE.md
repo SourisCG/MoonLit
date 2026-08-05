@@ -2,7 +2,7 @@
 
 > Continuity block: paste this file (or this section) at the start of future
 > sessions so the context survives chat compaction. It mirrors the state
-> after commits `bbbe2e622..618d70d45` on top of release `v1.0.0`
+> after commits `bbbe2e622..895c6d8be` on top of release `v1.0.0`
 > (`a6cdd107a`).
 
 Base: OBS Studio 32.2.1 fork (`0052d024f`), C++17, Qt6, CMake 3.28-3.30,
@@ -137,23 +137,75 @@ worker threads):
 - Packaging Win (unchanged): package.ps1 → staging → audit → portable ZIP
   (`portable_mode` marker) → NSIS per-user → sign → SHA256SUMS.
 
-## Tests (44, ctest `moonlit-tests`)
+## Tests (45, ctest `moonlit-tests`)
 
 SQLite (round trip, reopen, FTS updates, reconcile missing/restored/
 discovered, v2→v3 migration + FTS rebuild, busy_timeout writer contention,
 export jobs round trip + interrupt recovery), resolver, export math,
 JSON import (v3), media (strip/preview, trim/full/MKV exports, audio edits),
 paths, capture state machine (6 cases + target validity), timeline
-(model/JSON/repository) and timeline export (concat duration, trim+mute,
-cancel cleanliness, missing source). Shared generator in
+(model/JSON/repository), timeline export (concat duration, trim+mute,
+cancel cleanliness, missing source) and `export_queue_shutdown_completes`
+(regression: shutdown must not deadlock). Shared generator in
 `test/moonlit/TestMedia.hpp` (2 s 320x180 h264+aac, optional MKV+B-frames).
+
+## Session 2026-08-04 (night) — Estabilidad, UI Dracula×MoonLit, icono
+
+Commits: `f2fac1087`, `0f1431030`, `895c6d8be`, `3696b1a64`.
+
+- **Locale CWD fix**: `obs-main.cpp` (MOONLIT_BUILD) fija el CWD al dir del
+  ejecutable (`SetCurrentDirectoryW`) — `GetDataFilePath`/`OBS_DATA_PATH`
+  son rutas relativas al CWD; esto replica el doble-clic de Explorer desde
+  cualquier lanzamiento. Elimina "Failed to find locale/en-US.ini".
+- **Mixer layout**: `MoonLitMixer` no tenía layout (`layout()->addItem`
+  sobre nullptr) → crash al salir y al detectar juego (dump 2026-08-02).
+  Ahora `QVBoxLayout` en el ctor.
+- **ExportQueue shutdown deadlock**: la cola se auto-destruía en su propio
+  worker (deferred delete al terminar el hilo) → `~ExportQueue → shutdown()`
+  → `wait()` sobre sí mismo → cierre colgado. Fix: el widget es dueño
+  (`delete` explícito tras `shutdown()`), `shutdown()` con guard de
+  self-thread (`QThread::currentThread() == &workerThread_` → return) y sin
+  `connect(finished → deleteLater)`. Regresión cubierta por
+  `export_queue_shutdown_completes`.
+- **Dashboard REC button**: el box-model de Qt QSS **reescribe los
+  min/max del widget** (min-height/max-height computados del font/borde) →
+  el layout apilaba el texto del estado sobre el botón. Solución:
+  `MoonLitRecordButton` — QWidget pintado a mano (120x120 exactos, sin
+  stylesheet; `Q_OBJECT` en el .cpp + `#include "MoonLitDashboard.moc"`).
+- **TimelineStrip**: rects por pasada acumulativa local (immune a
+  `timelineStartMs` stale / `sourceEndMs=-1`) + gap de 2px entre segmentos.
+- **Tema Dracula×MoonLit**: `frontend/widgets/MoonLitTheme.hpp` — fuente
+  única de la paleta (`#1e1f29/#282a36/#343746/#44475a/#f8f8f2/#6272a4/
+  #7667f5/#8b7cf9/#ff5555/#50fa7b/#ffb86c`) usada por dashboard,
+  biblioteca, editor de timeline, mixer y strip (QSS con `.arg()`).
+- **Icono oficial** (repo SourisCG/MoonLit-Page): luna creciente con
+  gradiente `#ef4444→#3b82f6` + triángulo play.
+  - `frontend/forms/images/moonlit-icon.png` = favicon oficial 256px.
+  - `moonlit-icon.svg` recreado con **dos subpaths de bobinado opuesto**
+    (regla nonzero, anillo) — NO usar `fill-rule="evenodd"` (QtSvg lo
+    renderiza mal). Verificado con QSvgRenderer (hueco vacío + rojo/azul).
+  - `frontend/cmake/windows/MoonLit.ico` = favicon.ico oficial (6 tamaños).
+  - `OBSApp.cpp`: `QApplication::setWindowIcon` (PNG) — los diálogos sin
+    parent (crash/safe-mode) usan el icono de aplicación; sin esto mostraban
+    el "Q" azul por defecto de Qt.
+  - `obs-main.cpp`: título/mensaje del diálogo de crash → "MoonLit has
+    crashed!" (MOONLIT_BUILD).
+  - `en-US.ini`: `CrashHandling.*` → MoonLit.
+  - `.ui` (OBSAbout/OBSBasic/OBSPermissions): pixmap/icon OBS → moonlit.
+  - NSIS `moonlit.nsi`: `Icon`/`UninstallIcon` con MoonLit.ico (define
+    `MOONLIT_ICON`, fallback relativo).
+  - Las ramas no-MOONLIT conservan obs.png a propósito.
 
 ## Known notes
 
-- ExportQueue `shutdown()` blocks (BlockingQueuedConnection) until the
-  active export finishes/cancels — do not call from the worker thread.
-- `Q_DECLARE_METATYPE` must stay only in Timeline.hpp (MSVC C2908 otherwise).
-- Timeline export requires audio in every segment when the first has it.
-- Discovered orphan clips get no thumbnail until re-ingested.
-- Session next steps: run new CI workflow on GitHub; manual matrix rows
-  C/A/L for capture, audio and timeline editing.
+- ExportQueue: el widget dueño llama `shutdown()` + `delete`; `shutdown()`
+  es seguro desde cualquier hilo (self-thread → no-op).
+- `Q_DECLARE_METATYPE` debe vivir solo en Timeline.hpp (MSVC C2908).
+- Timeline export requiere audio en cada segmento cuando el primero lo tiene.
+- Los huérfanos descubiertos no tienen thumbnail hasta re-ingest.
+- Qt QSS reescribe min/max del widget: no ponerle stylesheet a widgets con
+  `setFixedSize` crítico; pintarlos a mano.
+- `QApplication::setWindowIcon` (PNG) es necesario para los diálogos sin
+  parent; el SVG solo para la ventana principal/tray.
+- Siguiente: correr `moonlit-ci.yml` en GitHub; matriz manual C/A/L/P/R
+  (con juego real); verificar packaging P8 con los fixes.

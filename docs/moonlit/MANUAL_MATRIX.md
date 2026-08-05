@@ -35,7 +35,7 @@ marked PENDING).
 
 | ID | Check | Result |
 |---|---|---|
-| S1 | `ctest --test-dir build_moonlit_v1_x64 -C RelWithDebInfo` passes (11 tests) | PASS 2026-08-02 (11 tests, 0 failures) |
+| S1 | `ctest --test-dir build_moonlit_v1_x64 -C RelWithDebInfo` passes (45 tests) | PASS 2026-08-04 (45 tests, 0 failures) |
 | S2 | `pwsh -NoProfile -File .github/scripts/audit.ps1` passes on the package staging (no forbidden artifacts, all binaries signed) | PASS 2026-08-02 (52 binaries, 0 unsigned) |
 | S3 | MoonLit starts from the portable ZIP and from the installer | PASS 2026-08-02 (installer install/uninstall round trip ok) |
 | S4 | Dashboard shows "Buffer detenido", no error dialogs, no crash handler windows | PASS 2026-08-02 |
@@ -84,9 +84,25 @@ Requires a real game window (windowed and borderless).
 | ID | Check | Result |
 |---|---|---|
 | P1 | Existing install with clips: first launch migrates `index.json` to `MoonLit.db` and renames it to `index.json.migrated` | |
-| P2 | Restart keeps library contents; `PRAGMA user_version` is 2 | |
+| P2 | Restart keeps library contents; `PRAGMA user_version` is 3 | |
 | P3 | Upgrade install over the previous version keeps clips and database | |
 | P4 | Uninstall keeps `%APPDATA%\MoonLit` and `%LOCALAPPDATA%\MoonLit` (clips, database) | |
+
+## Stability And Branding Regressions (P11, 2026-08-04)
+
+| ID | Check | Result |
+|---|---|---|
+| B1 | Close the app normally (X to tray, then tray "Salir"): process exits with code 0, no new crash dump in `%APPDATA%\MoonLit\obs-studio\crashes`, and the next start shows NO Safe Mode dialog | PASS 2026-08-04 (clean exit 0) |
+| B2 | "Guardar clip" disabled state is readable; REC button renders 120x120 centered with "Buffer detenido" below it (no overlap) | PASS 2026-08-04 (geometry verified) |
+| B3 | Crash dialog title says "MoonLit has crashed!" and shows the crescent logo (red/blue); Safe Mode dialog title "MoonLit Crash Detected" | PASS 2026-08-04 (pixel-verified) |
+| B4 | Main window, tray and About dialog show the crescent logo (not OBS) | PASS 2026-08-04 (window icon pixel-verified) |
+| B5 | Dashboard, library and timeline editor render with the Dracula×MoonLit theme; timeline segments do not overlap | PASS 2026-08-04 (renders verified) |
+
+## Audio Track Verification Helper
+
+`docs/moonlit/verify-tracks.ps1 -Path <clip.mkv>` extracts each audio track
+to WAV with ffmpeg and prints per-track RMS levels so row A1 (four distinct
+signals) can be judged with objective data instead of by ear.
 
 ## Login Startup
 
