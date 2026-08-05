@@ -1,10 +1,15 @@
 #pragma once
 
+#include "EndpointVolume.hpp"
+
 #include <QDialog>
 
 class QCheckBox;
 class QComboBox;
+class QLabel;
 class QLineEdit;
+class QPushButton;
+class QSlider;
 class QSpinBox;
 class OBSBasic;
 
@@ -24,6 +29,9 @@ private slots:
 private:
 	void LoadCurrentValues();
 	void SaveValues();
+	void PopulateVolumeRow(QLabel *label, QSlider *slider, QPushButton *mute,
+			       MoonLit::EndpointVolume *endpoint, MoonLit::EndpointVolume::Direction direction,
+			       const QString &deviceId);
 
 	OBSBasic *main_ = nullptr;
 
@@ -41,4 +49,15 @@ private:
 	QCheckBox *autoStart = nullptr;
 	QCheckBox *clipSound = nullptr;
 	QCheckBox *noiseSuppression = nullptr;
+
+	/* Physical endpoint volume of the selected input/output devices. These
+	 * affect what the user hears in Windows, not the recording levels. */
+	QLabel *micVolumeLabel = nullptr;
+	QSlider *micVolumeSlider = nullptr;
+	QPushButton *micMute = nullptr;
+	QLabel *desktopVolumeLabel = nullptr;
+	QSlider *desktopVolumeSlider = nullptr;
+	QPushButton *desktopMute = nullptr;
+	MoonLit::EndpointVolume micEndpoint_;
+	MoonLit::EndpointVolume desktopEndpoint_;
 };

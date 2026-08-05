@@ -8,6 +8,8 @@
 #include <widgets/MoonLitGameDetector.hpp>
 #include <widgets/MoonLitMixer.hpp>
 
+#include <QTimer>
+
 namespace MoonLit {
 
 namespace {
@@ -39,6 +41,7 @@ void CaptureController::start()
 	replayManualStopRequested_ = false;
 
 	backend_ = std::make_unique<WindowsCaptureBackend>(host_);
+	refreshMixer();
 
 	detector_ = new MoonLitGameDetector(this);
 	connect(detector_, &MoonLitGameDetector::targetDetected, this, &CaptureController::onTargetDetected);
@@ -105,7 +108,10 @@ void CaptureController::refreshMixer()
 	if (!mixer) {
 		return;
 	}
+	mixer->setConfig(host_ ? host_->activeConfig() : nullptr);
 	mixer->clearSources();
+	/* All four rows are always shown; rows without a live source render as
+	 * disabled placeholders (e.g. game audio while no game is running). */
 	mixer->addSource(QStringLiteral("Escritorio"), backend_ ? backend_->desktopSource() : nullptr);
 	mixer->addSource(QStringLiteral("Juego"), backend_ ? backend_->gameSource() : nullptr);
 	mixer->addSource(QStringLiteral("Microfono"), backend_ ? backend_->micSource() : nullptr);

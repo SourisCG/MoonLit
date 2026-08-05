@@ -42,7 +42,17 @@ private:
 	OBSSource createMicSource();
 	OBSSource createChatSource();
 	OBSSource createDesktopSource();
-	void removeAudioItems();
+	/* Mic/chat/desktop sources are created once in the constructor and stay
+	 * alive across attach/detach so mixer levels persist; only the game
+	 * audio source is recreated per game. Scene items are added lazily and
+	 * idempotently by ensureAudioItems(). */
+	void ensureAudioItems();
+	void removeGameAudio();
+	/* Re-applies the persisted per-track levels (MoonLit.MixerVolume* and
+	 * MoonLit.MixerMute*) to every live source; run at construction and
+	 * after each attach. */
+	void applyPersistedMixerSettings();
+	void applyLevel(const char *key, obs_source_t *source);
 
 	ICaptureHost *host_ = nullptr;
 	OBSSceneItem shieldItem_;

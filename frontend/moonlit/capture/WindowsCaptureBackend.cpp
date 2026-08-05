@@ -64,7 +64,27 @@ BOOL CALLBACK selectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM param)
 
 } // namespace
 
-WindowsCaptureBackend::WindowsCaptureBackend(ICaptureHost *host) : host_(host) {}
+WindowsCaptureBackend::WindowsCaptureBackend(ICaptureHost *host) : host_(host)
+{
+	/* Defaults for the persisted per-track mixer levels. */
+	if (config_t *config = host_ ? host_->activeConfig() : nullptr) {
+		for (const char *name : {"Escritorio", "Juego", "Microfono", "Chat"}) {
+			const std::string volumeKey = "MixerVolume" + std::string(name);
+			const std::string muteKey = "MixerMute" + std::string(name);
+			config_set_default_int(config, "MoonLit", volumeKey.c_str(), 100);
+			config_set_default_bool(config, "MoonLit", muteKey.c_str(), false);
+		}
+	}
+
+	/* Persistent audio sources: created once and reused across game
+	 * attach/detach so per-track recording levels survive. */
+	micSource_ = createMicSource();
+	chatSource_ = createChatSource();
+	desktopSource_ = createDesktopSource();
+	ensureAudioItems();
+	applyNoiseSuppression();
+	applyPersistedMixerSettings();
+}
 
 bool WindowsCaptureBackend::attachWindow(const CaptureTarget &target)
 {
@@ -102,10 +122,8 @@ bool WindowsCaptureBackend::attachWindow(const CaptureTarget &target)
 	}
 
 	audioSource_ = createGameAudioSource(selector, target);
-	micSource_ = createMicSource();
-	chatSource_ = createChatSource();
-	desktopSource_ = createDesktopSource();
-	applyNoiseSuppression();
+	ensureAudioItems();
+	applyPersistedMixerSettings();
 
 	if (!installShield()) {
 		blog(LOG_ERROR, "MoonLit: capture shield could not be installed");
@@ -246,7 +264,7 @@ void WindowsCaptureBackend::detach()
 		captureItem_ = nullptr;
 	}
 	captureSource_ = nullptr;
-	removeAudioItems();
+	removeGameAudio();
 	if (shieldItem_) {
 		obs_sceneitem_remove(shieldItem_);
 		shieldItem_ = nullptr;
@@ -417,13 +435,6 @@ OBSSource WindowsCaptureBackend::createMicSource()
 		return nullptr;
 	}
 	obs_source_set_audio_mixers(source, (1u << 2));
-	OBSScene scene = host_ ? host_->moonlitCurrentScene() : nullptr;
-	if (scene) {
-		micItem_ = obs_scene_add(scene, source);
-		if (!micItem_) {
-			return nullptr;
-		}
-	}
 	return OBSSource(source);
 }
 
@@ -450,13 +461,6 @@ OBSSource WindowsCaptureBackend::createChatSource()
 		return nullptr;
 	}
 	obs_source_set_audio_mixers(source, (1u << 3));
-	OBSScene scene = host_ ? host_->moonlitCurrentScene() : nullptr;
-	if (scene) {
-		chatItem_ = obs_scene_add(scene, source);
-		if (!chatItem_) {
-			return nullptr;
-		}
-	}
 	return OBSSource(source);
 }
 
@@ -477,38 +481,57 @@ OBSSource WindowsCaptureBackend::createDesktopSource()
 		return nullptr;
 	}
 	obs_source_set_audio_mixers(source, (1u << 0));
-	OBSScene scene = host_ ? host_->moonlitCurrentScene() : nullptr;
-	if (scene) {
-		desktopItem_ = obs_scene_add(scene, source);
-		if (!desktopItem_) {
-			return nullptr;
-		}
-	}
 	return OBSSource(source);
 }
 
-void WindowsCaptureBackend::removeAudioItems()
+void WindowsCaptureBackend::ensureAudioItems()
+{
+	OBSScene scene = host_ ? host_->moonlitCurrentScene() : nullptr;
+	if (!scene) {
+		return;
+	}
+	if (micSource_ && !micItem_) {
+		micItem_ = obs_scene_add(scene, micSource_);
+	}
+	if (chatSource_ && !chatItem_) {
+		chatItem_ = obs_scene_add(scene, chatSource_);
+	}
+	if (desktopSource_ && !desktopItem_) {
+		desktopItem_ = obs_scene_add(scene, desktopSource_);
+	}
+}
+
+void WindowsCaptureBackend::removeGameAudio()
 {
 	if (audioItem_) {
 		obs_sceneitem_remove(audioItem_);
 		audioItem_ = nullptr;
 	}
 	audioSource_ = nullptr;
-	if (micItem_) {
-		obs_sceneitem_remove(micItem_);
-		micItem_ = nullptr;
+}
+
+void WindowsCaptureBackend::applyPersistedMixerSettings()
+{
+	applyLevel("Escritorio", desktopSource_);
+	applyLevel("Juego", audioSource_);
+	applyLevel("Microfono", micSource_);
+	applyLevel("Chat", chatSource_);
+}
+
+void WindowsCaptureBackend::applyLevel(const char *key, obs_source_t *source)
+{
+	if (!source) {
+		return;
 	}
-	micSource_ = nullptr;
-	if (chatItem_) {
-		obs_sceneitem_remove(chatItem_);
-		chatItem_ = nullptr;
+	config_t *config = host_ ? host_->activeConfig() : nullptr;
+	if (!config) {
+		return;
 	}
-	chatSource_ = nullptr;
-	if (desktopItem_) {
-		obs_sceneitem_remove(desktopItem_);
-		desktopItem_ = nullptr;
-	}
-	desktopSource_ = nullptr;
+
+	const std::string volumeKey = "MixerVolume" + std::string(key);
+	const std::string muteKey = "MixerMute" + std::string(key);
+	obs_source_set_volume(source, config_get_int(config, "MoonLit", volumeKey.c_str()) / 100.0f);
+	obs_source_set_muted(source, config_get_bool(config, "MoonLit", muteKey.c_str()));
 }
 
 } // namespace MoonLit

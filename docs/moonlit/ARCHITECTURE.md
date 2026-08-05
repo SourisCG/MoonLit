@@ -196,6 +196,35 @@ Commits: `f2fac1087`, `0f1431030`, `895c6d8be`, `3696b1a64`.
     `MOONLIT_ICON`, fallback relativo).
   - Las ramas no-MOONLIT conservan obs.png a propósito.
 
+## Session 2026-08-05 — Control de audio de entrada/salida
+
+- **Volumen físico de dispositivos** (`frontend/moonlit/ui/EndpointVolume.{hpp,cpp}`):
+  wrapper RAII de `IMMDeviceEnumerator` + `IAudioEndpointVolume` — resuelve el
+  endpoint por id (o el default del sistema; entrada → `eCommunications`,
+  salida → `eConsole`, igual que win-wasapi) y expone volumen escalar + mute.
+  Se usa en **Ajustes → sección Audio**: sliders 0-100 + % + mute junto a
+  "Microfono (entrada)" y "Audio de escritorio (salida)". Aplicación
+  inmediata (es volumen del SO, lo que se oye); re-resolución al cambiar el
+  combo o abrir el diálogo. El balance COM es pareado (CoInitializeEx con
+  S_OK → CoUninitialize en close).
+- **Mezclador siempre visible y persistido**: las fuentes mic/chat/desktop se
+  crean **una vez en el ctor del backend** (antes se recreaban en cada
+  attach); `removeGameAudio()` solo limpia el audio del juego; el add al
+  scene es idempotente (`ensureAudioItems`). El Mezclador muestra las 4
+  pistas siempre (filas placeholder deshabilitadas "X (sin fuente)" cuando
+  no hay source). Niveles persistidos en config (`MoonLit.MixerVolume*` /
+  `MoonLit.MixerMute*`, defaults 100/false registrados en el ctor del
+  backend) y re-aplicados al crear cada fuente (`applyPersistedMixerSettings`
+  en ctor + attach). `refreshMixer()` también en `CaptureController::start()`.
+- **Bug de Qt encontrado (importante)**: widgets creados con la ventana
+  oculta nacen **hidden** (`WA_WState_Hidden`) porque Qt marca los hijos de
+  padres no visibles. `QWidgetItem::isEmpty()` los reporta vacíos →
+  `sizeHint() == 0` → el QVBoxLayout colapsa el mixer a altura 0 (y las
+  filas nuevas tras `show()` seguían ocultas). El síntoma es un widget con
+  `sizeHint()==0` aunque sus hijos midan bien. Fix: `show()` explícito en
+  cada widget de la fila al crearla. No afecta al layout (los hijos se
+  muestran con el padre); es el idiom estándar de Qt.
+
 ## Known notes
 
 - ExportQueue: el widget dueño llama `shutdown()` + `delete`; `shutdown()`
@@ -207,5 +236,9 @@ Commits: `f2fac1087`, `0f1431030`, `895c6d8be`, `3696b1a64`.
   `setFixedSize` crítico; pintarlos a mano.
 - `QApplication::setWindowIcon` (PNG) es necesario para los diálogos sin
   parent; el SVG solo para la ventana principal/tray.
+- Widgets creados con la ventana oculta nacen hidden → `QWidgetItem` da
+  `sizeHint 0` y colapsa layouts: llamar `show()` explícito al crearlos.
+- Los sliders del Mezclador usan `setFixedHeight` (20/22/28) para que las
+  filas sean robustas ante hints QSS raros, además del `show()`.
 - Siguiente: correr `moonlit-ci.yml` en GitHub; matriz manual C/A/L/P/R
   (con juego real); verificar packaging P8 con los fixes.

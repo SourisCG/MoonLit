@@ -97,6 +97,8 @@ Requires a real game window (windowed and borderless).
 | B3 | Crash dialog title says "MoonLit has crashed!" and shows the crescent logo (red/blue); Safe Mode dialog title "MoonLit Crash Detected" | PASS 2026-08-04 (pixel-verified) |
 | B4 | Main window, tray and About dialog show the crescent logo (not OBS) | PASS 2026-08-04 (window icon pixel-verified) |
 | B5 | Dashboard, library and timeline editor render with the Dracula×MoonLit theme; timeline segments do not overlap | PASS 2026-08-04 (renders verified) |
+| B6 | Mixer shows all 4 tracks even with no game running (disabled placeholders for game/chat); dragging a level persists it (`MoonLit.MixerVolume*`) and survives restart (slider restored + applied to the source) | PASS 2026-08-05 (UIA: 4 rows at 152 px; mic 42 persisted in basic.ini and restored after relaunch) |
+| B7 | Ajustes sliders read and write the REAL Windows device volume (mic input and desktop output); mute toggles the device mute; values survive dialog reopen | PASS 2026-08-05 (UIA: read 70 %/91 %, wrote 55 % reflected back, restored 70 %) |
 
 ## Audio Track Verification Helper
 

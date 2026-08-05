@@ -20,6 +20,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -91,6 +92,24 @@ QVector<std::pair<QString, QString>> AudioInputDevices()
 	return devices;
 }
 #endif
+
+/* Reflects the current endpoint state into the settings row without
+ * re-resolving the device (used after setScalar/setMuted during dragging). */
+void SyncVolumeRow(QLabel *label, QSlider *slider, QPushButton *mute,
+		   const MoonLit::EndpointVolume *endpoint)
+{
+	slider->blockSignals(true);
+	mute->blockSignals(true);
+	const float scalar = endpoint->scalar();
+	slider->setEnabled(endpoint->isOpen() && scalar >= 0.0f);
+	slider->setValue(qRound(scalar * 100.0f));
+	label->setText(slider->isEnabled() ? QStringLiteral("%1 %").arg(qRound(scalar * 100.0f))
+					      : QStringLiteral("—"));
+	mute->setEnabled(endpoint->isOpen());
+	mute->setChecked(endpoint->muted());
+	slider->blockSignals(false);
+	mute->blockSignals(false);
+}
 
 /* Login startup is platform policy: HKCU Run on Windows, XDG autostart
  * desktop entry on Linux, behind the platform services abstraction. */
@@ -195,6 +214,55 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	};
 	obs_enum_audio_monitoring_devices(enumMonitoring, desktopDevice);
 
+	/* Physical device volume rows: the slider acts on the Windows endpoint
+	 * (IAudioEndpointVolume) of the selected device, immediately, because it
+	 * is the volume the user hears. Recording levels are separate (mixer). */
+	micVolumeSlider = new QSlider(Qt::Horizontal, this);
+	micVolumeSlider->setRange(0, 100);
+	micVolumeLabel = new QLabel(this);
+	micVolumeLabel->setFixedWidth(40);
+	micMute = new QPushButton(QStringLiteral("M"), this);
+	micMute->setCheckable(true);
+	micMute->setFixedWidth(36);
+	micMute->setToolTip(QStringLiteral("Silenciar dispositivo"));
+
+	desktopVolumeSlider = new QSlider(Qt::Horizontal, this);
+	desktopVolumeSlider->setRange(0, 100);
+	desktopVolumeLabel = new QLabel(this);
+	desktopVolumeLabel->setFixedWidth(40);
+	desktopMute = new QPushButton(QStringLiteral("M"), this);
+	desktopMute->setCheckable(true);
+	desktopMute->setFixedWidth(36);
+	desktopMute->setToolTip(QStringLiteral("Silenciar dispositivo"));
+
+	connect(micVolumeSlider, &QSlider::valueChanged, this, [this](int value) {
+		micEndpoint_.setScalar(static_cast<float>(value) / 100.0f);
+		SyncVolumeRow(micVolumeLabel, micVolumeSlider, micMute, &micEndpoint_);
+	});
+	connect(micMute, &QPushButton::toggled, this, [this](bool checked) {
+		micEndpoint_.setMuted(checked);
+		SyncVolumeRow(micVolumeLabel, micVolumeSlider, micMute, &micEndpoint_);
+	});
+	connect(micDevice, &QComboBox::currentIndexChanged, this, [this] {
+		PopulateVolumeRow(micVolumeLabel, micVolumeSlider, micMute, &micEndpoint_,
+				  MoonLit::EndpointVolume::Direction::Capture,
+				  micDevice->currentData().toString());
+	});
+
+	connect(desktopVolumeSlider, &QSlider::valueChanged, this, [this](int value) {
+		desktopEndpoint_.setScalar(static_cast<float>(value) / 100.0f);
+		SyncVolumeRow(desktopVolumeLabel, desktopVolumeSlider, desktopMute, &desktopEndpoint_);
+	});
+	connect(desktopMute, &QPushButton::toggled, this, [this](bool checked) {
+		desktopEndpoint_.setMuted(checked);
+		SyncVolumeRow(desktopVolumeLabel, desktopVolumeSlider, desktopMute, &desktopEndpoint_);
+	});
+	connect(desktopDevice, &QComboBox::currentIndexChanged, this, [this] {
+		PopulateVolumeRow(desktopVolumeLabel, desktopVolumeSlider, desktopMute, &desktopEndpoint_,
+				  MoonLit::EndpointVolume::Direction::Render,
+				  desktopDevice->currentData().toString());
+	});
+
 	chatExe = new QLineEdit(this);
 	chatExe->setPlaceholderText(QStringLiteral("Discord.exe"));
 
@@ -212,6 +280,12 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 		QStringLiteral("Pistas: 1 mezcla (audio de escritorio de la escena), 2 juego, 3 micrófono, 4 chat."),
 		this);
 	audioNote->setWordWrap(true);
+
+	QLabel *deviceVolumeNote = new QLabel(
+		QStringLiteral("El volumen de entrada/salida ajusta el dispositivo real de Windows (lo que se oye), "
+			       "no la grabación. Los niveles por pista se ajustan en el Mezclador."),
+		this);
+	deviceVolumeNote->setWordWrap(true);
 
 	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
 	QLabel *aboutText = new QLabel(
@@ -239,7 +313,18 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
 	form->addRow(audioNote);
 	form->addRow(QStringLiteral("Microfono (entrada):"), micDevice);
+	auto *micVolumeRow = new QHBoxLayout;
+	micVolumeRow->addWidget(micVolumeSlider, 1);
+	micVolumeRow->addWidget(micVolumeLabel);
+	micVolumeRow->addWidget(micMute);
+	form->addRow(QStringLiteral("Volumen del microfono:"), micVolumeRow);
 	form->addRow(QStringLiteral("Audio de escritorio (salida):"), desktopDevice);
+	auto *desktopVolumeRow = new QHBoxLayout;
+	desktopVolumeRow->addWidget(desktopVolumeSlider, 1);
+	desktopVolumeRow->addWidget(desktopVolumeLabel);
+	desktopVolumeRow->addWidget(desktopMute);
+	form->addRow(QStringLiteral("Volumen de salida:"), desktopVolumeRow);
+	form->addRow(deviceVolumeNote);
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
 	form->addRow(autoStart);
 	form->addRow(clipSound);
@@ -304,6 +389,21 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 
 	clipSound->setChecked(config_get_bool(config, "MoonLit", "ClipSound"));
 	noiseSuppression->setChecked(config_get_bool(config, "MoonLit", "NoiseSuppression"));
+
+	PopulateVolumeRow(micVolumeLabel, micVolumeSlider, micMute, &micEndpoint_,
+			  MoonLit::EndpointVolume::Direction::Capture, micDevice->currentData().toString());
+	PopulateVolumeRow(desktopVolumeLabel, desktopVolumeSlider, desktopMute, &desktopEndpoint_,
+			  MoonLit::EndpointVolume::Direction::Render,
+			  desktopDevice->currentData().toString());
+}
+
+void MoonLitSettingsDialog::PopulateVolumeRow(QLabel *label, QSlider *slider, QPushButton *mute,
+					      MoonLit::EndpointVolume *endpoint,
+					      MoonLit::EndpointVolume::Direction direction,
+					      const QString &deviceId)
+{
+	endpoint->open(direction, deviceId);
+	SyncVolumeRow(label, slider, mute, endpoint);
 }
 
 void MoonLitSettingsDialog::SaveValues()

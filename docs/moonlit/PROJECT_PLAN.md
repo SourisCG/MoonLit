@@ -505,6 +505,23 @@ Execution log:
 | 2026-08-04 | P11 | Icono oficial (logo, ico, .ui, NSIS) | 895c6d8be |
 | 2026-08-04 | P11 | Crash dialog branding + app icon PNG | 3696b1a64 |
 
+## P12 - Control de audio de entrada/salida (2026-08-05)
+
+Entregables: volumen físico de dispositivos por WASAPI (`EndpointVolume`,
+sliders + mute en Ajustes junto a los selectores de micrófono/salida, con
+aplicación inmediata); Mezclador con las 4 pistas siempre visibles
+(placeholders deshabilitados sin fuente) y niveles por pista persistidos
+(`MoonLit.MixerVolume*`/`MixerMute*`, re-aplicados al crear las fuentes);
+fuentes mic/chat/desktop persistentes (ya no se recrean por attach).
+
+Fijado un bug de Qt: widgets creados con la ventana oculta nacen hidden
+(`WA_WState_Hidden`) → `QWidgetItem::isEmpty()` → `sizeHint 0` → mixer
+colapsado a 0px; fix con `show()` explícito al crear cada fila.
+
+Resultado: 45 tests verdes; verificado por UIA — mixer 152px con 4 pistas,
+persistencia 42% sobrevive reinicio, sliders de Ajustes leen/escriben el
+volumen real del dispositivo (70→55→70 %).
+
 ## GitHub Release Procedure
 
 The local GitHub CLI is currently unauthenticated. Before publication:
