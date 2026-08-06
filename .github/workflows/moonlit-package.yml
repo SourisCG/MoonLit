@@ -1,11 +1,9 @@
 name: MoonLit Package
 
 on:
-  # No automatic build on pushes: the package compiles only when you run
-  # this workflow manually. Pushing a version tag publishes a release that
-  # reuses the artifacts of the latest manual build (no compilation).
-  push:
-    tags: ['*']
+  # Nothing runs on pushes: build and release only when you dispatch this
+  # workflow manually. Run it on a version tag (e.g. 0.1.0) to also publish
+  # the release, or on main to just build the artifacts.
   workflow_dispatch:
     inputs:
       version:
@@ -23,10 +21,6 @@ concurrency:
 jobs:
   package-windows:
     name: Windows package (x64)
-    # Only runs on manual dispatches. Tag pushes reuse the artifacts from
-    # the latest manual build in the release job, so pushing a version tag
-    # does not burn another full compilation.
-    if: github.ref_type == 'branch'
     runs-on: windows-2025
     permissions:
       contents: read
@@ -122,24 +116,15 @@ jobs:
   release:
     name: Release (tag)
     if: startsWith(github.ref, 'refs/tags/')
+    needs: package-windows
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      actions: read
     steps:
-      - name: Resolve latest manual package run
-        id: run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "runId=$(gh run list --workflow moonlit-package.yml --branch main --event workflow_dispatch --status success --limit 1 --json databaseId --jq '.[0].databaseId')" >> "$GITHUB_OUTPUT"
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: moonlit-windows-x64-${{ env.PACKAGE_VERSION }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.run.outputs.runId }}
           path: artifacts
 
       - name: Build release body

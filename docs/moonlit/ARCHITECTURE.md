@@ -141,15 +141,18 @@ worker threads):
   había que firmar el rundir a mano). `-SkipSign` produce artifacts sin
   firmar (audit con `-AllowUnsigned`); `-CertPath`/`-PasswordFile` permiten
   firmar con un cert distinto (CI usa el secret `MOONLIT_PFX_B64`).
-- Workflow `moonlit-package.yml`: en cada push a `main` (y manual) compila
-  el frontend Windows completo (preset `windows-moonlit-x64`, obs-deps+Qt6
-  descargados, NSIS por winget) y sube `MoonLit-0.1.0-x64.zip` +
-  `MoonLit-0.1.0-Setup.exe` + `SHA256SUMS.txt`; al pushear un tag crea un
-  GitHub Release draft con los artifacts. Si el secret de firma existe, el
-  cert (self-signed dev) se importa a `LocalMachine\Root` del runner y los
-  binarios salen firmados; sin secret, el job no falla (artifacts sin
-  firmar). Versión fijada en `OBS_VERSION_OVERRIDE=0.1.0` (presets moonlit),
-  About, NSIS y package.ps1.
+- Workflow `moonlit-package.yml`: **solo manual** (`workflow_dispatch`, con
+  input de versión, default 0.1.0) — nada corre en pushes. En `main`
+  compila el frontend Windows completo (preset `windows-moonlit-x64`,
+  obs-deps+Qt6 descargados, NSIS por winget) y sube
+  `MoonLit-0.1.0-x64.zip` + `MoonLit-0.1.0-Setup.exe` + `SHA256SUMS.txt`;
+  ejecutado sobre un tag (p. ej. `0.1.0`) además publica el release con los
+  artifacts del mismo run y un body markdown (descarga, funciones,
+  checksums). Si el secret de firma existe, el cert (self-signed dev) se
+  importa a `LocalMachine\Root` del runner y los binarios salen firmados;
+  sin secret, el job no falla (artifacts sin firmar). Versión fijada en
+  `OBS_VERSION_OVERRIDE=0.1.0` (presets moonlit), About, NSIS y
+  package.ps1.
 - El cert de desarrollo es self-signed: en otras máquinas SmartScreen sigue
   mostrando "Editor desconocido" (la azul); un cert de CA real (Azure
   Trusted Signing / OV-EV) solo cambia el secret en el workflow.
