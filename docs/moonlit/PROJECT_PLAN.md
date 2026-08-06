@@ -541,6 +541,22 @@ item (pantalla completa quedaba "inicializando" pese al buffer activo).
 Resultado: 48 tests verdes; verificado — fullscreen graba y guarda clip
 (h264 + audio), selección manual de Brave graba con WGC + loopback.
 
+## P14 - CI de packaging y versión 0.1.0 (2026-08-05, noche)
+
+Entregables: workflow `moonlit-package.yml` — en push a `main`/manual
+compila el frontend Windows completo y publica ZIP portable + instalador
+NSIS + checksums; en tags crea Release draft. Firma opcional en CI con el
+secret `MOONLIT_PFX_B64` (el cert self-signed se importa a las raíces del
+runner); sin secret el job produce artifacts sin firmar. Versión fijada en
+0.1.0 (`OBS_VERSION_OVERRIDE` en presets, About, NSIS, package.ps1).
+package.ps1 ganó `-SkipSign`/`-CertPath`/`-PasswordFile` y se corrigió el
+orden (firma → audit → ZIP) más la propagación del exit code del audit.
+Fix en moonlit-ci.yml: generador VS 17 2022 para el smoke de Windows.
+
+Verificado local: ruta firmada (audit 0 unsigned, MoonLit.exe Valid dentro
+del ZIP, 52 binarios verify OK) y ruta -SkipSign (ZIP 40 MB + instalador
+28 MB). Pendiente: correr el workflow en GitHub y cargar los secrets.
+
 ## GitHub Release Procedure
 
 The local GitHub CLI is currently unauthenticated. Before publication:

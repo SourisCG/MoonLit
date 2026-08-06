@@ -306,7 +306,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
 	QLabel *aboutText = new QLabel(
-		QStringLiteral("MoonLit 1.0.0\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
+		QStringLiteral("MoonLit 0.1.0\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
 			       "Software libre bajo GPLv2."),
 		aboutGroup);
 	aboutText->setWordWrap(true);

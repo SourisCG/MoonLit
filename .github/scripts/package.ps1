@@ -1,16 +1,26 @@
 # Builds the MoonLit release artifacts from the dev rundir:
 #   1. Clean staging copy without PDBs or checksum files.
-#   2. Release-gate audit (denylist, signatures, SHA-256 checksums).
-#   3. Portable ZIP.
-#   4. NSIS installer, signed.
-#   5. SHA-256 of the artifacts.
+#   2. Sign the staging binaries (unless -SkipSign).
+#   3. Release-gate audit (denylist, signatures, SHA-256 checksums).
+#   4. Portable ZIP from the signed staging.
+#   5. NSIS installer, then signed.
+#   6. SHA-256 of the artifacts.
 #
-# Usage: pwsh -NoProfile -File package.ps1 [-Version 1.0.0] [-Rundir <dir>] [-OutDir <dir>]
+# Usage: pwsh -NoProfile -File package.ps1 [-Version 0.1.0] [-Rundir <dir>] [-OutDir <dir>]
+#        [-SkipSign] [-CertPath <pfx>] [-PasswordFile <txt>]
+#
+# -SkipSign: produce unsigned artifacts (CI without a signing secret). The
+#   audit then reports signatures without failing on them.
+# -CertPath/-PasswordFile: sign with a specific certificate. Defaults to the
+#   local development PFX under .deps/certs/ (gitignored).
 
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "0.1.0",
     [string]$Rundir = (Join-Path (Get-Location) "build_moonlit_v1_x64\rundir\RelWithDebInfo"),
-    [string]$OutDir = (Join-Path (Get-Location) "build_moonlit_v1_x64\package")
+    [string]$OutDir = (Join-Path (Get-Location) "build_moonlit_v1_x64\package"),
+    [switch]$SkipSign,
+    [string]$CertPath = ".deps\certs\moonlit-dev.pfx",
+    [string]$PasswordFile = ".deps\certs\moonlit-dev.pfx.txt"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +29,11 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 if (-not (Test-Path -LiteralPath $Rundir)) {
     throw "Rundir not found: $Rundir"
 }
+
+# Absolute paths: the portable ZIP is created from a staging subdirectory,
+# so a relative OutDir would resolve against the wrong location.
+$Rundir = [System.IO.Path]::GetFullPath($Rundir)
+$OutDir = [System.IO.Path]::GetFullPath($OutDir)
 
 $staging = Join-Path $OutDir "staging"
 $zipPath = Join-Path $OutDir "MoonLit-$Version-x64.zip"
@@ -45,8 +60,28 @@ if (Test-Path -LiteralPath $soundSource) {
 }
 Write-Host "staged: $((Get-ChildItem -LiteralPath $staging -Recurse -File | Measure-Object).Count) files"
 
+if (-not $SkipSign) {
+    Write-Host "== sign binaries =="
+    if (-not (Test-Path -LiteralPath $CertPath)) {
+        throw "Certificate not found: $CertPath (use -SkipSign or pass -CertPath)"
+    }
+    $LASTEXITCODE = 0
+    & (Join-Path $PSScriptRoot "sign.ps1") -StagingDir $staging -CertPath $CertPath -PasswordFile $PasswordFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "signing failed with exit code $LASTEXITCODE"
+    }
+}
+
 Write-Host "== release-gate audit =="
-& (Join-Path $PSScriptRoot "audit.ps1") -PackageDir $staging
+$auditArgs = @{ PackageDir = $staging }
+if ($SkipSign) {
+    $auditArgs += @{ AllowUnsigned = $true }
+}
+$LASTEXITCODE = 0
+& (Join-Path $PSScriptRoot "audit.ps1") @auditArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "audit failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "== portable ZIP =="
 $zipStaging = Join-Path $OutDir "zip-staging"
@@ -100,8 +135,20 @@ Move-Item -LiteralPath $generatedInstaller -Destination $installerPath -Force
 Write-Host "installer: $([math]::Round((Get-Item $installerPath).Length / 1MB, 1)) MB"
 
 Write-Host "== sign installer =="
-& (Join-Path $PSScriptRoot "sign.ps1") -StagingDir $OutDir -CertPath (Join-Path $repoRoot ".deps\certs\moonlit-dev.pfx") -PasswordFile (Join-Path $repoRoot ".deps\certs\moonlit-dev.pfx.txt")
-& (Join-Path $PSScriptRoot "verify.ps1") -StagingDir $OutDir
+if ($SkipSign) {
+    Write-Host "skipped (unsigned artifacts)"
+} else {
+    $LASTEXITCODE = 0
+    & (Join-Path $PSScriptRoot "sign.ps1") -StagingDir $OutDir -CertPath $CertPath -PasswordFile $PasswordFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "installer signing failed with exit code $LASTEXITCODE"
+    }
+    $LASTEXITCODE = 0
+    & (Join-Path $PSScriptRoot "verify.ps1") -StagingDir $OutDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "signature verification failed with exit code $LASTEXITCODE"
+    }
+}
 
 Write-Host "== checksums =="
 $lines = @(

@@ -176,7 +176,7 @@
         "ENABLE_WEBRTC": false,
         "ENABLE_WEBSOCKET": false,
         "ENABLE_WHATSNEW": false,
-        "OBS_VERSION_OVERRIDE": "1.0.0"
+        "OBS_VERSION_OVERRIDE": "0.1.0"
       }
     },
     {
@@ -223,7 +223,7 @@
         "ENABLE_WEBRTC": false,
         "ENABLE_WEBSOCKET": false,
         "ENABLE_WHATSNEW": false,
-        "OBS_VERSION_OVERRIDE": "1.0.0"
+        "OBS_VERSION_OVERRIDE": "0.1.0"
       }
     },
     {

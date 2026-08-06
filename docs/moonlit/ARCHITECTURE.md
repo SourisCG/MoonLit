@@ -135,7 +135,24 @@ worker threads):
   FFmpeg COMPONENTS. Windows CI downloads obs-deps/qt6 zips to `.deps/` and
   uses CMAKE_PREFIX_PATH.
 - Packaging Win (unchanged): package.ps1 → staging → audit → portable ZIP
-  (`portable_mode` marker) → NSIS per-user → sign → SHA256SUMS.
+  (`portable_mode` marker) → NSIS per-user → sign → SHA256SUMS. Orden
+  corregido: los binarios se firman ANTES del audit y del ZIP (antes el
+  audit corría sobre staging sin firmar y su `exit 1` no propagaba — por eso
+  había que firmar el rundir a mano). `-SkipSign` produce artifacts sin
+  firmar (audit con `-AllowUnsigned`); `-CertPath`/`-PasswordFile` permiten
+  firmar con un cert distinto (CI usa el secret `MOONLIT_PFX_B64`).
+- Workflow `moonlit-package.yml`: en cada push a `main` (y manual) compila
+  el frontend Windows completo (preset `windows-moonlit-x64`, obs-deps+Qt6
+  descargados, NSIS por winget) y sube `MoonLit-0.1.0-x64.zip` +
+  `MoonLit-0.1.0-Setup.exe` + `SHA256SUMS.txt`; al pushear un tag crea un
+  GitHub Release draft con los artifacts. Si el secret de firma existe, el
+  cert (self-signed dev) se importa a `LocalMachine\Root` del runner y los
+  binarios salen firmados; sin secret, el job no falla (artifacts sin
+  firmar). Versión fijada en `OBS_VERSION_OVERRIDE=0.1.0` (presets moonlit),
+  About, NSIS y package.ps1.
+- El cert de desarrollo es self-signed: en otras máquinas SmartScreen sigue
+  mostrando "Editor desconocido" (la azul); un cert de CA real (Azure
+  Trusted Signing / OV-EV) solo cambia el secret en el workflow.
 
 ## Tests (45, ctest `moonlit-tests`)
 

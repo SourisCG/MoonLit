@@ -4,10 +4,14 @@
 #   3. SHA-256 checksums written to <dir>/SHA256SUMS.txt.
 #   4. License/notice files listed for the SBOM (binaries may add more).
 #
-# Usage: pwsh -NoProfile -File audit.ps1 [-PackageDir <dir>]
+# Usage: pwsh -NoProfile -File audit.ps1 [-PackageDir <dir>] [-AllowUnsigned]
+#
+# -AllowUnsigned: report signature problems without failing (CI builds that
+#   produce unsigned artifacts when no signing secret is available).
 
 param(
-    [string]$PackageDir = (Join-Path (Get-Location) "build_moonlit_v1_x64\rundir\RelWithDebInfo")
+    [string]$PackageDir = (Join-Path (Get-Location) "build_moonlit_v1_x64\rundir\RelWithDebInfo"),
+    [switch]$AllowUnsigned
 )
 
 $ErrorActionPreference = 'Stop'
@@ -69,7 +73,11 @@ Get-ChildItem -LiteralPath $PackageDir -Recurse -File -ErrorAction SilentlyConti
 } | ForEach-Object { Write-Host "  $($_.FullName.Substring($PackageDir.Length))" }
 
 if ($unsigned -gt 0 -or $invalid -gt 0) {
-    Write-Host "audit failed: signature problems found"
-    exit 1
+    if ($AllowUnsigned) {
+        Write-Host "audit warnings: $unsigned unsigned, $invalid invalid (allowed by -AllowUnsigned)"
+    } else {
+        Write-Host "audit failed: signature problems found"
+        exit 1
+    }
 }
 Write-Host "audit passed"

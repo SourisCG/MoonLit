@@ -3,7 +3,7 @@
 ; configuration) lives outside the install directory and is preserved on
 ; upgrade and uninstall.
 ;
-; Build: makensis /DVERSION=1.0.0 /DSTAGING=<dir> moonlit.nsi
+; Build: makensis /DVERSION=0.1.0 /DSTAGING=<dir> moonlit.nsi
 
 Unicode true
 RequestExecutionLevel user
@@ -19,7 +19,7 @@ Icon "${MOONLIT_ICON}"
 UninstallIcon "${MOONLIT_ICON}"
 
 !ifndef VERSION
-  !define VERSION "1.0.0"
+  !define VERSION "0.1.0"
 !endif
 !ifndef STAGING
   !error "STAGING directory must be defined"

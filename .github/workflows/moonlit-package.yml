@@ -1,0 +1,127 @@
+name: MoonLit Package
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  workflow_dispatch:
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  package-windows:
+    name: Windows package (x64)
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download obs-deps and Qt6
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path .deps | Out-Null
+          $base = 'https://github.com/obsproject/obs-deps/releases/download/2026-07-15'
+          $deps = @(
+            @{ url = "$base/windows-deps-2026-07-15-x64.zip"; out = '.deps/obs-deps-2026-07-15-x64' },
+            @{ url = "$base/windows-deps-qt6-2026-07-15-x64.zip"; out = '.deps/obs-deps-qt6-2026-07-15-x64' }
+          )
+          foreach ($dep in $deps) {
+            $zip = "$env:TEMP/$([System.IO.Path]::GetFileName($dep.url))"
+            Invoke-WebRequest -Uri $dep.url -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath $dep.out -Force
+          }
+
+      - name: Install NSIS
+        run: |
+          winget install --id NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Configure MoonLit (windows-moonlit-x64)
+        run: |
+          cmake -S . -B build_moonlit_v1_x64 --preset windows-moonlit-x64 `
+            -G "Visual Studio 17 2022" `
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE/.deps/obs-deps-2026-07-15-x64;$env:GITHUB_WORKSPACE/.deps/obs-deps-qt6-2026-07-15-x64"
+
+      - name: Build obs-studio
+        run: |
+          cmake --build build_moonlit_v1_x64 --config RelWithDebInfo --target obs-studio --parallel
+
+      - name: Configure signing certificate
+        if: env.MOONLIT_PFX_B64 != ''
+        env:
+          MOONLIT_PFX_B64: ${{ secrets.MOONLIT_PFX_B64 }}
+          MOONLIT_PFX_PASSWORD: ${{ secrets.MOONLIT_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfxPath = "$env:TEMP\moonlit-dev.pfx"
+          $passwordFile = "$env:TEMP\moonlit-dev.pfx.txt"
+          [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:MOONLIT_PFX_B64))
+          Set-Content -LiteralPath $passwordFile -Value $env:MOONLIT_PFX_PASSWORD -Encoding ASCII
+          # The self-signed development certificate must be a trusted root on
+          # the runner so verify.ps1/audit.ps1 report Valid signatures.
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $pfxPath, $env:MOONLIT_PFX_PASSWORD, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(
+            'Root', 'LocalMachine')
+          $store.Open('ReadWrite')
+          $store.Add($cert)
+          $store.Close()
+          Write-Host "signing cert installed: $($cert.Subject)"
+
+      - name: Package and sign
+        if: env.MOONLIT_PFX_B64 != ''
+        env:
+          MOONLIT_PFX_B64: ${{ secrets.MOONLIT_PFX_B64 }}
+          MOONLIT_PFX_PASSWORD: ${{ secrets.MOONLIT_PFX_PASSWORD }}
+        run: |
+          .github/scripts/package.ps1 -Version 0.1.0 `
+            -Rundir "$env:GITHUB_WORKSPACE/build_moonlit_v1_x64/rundir/RelWithDebInfo" `
+            -OutDir "$env:GITHUB_WORKSPACE/package" `
+            -CertPath "$env:TEMP\moonlit-dev.pfx" `
+            -PasswordFile "$env:TEMP\moonlit-dev.pfx.txt"
+
+      - name: Package (unsigned)
+        if: env.MOONLIT_PFX_B64 == ''
+        run: |
+          .github/scripts/package.ps1 -Version 0.1.0 `
+            -Rundir "$env:GITHUB_WORKSPACE/build_moonlit_v1_x64/rundir/RelWithDebInfo" `
+            -OutDir "$env:GITHUB_WORKSPACE/package" `
+            -SkipSign
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: moonlit-windows-x64-0.1.0
+          path: |
+            package/MoonLit-0.1.0-x64.zip
+            package/MoonLit-0.1.0-Setup.exe
+            package/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    name: Release (tag)
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package-windows
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: moonlit-windows-x64-0.1.0
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: MoonLit ${{ github.ref_name }}
+          body_path: artifacts/SHA256SUMS.txt
+          files: artifacts/*
