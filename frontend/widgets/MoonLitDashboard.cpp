@@ -281,7 +281,14 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	clipNoticeLabel = makeLabel(QString(), this);
 	clipNoticeLabel->setObjectName(QStringLiteral("moonlitNotice"));
 	clipNoticeLabel->setAlignment(Qt::AlignCenter);
-	root->addWidget(clipNoticeLabel);
+	auto *noticeRow = new QHBoxLayout();
+	noticeRow->addStretch(1);
+	noticeRow->addWidget(clipNoticeLabel);
+	folderButton = new QPushButton(QStringLiteral("Cambiar carpeta…"), this);
+	folderButton->setVisible(false);
+	noticeRow->addWidget(folderButton);
+	noticeRow->addStretch(1);
+	root->addLayout(noticeRow);
 
 	auto *details = new QHBoxLayout();
 	captureLabel = makeLabel(QStringLiteral("Captura: esperando configuracion"), this);
@@ -297,11 +304,15 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	connect(saveButton, &QPushButton::clicked, this, &MoonLitDashboard::saveClipRequested);
 	connect(libraryButton, &QPushButton::clicked, this, &MoonLitDashboard::libraryRequested);
 	connect(settingsButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
+	connect(folderButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
 
 	noticeTimer = new QTimer(this);
 	noticeTimer->setSingleShot(true);
 	noticeTimer->setInterval(8000);
-	connect(noticeTimer, &QTimer::timeout, this, [this]() { clipNoticeLabel->clear(); });
+	connect(noticeTimer, &QTimer::timeout, this, [this]() {
+		clipNoticeLabel->clear();
+		folderButton->setVisible(false);
+	});
 }
 
 void MoonLitDashboard::setReplayState(bool active, bool stopping)
@@ -354,7 +365,8 @@ void MoonLitDashboard::setClipSaved(const QString &path)
 void MoonLitDashboard::setClipError(const QString &message)
 {
 	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #e98b8b; font-weight: 600;"));
-	clipNoticeLabel->setText(QStringLiteral("Error: %1").arg(message));
+	clipNoticeLabel->setText(message);
+	folderButton->setVisible(true);
 	noticeTimer->start();
 }
 

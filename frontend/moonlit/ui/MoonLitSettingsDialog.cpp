@@ -282,6 +282,12 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 		this);
 	audioNote->setWordWrap(true);
 
+	QLabel *folderNote = new QLabel(
+		QStringLiteral("Por defecto MoonLit usa su propia carpeta (MoonLit/Clips) para evitar el bloqueo del "
+			       "Acceso controlado a carpetas de Windows; podés cambiarla aquí cuando quieras."),
+		this);
+	folderNote->setWordWrap(true);
+
 	QLabel *deviceVolumeNote = new QLabel(
 		QStringLiteral("El volumen de entrada/salida ajusta el dispositivo real de Windows (lo que se oye), "
 			       "no la grabación. Los niveles por pista se ajustan en el Mezclador."),
@@ -306,7 +312,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
 	QLabel *aboutText = new QLabel(
-		QStringLiteral("MoonLit 0.1.0\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
+		QStringLiteral("MoonLit 0.1.1\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
 			       "Software libre bajo GPLv2."),
 		aboutGroup);
 	aboutText->setWordWrap(true);
@@ -328,6 +334,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Pista 3 (micrófono):"), trackMic);
 	form->addRow(QStringLiteral("Pista 4 (chat):"), trackChat);
 	form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
+	form->addRow(folderNote);
 	form->addRow(audioNote);
 	form->addRow(QStringLiteral("Microfono (entrada):"), micDevice);
 	auto *micVolumeRow = new QHBoxLayout;

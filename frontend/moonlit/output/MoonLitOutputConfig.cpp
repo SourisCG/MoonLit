@@ -1,8 +1,20 @@
 #include "MoonLitOutputConfig.hpp"
 
+#include <QDir>
+#include <QStandardPaths>
+
 #include <string.h>
 
 namespace MoonLit {
+
+QString DefaultRecordingFolder()
+{
+	const QString folder =
+		QDir::cleanPath(QStandardPaths::writableLocation(QStandardPaths::HomeLocation) +
+				QStringLiteral("/MoonLit/Clips"));
+	QDir().mkpath(folder);
+	return folder;
+}
 
 static void SetStringIfAbsent(config_t *config, const char *section, const char *key, const char *value)
 {
@@ -10,8 +22,29 @@ static void SetStringIfAbsent(config_t *config, const char *section, const char 
 		config_set_string(config, section, key, value);
 }
 
+static QString normalizePath(const QString &path)
+{
+	return QDir::fromNativeSeparators(path).trimmed().toLower();
+}
+
 void MigrateProfileToMoonLitDefaults(config_t *config)
 {
+	/* Recording folder migration (one-time): when the configured path is
+	 * empty or still the stock OBS default (the Videos known folder), point
+	 * it at MoonLit's own folder. Any folder the user picks explicitly
+	 * afterwards — Videos included — is always preserved. */
+	if (!config_get_bool(config, "MoonLit", "FolderMigrated")) {
+		const QString ownFolder = DefaultRecordingFolder();
+		const QString videosFolder =
+			normalizePath(QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
+		const char *folder = config_get_string(config, "SimpleOutput", "FilePath");
+		const QString configuredPath = normalizePath(QString::fromUtf8(folder ? folder : ""));
+		if (configuredPath.isEmpty() || configuredPath == videosFolder) {
+			config_set_string(config, "SimpleOutput", "FilePath", ownFolder.toUtf8().constData());
+		}
+		config_set_bool(config, "MoonLit", "FolderMigrated", true);
+	}
+
 	if (config_get_bool(config, "MoonLit", "Migrated"))
 		return;
 

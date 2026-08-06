@@ -61,6 +61,7 @@ private:
 	QLabel *clipNoticeLabel = nullptr;
 	MoonLitRecordButton *recordButton = nullptr;
 	QPushButton *saveButton = nullptr;
+	QPushButton *folderButton = nullptr;
 	QPushButton *autoModeButton = nullptr;
 	QPushButton *fullscreenButton = nullptr;
 	QPushButton *pickGameButton = nullptr;

@@ -179,7 +179,12 @@ void OBSBasic::InitializeMoonLitShell()
 				else if (code == OBS_OUTPUT_NO_SPACE)
 					message = QStringLiteral("no hay espacio en disco");
 				else
-					message = QStringLiteral("fallo al guardar el clip");
+					/* Same hint OBS Studio shows when Defender's
+					 * ransomware protection blocks the output folder. */
+					message = QStringLiteral(
+						"fallo al guardar el clip. Si la proteccion contra ransomware de Windows esta "
+						"activada (acceso controlado a carpetas), puede causar este error: cambia la "
+						"carpeta de grabacion en Ajustes.");
 				moonlitDashboard->setClipError(message);
 			});
 

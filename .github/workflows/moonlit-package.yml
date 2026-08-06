@@ -2,17 +2,17 @@ name: MoonLit Package
 
 on:
   # Nothing runs on pushes: build and release only when you dispatch this
-  # workflow manually. Run it on a version tag (e.g. 0.1.0) to also publish
+  # workflow manually. Run it on a version tag (e.g. 0.1.1) to also publish
   # the release, or on main to just build the artifacts.
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to package (must match the tag when releasing)'
         required: false
-        default: '0.1.0'
+        default: '0.1.1'
 
 env:
-  PACKAGE_VERSION: ${{ inputs.version || '0.1.0' }}
+  PACKAGE_VERSION: ${{ inputs.version || '0.1.1' }}
 
 concurrency:
   group: '${{ github.workflow }} @ ${{ github.ref }}'
