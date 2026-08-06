@@ -427,8 +427,8 @@ struct AudioEncodeStream {
 		if (av_frame_get_buffer(converted.get(), 0) < 0) {
 			return AVERROR(ENOMEM);
 		}
-		if (swr_convert(resampler.get(), converted->data, converted->nb_samples, decoded->data,
-				decoded->nb_samples) < 0) {
+		if (swr_convert(resampler.get(), converted->data, converted->nb_samples,
+				const_cast<const uint8_t **>(decoded->data), decoded->nb_samples) < 0) {
 			return AVERROR(EINVAL);
 		}
 
