@@ -1,9 +1,9 @@
 name: MoonLit CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # The smoke builds run only when dispatched manually, so pushes do not
+  # consume Actions minutes.
+  workflow_dispatch:
 
 jobs:
   ubuntu-core-smoke:

@@ -1,10 +1,20 @@
 name: MoonLit Package
 
 on:
+  # No automatic build on pushes: the package compiles only when you run
+  # this workflow manually. Pushing a version tag publishes a release that
+  # reuses the artifacts of the latest manual build (no compilation).
   push:
-    branches: [main]
     tags: ['*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to package (must match the tag when releasing)'
+        required: false
+        default: '0.1.0'
+
+env:
+  PACKAGE_VERSION: ${{ inputs.version || '0.1.0' }}
 
 concurrency:
   group: '${{ github.workflow }} @ ${{ github.ref }}'
@@ -13,6 +23,10 @@ concurrency:
 jobs:
   package-windows:
     name: Windows package (x64)
+    # Only runs on manual dispatches. Tag pushes reuse the artifacts from
+    # the latest manual build in the release job, so pushing a version tag
+    # does not burn another full compilation.
+    if: github.ref_type == 'branch'
     runs-on: windows-2025
     permissions:
       contents: read
@@ -79,7 +93,7 @@ jobs:
           MOONLIT_PFX_B64: ${{ secrets.MOONLIT_PFX_B64 }}
           MOONLIT_PFX_PASSWORD: ${{ secrets.MOONLIT_PFX_PASSWORD }}
         run: |
-          .github/scripts/package.ps1 -Version 0.1.0 `
+          .github/scripts/package.ps1 -Version ${{ env.PACKAGE_VERSION }} `
             -Rundir "$env:GITHUB_WORKSPACE/build_moonlit_v1_x64/rundir/RelWithDebInfo" `
             -OutDir "$env:GITHUB_WORKSPACE/package" `
             -CertPath "$env:TEMP\moonlit-dev.pfx" `
@@ -90,7 +104,7 @@ jobs:
         env:
           MOONLIT_PFX_B64: ${{ secrets.MOONLIT_PFX_B64 }}
         run: |
-          .github/scripts/package.ps1 -Version 0.1.0 `
+          .github/scripts/package.ps1 -Version ${{ env.PACKAGE_VERSION }} `
             -Rundir "$env:GITHUB_WORKSPACE/build_moonlit_v1_x64/rundir/RelWithDebInfo" `
             -OutDir "$env:GITHUB_WORKSPACE/package" `
             -SkipSign
@@ -98,31 +112,68 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: moonlit-windows-x64-0.1.0
+          name: moonlit-windows-x64-${{ env.PACKAGE_VERSION }}
           path: |
-            package/MoonLit-0.1.0-x64.zip
-            package/MoonLit-0.1.0-Setup.exe
+            package/MoonLit-${{ env.PACKAGE_VERSION }}-x64.zip
+            package/MoonLit-${{ env.PACKAGE_VERSION }}-Setup.exe
             package/SHA256SUMS.txt
           if-no-files-found: error
 
   release:
     name: Release (tag)
     if: startsWith(github.ref, 'refs/tags/')
-    needs: package-windows
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
     steps:
+      - name: Resolve latest manual package run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "runId=$(gh run list --workflow moonlit-package.yml --branch main --event workflow_dispatch --status success --limit 1 --json databaseId --jq '.[0].databaseId')" >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: moonlit-windows-x64-0.1.0
+          name: moonlit-windows-x64-${{ env.PACKAGE_VERSION }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.run.outputs.runId }}
           path: artifacts
+
+      - name: Build release body
+        run: |
+          cat > release-body.md <<'EOF'
+          ## MoonLit ${{ env.PACKAGE_VERSION }}
+
+          Grabadora de clips local basada en OBS Studio 32.2.1 — captura tu juego (o toda la pantalla) y guarda clips al instante, con audio por pistas y editor de timeline.
+
+          ### Descarga
+
+          - **Instalador**: `MoonLit-${{ env.PACKAGE_VERSION }}-Setup.exe` — instalación por usuario, sin elevación; conserva clips y configuración al actualizar.
+          - **Portable**: `MoonLit-${{ env.PACKAGE_VERSION }}-x64.zip` — extraer y ejecutar `bin/64bit/MoonLit.exe`.
+
+          ### Funciones
+
+          - Detección automática de juegos (Steam, Epic, GOG y juegos recordados) con arranque del buffer sin tocar nada
+          - Modo **Pantalla completa** (monitor primario, sin pausa por Alt+Tab)
+          - **Selección manual de proceso** con "Recordar este juego" para juegos que el detector no reconoce
+          - Mezclador con las 4 pistas siempre visibles y niveles persistidos
+          - Control de **volumen físico** de entrada/salida en Ajustes
+          - Editor de timeline (recortar, silenciar, exportar MP4)
+          - Biblioteca con búsqueda, filtros y reconciliación de archivos
+          - Guardado rápido por tecla (F8)
+
+          ### Checksums
+
+          EOF
+          cat artifacts/SHA256SUMS.txt >> release-body.md
 
       - name: Create Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ github.ref_name }}
           name: MoonLit ${{ github.ref_name }}
-          body_path: artifacts/SHA256SUMS.txt
+          body_path: release-body.md
           files: artifacts/*
