@@ -87,6 +87,8 @@ jobs:
 
       - name: Package (unsigned)
         if: env.MOONLIT_PFX_B64 == ''
+        env:
+          MOONLIT_PFX_B64: ${{ secrets.MOONLIT_PFX_B64 }}
         run: |
           .github/scripts/package.ps1 -Version 0.1.0 `
             -Rundir "$env:GITHUB_WORKSPACE/build_moonlit_v1_x64/rundir/RelWithDebInfo" `
