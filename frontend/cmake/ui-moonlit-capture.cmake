@@ -15,5 +15,8 @@ if(OS_WINDOWS)
       moonlit/capture/ICaptureHost.hpp
       moonlit/capture/WindowsCaptureBackend.cpp
       moonlit/capture/WindowsCaptureBackend.hpp
+      moonlit/capture/WindowsProcessUtil.cpp
+      moonlit/capture/WindowsProcessUtil.hpp
+      moonlit/capture/WindowsTarget.hpp
   )
 endif()

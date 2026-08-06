@@ -17,55 +17,6 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-
-#include <algorithm>
-
-namespace {
-
-QString encodeName(const wchar_t *value)
-{
-	return QString::fromWCharArray(value);
-}
-
-QString processPath(HANDLE process)
-{
-	wchar_t path[32768] = {};
-	DWORD length = static_cast<DWORD>(std::size(path));
-	if (!QueryFullProcessImageNameW(process, 0, path, &length)) {
-		return {};
-	}
-	return QString::fromWCharArray(path, static_cast<int>(length));
-}
-
-quint64 fileTimeValue(const FILETIME &time)
-{
-	ULARGE_INTEGER value;
-	value.LowPart = time.dwLowDateTime;
-	value.HighPart = time.dwHighDateTime;
-	return value.QuadPart;
-}
-
-bool isIgnoredExecutable(const QString &executable)
-{
-	static const QStringList ignored = {
-		QStringLiteral("explorer.exe"),
-		QStringLiteral("searchhost.exe"),
-		QStringLiteral("startmenuexperiencehost.exe"),
-		QStringLiteral("textinputhost.exe"),
-		QStringLiteral("applicationframehost.exe"),
-		QStringLiteral("systemsettings.exe"),
-		QStringLiteral("taskmgr.exe"),
-		QStringLiteral("dwm.exe"),
-		QStringLiteral("sihost.exe"),
-		QStringLiteral("runtimebroker.exe"),
-		QStringLiteral("moonlit.exe"),
-		QStringLiteral("obs64.exe"),
-		QStringLiteral("obs.exe"),
-	};
-	return ignored.contains(executable.toLower());
-}
-
-} // namespace
 #endif
 
 MoonLitGameDetector::MoonLitGameDetector(QObject *parent) : QObject(parent)
@@ -104,13 +55,15 @@ void MoonLitGameDetector::poll()
 	const qint64 now = monotonicTimer_.elapsed();
 	const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
 	MoonLitTarget candidate;
-	const bool candidateValid = foreground && readTarget(reinterpret_cast<quintptr>(foreground), candidate) &&
-					    isLikelyGame(candidate);
+	const bool candidateValid = foreground && MoonLit::WindowsProcessUtil::readWindowTarget(
+							     reinterpret_cast<quintptr>(foreground), candidate) &&
+					     isLikelyGame(candidate);
 
 	if (activeTarget_.isValid()) {
 		MoonLitTarget current;
-		const bool identityValid = readTarget(activeTarget_.window, current) && sameIdentity(activeTarget_, current) &&
-					isProcessAlive(activeTarget_);
+		const bool identityValid = MoonLit::WindowsProcessUtil::readWindowTarget(activeTarget_.window, current) &&
+					    sameIdentity(activeTarget_, current) &&
+					    MoonLit::WindowsProcessUtil::processAlive(activeTarget_);
 		if (!identityValid) {
 			if (targetFocused_) {
 				targetFocused_ = false;
@@ -182,99 +135,24 @@ void MoonLitGameDetector::poll()
 #endif
 }
 
-bool MoonLitGameDetector::readTarget(quintptr window, MoonLitTarget &target)
-{
-#ifdef _WIN32
-	const HWND hwnd = reinterpret_cast<HWND>(window);
-	if (!IsWindow(hwnd)) {
-		return false;
-	}
-	if (GetAncestor(hwnd, GA_ROOT) != hwnd) {
-		return false;
-	}
-
-	DWORD processId = 0;
-	if (!GetWindowThreadProcessId(hwnd, &processId) || processId == 0 || processId == GetCurrentProcessId()) {
-		return false;
-	}
-
-	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, processId);
-	if (!process) {
-		return false;
-	}
-
-	FILETIME creationTime = {}, exitTime = {}, kernelTime = {}, userTime = {};
-	const bool timesRead = GetProcessTimes(process, &creationTime, &exitTime, &kernelTime, &userTime) != FALSE &&
-				WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
-	const QString path = timesRead ? processPath(process) : QString();
-	CloseHandle(process);
-	if (!timesRead || path.isEmpty()) {
-		return false;
-	}
-
-	wchar_t title[512] = {};
-	wchar_t windowClass[256] = {};
-	GetWindowTextW(hwnd, title, static_cast<int>(std::size(title)));
-	GetClassNameW(hwnd, windowClass, static_cast<int>(std::size(windowClass)));
-
-	target.window = window;
-	target.processId = processId;
-	target.creationTime = fileTimeValue(creationTime);
-	target.title = encodeName(title);
-	target.windowClass = encodeName(windowClass);
-	target.executablePath = path;
-	target.executable = path.section(QChar('\\'), -1);
-	return !target.title.isEmpty() && !isIgnoredExecutable(target.executable);
-#else
-	Q_UNUSED(window);
-	Q_UNUSED(target);
-	return false;
-#endif
-}
-
 bool MoonLitGameDetector::sameIdentity(const MoonLitTarget &left, const MoonLitTarget &right)
 {
 	return left.isValid() && right.isValid() && left.window == right.window && left.processId == right.processId &&
 		left.creationTime == right.creationTime;
 }
 
-bool MoonLitGameDetector::isLikelyGame(const MoonLitTarget &target)
+bool MoonLitGameDetector::isLikelyGame(const MoonLitTarget &target) const
 {
 #ifdef _WIN32
 	const QString path = target.executablePath.toLower();
-	return path.contains(QStringLiteral("\\steamapps\\common\\")) ||
-	       path.contains(QStringLiteral("\\epic games\\")) || path.contains(QStringLiteral("\\gog galaxy\\games\\")) ||
-	       path.contains(QStringLiteral("\\games\\"));
-#else
-	Q_UNUSED(target);
-	return false;
-#endif
-}
-
-bool MoonLitGameDetector::isProcessAlive(const MoonLitTarget &target)
-{
-#ifdef _WIN32
-	const HWND hwnd = reinterpret_cast<HWND>(target.window);
-	if (!target.isValid() || !IsWindow(hwnd) || GetAncestor(hwnd, GA_ROOT) != hwnd) {
-		return false;
+	const bool knownLauncherPath = path.contains(QStringLiteral("\\steamapps\\common\\")) ||
+				       path.contains(QStringLiteral("\\epic games\\")) ||
+				       path.contains(QStringLiteral("\\gog galaxy\\games\\")) ||
+				       path.contains(QStringLiteral("\\games\\"));
+	if (knownLauncherPath) {
+		return true;
 	}
-
-	DWORD windowProcessId = 0;
-	if (!GetWindowThreadProcessId(hwnd, &windowProcessId) || windowProcessId != target.processId) {
-		return false;
-	}
-
-	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, target.processId);
-	if (!process) {
-		return false;
-	}
-
-	FILETIME creationTime = {}, exitTime = {}, kernelTime = {}, userTime = {};
-	const bool alive = GetProcessTimes(process, &creationTime, &exitTime, &kernelTime, &userTime) != FALSE &&
-				  fileTimeValue(creationTime) == target.creationTime &&
-				  WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
-	CloseHandle(process);
-	return alive;
+	return MoonLit::WindowsProcessUtil::matchesManualGameList(target.executablePath, gameList_);
 #else
 	Q_UNUSED(target);
 	return false;

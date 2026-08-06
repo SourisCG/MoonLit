@@ -60,6 +60,8 @@ target_sources(
     widgets/MoonLitDashboard.hpp
     widgets/MoonLitGameDetector.cpp
     widgets/MoonLitGameDetector.hpp
+    widgets/MoonLitGamePickerDialog.cpp
+    widgets/MoonLitGamePickerDialog.hpp
     widgets/MoonLitLibraryWidget.cpp
     widgets/MoonLitLibraryWidget.hpp
     widgets/MoonLitShell.cpp

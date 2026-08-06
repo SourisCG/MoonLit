@@ -2,12 +2,14 @@
 
 #include "ICaptureBackend.hpp"
 #include "ICaptureHost.hpp"
+#include "WindowsProcessUtil.hpp"
 
 #include <moonlit/capture/CaptureStateMachine.hpp>
 
 #include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>
+#include <QStringList>
 #include <QTimer>
 
 #include <memory>
@@ -27,6 +29,12 @@ class CaptureController final : public QObject {
 	Q_OBJECT
 
 public:
+	enum class CaptureMode {
+		Auto,       /* detector-driven foreground game capture */
+		Fullscreen, /* whole primary monitor, no game needed */
+		Manual,     /* user-pinned process, detector blocked */
+	};
+
 	explicit CaptureController(QObject *parent = nullptr);
 
 	void setHost(ICaptureHost *host) { host_ = host; }
@@ -45,6 +53,16 @@ public:
 	void refreshMixer();
 	void applyNoiseSuppression() { if (backend_) backend_->applyNoiseSuppression(); }
 
+	/* Manual capture modes. */
+	void setFullscreenMode(bool enabled);
+	void selectGame(const MoonLitTarget &target);
+	/* Adds/removes the executable in MoonLit.GameList so the detector
+	 * recognizes it automatically; reloads the list from config. */
+	void rememberGame(const QString &executablePath, bool remember);
+	void reloadGameList();
+
+	CaptureMode mode() const { return mode_; }
+
 private slots:
 	void onTargetDetected(const MoonLitTarget &target);
 	void onTargetFocusChanged(bool focused);
@@ -53,11 +71,14 @@ private slots:
 
 private:
 	CaptureTarget toCaptureTarget(const MoonLitTarget &target) const;
+	MoonLitTarget toMoonLitTarget(const CaptureTarget &target) const;
 	void configure(const CaptureTarget &target);
 	void tryMonitorFallback();
+	void manualTargetLost();
 	void clear();
 	void setStatus(const QString &status);
 	void setGame(const QString &game);
+	QStringList gameListFromConfig() const;
 
 	ICaptureHost *host_ = nullptr;
 	QPointer<MoonLitDashboard> dashboard_;
@@ -65,6 +86,7 @@ private:
 	CaptureStateMachine machine_;
 	MoonLitGameDetector *detector_ = nullptr;
 	QTimer *healthTimer_ = nullptr;
+	CaptureMode mode_ = CaptureMode::Auto;
 
 	CaptureTarget target_;
 	bool started_ = false;

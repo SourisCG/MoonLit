@@ -26,6 +26,7 @@ target_sources(
     capture/CaptureStateMachine.hpp
     capture/CaptureTypes.cpp
     capture/CaptureTypes.hpp
+    capture/GameListMatch.hpp
     editor/ClipExportService.cpp
     editor/ClipExportService.hpp
     editor/ExportMath.hpp

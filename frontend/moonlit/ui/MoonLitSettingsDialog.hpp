@@ -8,6 +8,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPushButton;
 class QSlider;
 class QSpinBox;
@@ -60,4 +61,9 @@ private:
 	QPushButton *desktopMute = nullptr;
 	MoonLit::EndpointVolume micEndpoint_;
 	MoonLit::EndpointVolume desktopEndpoint_;
+
+	/* Remembered games (MoonLit.GameList): picked manually and re-detected
+	 * automatically afterwards. */
+	QListWidget *gameListWidget = nullptr;
+	QPushButton *removeGameButton = nullptr;
 };

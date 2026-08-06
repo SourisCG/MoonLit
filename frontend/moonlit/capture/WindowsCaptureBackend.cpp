@@ -45,6 +45,20 @@ struct MonitorSelection {
 	QString device;
 };
 
+/* Device name (szDevice, e.g. \\.\DISPLAY1) of the primary monitor. The OBS
+ * 32 monitor_capture source resolves its target by monitor_id, so the
+ * full-screen mode must pass it explicitly. */
+QString primaryMonitorDeviceId()
+{
+	const HMONITOR primary = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFOEXW info = {};
+	info.cbSize = sizeof(info);
+	if (!primary || !GetMonitorInfoW(primary, reinterpret_cast<LPMONITORINFO>(&info))) {
+		return {};
+	}
+	return QString::fromWCharArray(info.szDevice);
+}
+
 BOOL CALLBACK selectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM param)
 {
 	MonitorSelection *selection = reinterpret_cast<MonitorSelection *>(param);
@@ -192,6 +206,39 @@ bool WindowsCaptureBackend::attachMonitorFallback(const CaptureTarget &target)
 	return true;
 }
 
+bool WindowsCaptureBackend::attachFullscreen()
+{
+	OBSScene scene = host_ ? host_->moonlitCurrentScene() : nullptr;
+	if (!scene) {
+		return false;
+	}
+
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_int(settings, "method", 1); /* DXGI */
+	const QByteArray monitorId = primaryMonitorDeviceId().toUtf8();
+	obs_data_set_string(settings, "monitor_id", monitorId.constData());
+	obs_data_set_bool(settings, "capture_cursor", false);
+	obs_data_set_bool(settings, "force_sdr", false);
+
+	OBSSourceAutoRelease source =
+		obs_source_create_private("monitor_capture", "MoonLit Pantalla completa", settings);
+	if (!source) {
+		return false;
+	}
+
+	captureSource_ = source;
+	obs_source_set_enabled(captureSource_, false);
+	captureItem_ = obs_scene_add(scene, captureSource_);
+	if (!captureItem_) {
+		captureSource_ = nullptr;
+		return false;
+	}
+
+	setBounds(captureItem_);
+	obs_source_set_enabled(captureSource_, true);
+	return true;
+}
+
 bool WindowsCaptureBackend::hasVideo() const
 {
 	return captureSource_ && obs_source_get_width(captureSource_) > 0 &&
@@ -242,9 +289,8 @@ void WindowsCaptureBackend::cover()
 void WindowsCaptureBackend::reveal()
 {
 	if (!shieldItem_) {
-		if (captureItem_) {
-			obs_sceneitem_set_visible(captureItem_, false);
-		}
+		/* No shield (full-screen mode): nothing to unshield, keep the
+		 * capture visible. */
 		return;
 	}
 

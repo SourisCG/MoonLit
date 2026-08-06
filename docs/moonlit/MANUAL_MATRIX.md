@@ -56,6 +56,9 @@ Requires a real game window (windowed and borderless).
 | C5 | Close the game: replay stops, capture cleared, dashboard returns to "Sin juego detectado" | |
 | C6 | Protected content (DRM video) stays black and does not crash | |
 | C7 | DXGI monitor fallback engages when WGC cannot capture (verify via "DXGI monitor fallback" status) | |
+| C8 | Full-screen mode: toggle "Pantalla completa" with no game running starts the replay ("Buffer activo", status "pantalla completa"); Alt+Tab keeps recording; saving produces a valid clip with desktop audio | PASS 2026-08-05 (clip h264 1280x720 + aac, 8.9 s) |
+| C9 | Manual game selection: "Seleccionar juego…" lists visible windows; picking a non-launcher process (e.g. a browser) captures it (WGC + process audio), "Juego: <exe>" shown, clip saves; process closes → returns to auto | PASS 2026-08-05 (Brave captured, clip 18.6 s) |
+| C10 | "Recordar este juego" adds the exe to MoonLit.GameList (editable in Ajustes); the detector re-detects the remembered game by itself when foregrounded | |
 
 ## Audio
 

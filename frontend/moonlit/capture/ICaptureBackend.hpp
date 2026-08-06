@@ -23,6 +23,10 @@ public:
 	/* Swaps the capture source for a full-monitor DXGI capture. */
 	virtual bool attachMonitorFallback(const CaptureTarget &target) = 0;
 
+	/* Full-screen mode: captures the whole primary monitor directly, with
+	 * no window target, no shield and no game process audio. */
+	virtual bool attachFullscreen() = 0;
+
 	virtual bool hasCapture() const = 0;
 	virtual bool hasVideo() const = 0;
 	virtual CaptureHealth health() const = 0;

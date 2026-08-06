@@ -18,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
@@ -287,6 +288,22 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 		this);
 	deviceVolumeNote->setWordWrap(true);
 
+	gameListWidget = new QListWidget(this);
+	gameListWidget->setFixedHeight(110);
+	removeGameButton = new QPushButton(QStringLiteral("Quitar seleccionado"), this);
+	removeGameButton->setEnabled(false);
+	connect(gameListWidget, &QListWidget::itemSelectionChanged, this, [this]() {
+		removeGameButton->setEnabled(gameListWidget->currentRow() >= 0);
+	});
+	connect(removeGameButton, &QPushButton::clicked, this, [this]() {
+		delete gameListWidget->takeItem(gameListWidget->currentRow());
+	});
+	QLabel *gameListNote = new QLabel(
+		QStringLiteral("Juegos recordados tras seleccionarlos manualmente; se detectan solos "
+			       "cuando están en primer plano."),
+		this);
+	gameListNote->setWordWrap(true);
+
 	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
 	QLabel *aboutText = new QLabel(
 		QStringLiteral("MoonLit 1.0.0\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
@@ -326,6 +343,9 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	form->addRow(QStringLiteral("Volumen de salida:"), desktopVolumeRow);
 	form->addRow(deviceVolumeNote);
 	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
+	form->addRow(QStringLiteral("Juegos recordados:"), gameListWidget);
+	form->addRow(removeGameButton);
+	form->addRow(gameListNote);
 	form->addRow(autoStart);
 	form->addRow(clipSound);
 	form->addRow(noiseSuppression);
@@ -389,6 +409,15 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 
 	clipSound->setChecked(config_get_bool(config, "MoonLit", "ClipSound"));
 	noiseSuppression->setChecked(config_get_bool(config, "MoonLit", "NoiseSuppression"));
+
+	gameListWidget->clear();
+	const char *gameList = config_get_string(config, "MoonLit", "GameList");
+	if (gameList && *gameList) {
+		const QStringList entries = QString::fromUtf8(gameList).split(QChar('\n'), Qt::SkipEmptyParts);
+		for (const QString &entry : entries) {
+			gameListWidget->addItem(entry);
+		}
+	}
 
 	PopulateVolumeRow(micVolumeLabel, micVolumeSlider, micMute, &micEndpoint_,
 			  MoonLit::EndpointVolume::Direction::Capture, micDevice->currentData().toString());
@@ -456,6 +485,20 @@ void MoonLitSettingsDialog::SaveValues()
 
 	config_set_bool(config, "MoonLit", "ClipSound", clipSound->isChecked());
 	config_set_bool(config, "MoonLit", "NoiseSuppression", noiseSuppression->isChecked());
+
+	QStringList gameList;
+	for (int row = 0; row < gameListWidget->count(); ++row) {
+		const QString entry = gameListWidget->item(row)->text().trimmed();
+		if (!entry.isEmpty()) {
+			gameList.append(entry);
+		}
+	}
+	if (gameList.isEmpty()) {
+		config_remove_value(config, "MoonLit", "GameList");
+	} else {
+		config_set_string(config, "MoonLit", "GameList", gameList.join(QChar('\n')).toUtf8().constData());
+	}
+
 	config_save_safe(config, "tmp", nullptr);
 	SetAutoStartEnabled(autoStart->isChecked());
 	main_->ResetOutputs();

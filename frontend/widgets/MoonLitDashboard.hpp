@@ -38,6 +38,8 @@ public:
 	void setClipSaved(const QString &path);
 	void setClipError(const QString &message);
 	void setRecentClips(const QVector<MoonLit::Clip> &clips);
+	/* Reflects the capture mode in the mode buttons without re-emitting. */
+	void setFullscreenActive(bool active);
 	MoonLitMixer *mixer() const { return mixer_; }
 
 signals:
@@ -46,6 +48,8 @@ signals:
 	void settingsRequested();
 	void libraryRequested();
 	void recentClipRequested(const QString &id);
+	void fullscreenModeRequested(bool enabled);
+	void gamePickRequested();
 
 private:
 	void rebuildRecentClips();
@@ -57,6 +61,9 @@ private:
 	QLabel *clipNoticeLabel = nullptr;
 	MoonLitRecordButton *recordButton = nullptr;
 	QPushButton *saveButton = nullptr;
+	QPushButton *autoModeButton = nullptr;
+	QPushButton *fullscreenButton = nullptr;
+	QPushButton *pickGameButton = nullptr;
 	QTimer *noticeTimer = nullptr;
 	QGridLayout *recentGrid = nullptr;
 	QVector<MoonLit::Clip> recentClips_;

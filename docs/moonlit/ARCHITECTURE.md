@@ -225,6 +225,40 @@ Commits: `f2fac1087`, `0f1431030`, `895c6d8be`, `3696b1a64`.
   cada widget de la fila al crearla. No afecta al layout (los hijos se
   muestran con el padre); es el idiom estándar de Qt.
 
+## Session 2026-08-05 (night) — Modo manual: pantalla completa + selección de proceso
+
+- **Modos de captura** (`CaptureController::CaptureMode`): `Auto`
+  (detector), `Fullscreen` (monitor primario entero, sin juego) y `Manual`
+  (proceso fijado por el usuario, detector bloqueado).
+  - `setFullscreenMode(bool)`: frena el detector, `attachFullscreen()`
+    (monitor_capture DXGI del monitor primario, sin shield) y el buffer
+    arranca vía la rama `monitorFallback` del state machine (sin pausa por
+    Alt+Tab; pista 2 silenciosa). Al desactivar: stop del buffer + labels
+    reseteados + detector vuelve.
+  - `selectGame(MoonLitTarget)`: `configure()` directo (WGC + audio del
+    proceso en pista 2); el detector se detiene y el health tick vigila la
+    vida del proceso (`WindowsProcessUtil::processAlive`); si muere →
+    `manualTargetLost()`: stop buffer, clear, vuelve a Auto.
+- **`WindowsProcessUtil.{hpp,cpp}`**: helpers compartidos (extraídos del
+  detector): `readWindowTarget`, `processAlive`, `enumerateTopLevelTargets`
+  (EnumWindows + dedupe por proceso), `isIgnoredExecutable`. El matching
+  puro de `GameList` vive en `GameListMatch.hpp` (core, testeable).
+- **`MoonLitGamePickerDialog`**: lista filtrable de ventanas visibles
+  (proceso — título), doble click o "Capturar", checkbox "Recordar este
+  juego" → `MoonLit.GameList` (config, lista por líneas). La lista se
+  edita en Ajustes ("Juegos recordados") y el detector la aplica en
+  `isLikelyGame` (además de los paths de launchers).
+- **OBS 32 gotcha**: `monitor_capture` identifica el monitor por
+  `monitor_id` (string, p. ej. `\\.\DISPLAY1`), NO por índice — sin el id
+  queda "DUMMY" y nunca captura. `attachFullscreen` resuelve el primario
+  con `MonitorFromPoint` + `GetMonitorInfoW` → `szDevice`.
+- **`reveal()` sin shield** ocultaba el capture item (comportamiento del
+  path WGC donde el shield siempre existe) → en pantalla completa la fuente
+  perdía frames tras el primer reveal y el buffer quedaba en
+  "inicializando". Fix: sin shield, `reveal()` es no-op.
+- Verificado: fullscreen → buffer activo → clip h264 1280x720 con audio
+  real; selección manual de Brave (WGC + process loopback) → clip 18.6 s.
+
 ## Known notes
 
 - ExportQueue: el widget dueño llama `shutdown()` + `delete`; `shutdown()`

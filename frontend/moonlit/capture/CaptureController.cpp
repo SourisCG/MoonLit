@@ -8,7 +8,10 @@
 #include <widgets/MoonLitGameDetector.hpp>
 #include <widgets/MoonLitMixer.hpp>
 
+#include <QDir>
 #include <QTimer>
+
+#include <algorithm>
 
 namespace MoonLit {
 
@@ -42,6 +45,7 @@ void CaptureController::start()
 
 	backend_ = std::make_unique<WindowsCaptureBackend>(host_);
 	refreshMixer();
+	reloadGameList();
 
 	detector_ = new MoonLitGameDetector(this);
 	connect(detector_, &MoonLitGameDetector::targetDetected, this, &CaptureController::onTargetDetected);
@@ -131,13 +135,33 @@ CaptureTarget CaptureController::toCaptureTarget(const MoonLitTarget &target) co
 	return result;
 }
 
+MoonLitTarget CaptureController::toMoonLitTarget(const CaptureTarget &target) const
+{
+	MoonLitTarget result;
+	if (const auto *handle = std::get_if<uintptr_t>(&target.window)) {
+		result.window = *handle;
+	}
+	result.processId = static_cast<quint32>(target.processId);
+	result.creationTime = target.creationTimeNs;
+	result.title = QString::fromStdString(target.name);
+	result.executablePath = QString::fromStdString(target.executablePath);
+	result.executable = result.executablePath.section(QChar('\\'), -1);
+	return result;
+}
+
 void CaptureController::onTargetDetected(const MoonLitTarget &target)
 {
+	if (mode_ != CaptureMode::Auto) {
+		return;
+	}
 	configure(toCaptureTarget(target));
 }
 
 void CaptureController::onTargetFocusChanged(bool focused)
 {
+	if (mode_ != CaptureMode::Auto) {
+		return;
+	}
 	focused_ = focused;
 	if (backend_) {
 		backend_->cover();
@@ -153,6 +177,9 @@ void CaptureController::onTargetFocusChanged(bool focused)
 
 void CaptureController::onTargetLost()
 {
+	if (mode_ != CaptureMode::Auto) {
+		return;
+	}
 	focused_ = false;
 	setGame(QString());
 	setStatus(QStringLiteral("juego cerrado"));
@@ -169,6 +196,15 @@ void CaptureController::onTargetLost()
 void CaptureController::onHealthTick()
 {
 	if (!host_ || host_->isClosing() || !focused_) {
+		return;
+	}
+
+	/* Manual mode owns the target liveness check (the detector is stopped):
+	 * when the pinned process dies, tear the capture down and return to the
+	 * automatic mode. */
+	if (mode_ == CaptureMode::Manual && target_.isValid() &&
+	    !WindowsProcessUtil::processAlive(toMoonLitTarget(target_))) {
+		manualTargetLost();
 		return;
 	}
 
@@ -210,8 +246,10 @@ void CaptureController::onHealthTick()
 		if (backend_) {
 			backend_->reveal();
 		}
-		setStatus(monitorFallback_ ? QStringLiteral("DXGI monitor fallback")
-					  : QStringLiteral("WGC de ventana"));
+		setStatus(mode_ == CaptureMode::Fullscreen
+				  ? QStringLiteral("pantalla completa")
+				  : monitorFallback_ ? QStringLiteral("DXGI monitor fallback")
+						     : QStringLiteral("WGC de ventana"));
 		if (!host_->replayBufferActive() && !replayStartRequested_ && !replayAutoBlocked_) {
 			replayRetryTimer_.restart();
 			replayStartRequested_ = true;
@@ -231,7 +269,8 @@ void CaptureController::onHealthTick()
 		if (backend_) {
 			backend_->reveal();
 		}
-		setStatus(QStringLiteral("DXGI monitor fallback"));
+		setStatus(mode_ == CaptureMode::Fullscreen ? QStringLiteral("pantalla completa")
+							  : QStringLiteral("DXGI monitor fallback"));
 		break;
 	case TickAction::FallbackBlocked:
 		if (backend_) {
@@ -275,6 +314,148 @@ void CaptureController::configure(const CaptureTarget &target)
 	setGame(QString::fromStdString(target.executablePath));
 	setStatus(QStringLiteral("captura de ventana inicializando"));
 	refreshMixer();
+}
+
+void CaptureController::setFullscreenMode(bool enabled)
+{
+	if ((mode_ == CaptureMode::Fullscreen) == enabled) {
+		return;
+	}
+
+	if (enabled) {
+		mode_ = CaptureMode::Fullscreen;
+		if (detector_) {
+			detector_->stop();
+		}
+		clear();
+		focused_ = true;
+		monitorFallback_ = true;
+		replayStartRequested_ = false;
+		startFailures_ = 0;
+		replayAutoBlocked_ = false;
+		target_ = {};
+		target_.name = "Pantalla completa";
+
+		if (!backend_ || !backend_->attachFullscreen()) {
+			setStatus(QStringLiteral("pantalla completa no disponible"));
+			mode_ = CaptureMode::Auto;
+			if (detector_) {
+				detector_->start();
+			}
+			if (dashboard_) {
+				dashboard_->setFullscreenActive(false);
+			}
+			return;
+		}
+
+		setGame(QStringLiteral("Pantalla completa"));
+		setStatus(QStringLiteral("pantalla completa inicializando"));
+		refreshMixer();
+	} else {
+		mode_ = CaptureMode::Auto;
+		if (host_ && host_->replayBufferActive()) {
+			host_->stopReplayBuffer();
+		}
+		clear();
+		setGame(QString());
+		setStatus(QStringLiteral("esperando juego"));
+		if (detector_) {
+			detector_->start();
+		}
+	}
+	if (dashboard_) {
+		dashboard_->setFullscreenActive(enabled);
+	}
+}
+
+void CaptureController::selectGame(const MoonLitTarget &target)
+{
+	if (!target.isValid()) {
+		return;
+	}
+
+	mode_ = CaptureMode::Manual;
+	if (detector_) {
+		detector_->stop();
+	}
+	configure(toCaptureTarget(target));
+	if (dashboard_) {
+		dashboard_->setFullscreenActive(false);
+	}
+}
+
+void CaptureController::rememberGame(const QString &executablePath, bool remember)
+{
+	config_t *config = host_ ? host_->activeConfig() : nullptr;
+	if (!config) {
+		return;
+	}
+
+	QStringList list = gameListFromConfig();
+	const QString canonical = QDir::fromNativeSeparators(executablePath);
+	if (remember) {
+		bool exists = false;
+		for (const QString &entry : list) {
+			if (QDir::fromNativeSeparators(entry).compare(canonical, Qt::CaseInsensitive) == 0) {
+				exists = true;
+				break;
+			}
+		}
+		if (!exists) {
+			list.append(executablePath);
+		}
+	} else {
+		list.erase(std::remove_if(list.begin(), list.end(),
+					  [&canonical](const QString &entry) {
+						  return QDir::fromNativeSeparators(entry)
+								 .compare(canonical, Qt::CaseInsensitive) == 0;
+					  }),
+			   list.end());
+	}
+
+	config_set_string(config, "MoonLit", "GameList", list.join(QChar('\n')).toUtf8().constData());
+	reloadGameList();
+}
+
+void CaptureController::reloadGameList()
+{
+	if (detector_) {
+		detector_->setManualGameList(gameListFromConfig());
+	}
+}
+
+QStringList CaptureController::gameListFromConfig() const
+{
+	config_t *config = host_ ? host_->activeConfig() : nullptr;
+	if (!config) {
+		return {};
+	}
+	const char *raw = config_get_string(config, "MoonLit", "GameList");
+	if (!raw || !*raw) {
+		return {};
+	}
+	return QString::fromUtf8(raw).split(QChar('\n'), Qt::SkipEmptyParts);
+}
+
+void CaptureController::manualTargetLost()
+{
+	mode_ = CaptureMode::Auto;
+	setGame(QString());
+	setStatus(QStringLiteral("proceso cerrado"));
+	/* Hide the capture before requesting the asynchronous output stop. */
+	if (backend_) {
+		backend_->shield();
+	}
+	if (host_ && host_->replayBufferActive()) {
+		host_->stopReplayBuffer();
+	}
+	clear();
+	if (detector_) {
+		detector_->start();
+	}
+	if (dashboard_) {
+		dashboard_->setFullscreenActive(false);
+	}
 }
 
 void CaptureController::tryMonitorFallback()

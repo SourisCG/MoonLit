@@ -14,24 +14,13 @@
 
 #pragma once
 
-#include <QObject>
+#include <moonlit/capture/WindowsProcessUtil.hpp>
+#include <moonlit/capture/WindowsTarget.hpp>
+
 #include <QElapsedTimer>
-#include <QString>
+#include <QObject>
+#include <QStringList>
 #include <QTimer>
-
-struct MoonLitTarget {
-	quintptr window = 0;
-	quint32 processId = 0;
-	quint64 creationTime = 0;
-	QString title;
-	QString windowClass;
-	QString executable;
-	QString executablePath;
-
-	bool isValid() const { return window != 0 && processId != 0 && creationTime != 0; }
-};
-
-Q_DECLARE_METATYPE(MoonLitTarget)
 
 class MoonLitGameDetector final : public QObject {
 	Q_OBJECT
@@ -43,6 +32,10 @@ public:
 	void stop();
 	bool active() const { return activeTarget_.isValid(); }
 
+	/* Remembered games (MoonLit.GameList) the detector should accept even
+	 * when the executable is not under a known launcher path. */
+	void setManualGameList(const QStringList &gameList) { gameList_ = gameList; }
+
 signals:
 	void targetDetected(const MoonLitTarget &target);
 	void targetFocusChanged(bool focused);
@@ -52,15 +45,14 @@ private slots:
 	void poll();
 
 private:
-	static bool readTarget(quintptr window, MoonLitTarget &target);
 	static bool sameIdentity(const MoonLitTarget &left, const MoonLitTarget &right);
-	static bool isLikelyGame(const MoonLitTarget &target);
-	static bool isProcessAlive(const MoonLitTarget &target);
+	bool isLikelyGame(const MoonLitTarget &target) const;
 
 	QTimer timer_;
 	QElapsedTimer monotonicTimer_;
 	MoonLitTarget pendingTarget_;
 	MoonLitTarget activeTarget_;
+	QStringList gameList_;
 	qint64 pendingSinceMs_ = 0;
 	bool targetFocused_ = false;
 };

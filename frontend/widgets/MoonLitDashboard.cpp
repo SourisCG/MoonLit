@@ -190,6 +190,43 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	header->addWidget(settingsButton);
 	root->addLayout(header);
 
+	/* Capture mode row: automatic game detection, full-screen capture or a
+	 * manually pinned process (Medal-style). */
+	auto *modeRow = new QHBoxLayout();
+	modeRow->setSpacing(8);
+	auto *modeHint = makeLabel(QStringLiteral("Capturar:"), this);
+	modeHint->setObjectName(QStringLiteral("moonlitHint"));
+	autoModeButton = new QPushButton(QStringLiteral("Juego automático"), this);
+	autoModeButton->setCheckable(true);
+	autoModeButton->setChecked(true);
+	fullscreenButton = new QPushButton(QStringLiteral("Pantalla completa"), this);
+	fullscreenButton->setCheckable(true);
+	pickGameButton = new QPushButton(QStringLiteral("Seleccionar juego…"), this);
+	modeRow->addWidget(modeHint);
+	modeRow->addWidget(autoModeButton);
+	modeRow->addWidget(fullscreenButton);
+	modeRow->addWidget(pickGameButton);
+	modeRow->addStretch(1);
+	root->addLayout(modeRow);
+
+	connect(autoModeButton, &QPushButton::toggled, this, [this](bool checked) {
+		if (checked) {
+			fullscreenButton->blockSignals(true);
+			fullscreenButton->setChecked(false);
+			fullscreenButton->blockSignals(false);
+			emit fullscreenModeRequested(false);
+		}
+	});
+	connect(fullscreenButton, &QPushButton::toggled, this, [this](bool checked) {
+		if (checked) {
+			autoModeButton->blockSignals(true);
+			autoModeButton->setChecked(false);
+			autoModeButton->blockSignals(false);
+		}
+		emit fullscreenModeRequested(checked);
+	});
+	connect(pickGameButton, &QPushButton::clicked, this, &MoonLitDashboard::gamePickRequested);
+
 	/* Center: the big record button and the current state, stacked with
 	 * explicit sizes so the labels can never overlap the button. */
 	auto *center = new QVBoxLayout();
@@ -285,6 +322,16 @@ void MoonLitDashboard::setDetectedGame(const QString &name)
 {
 	gameLabel->setText(name.isEmpty() ? QStringLiteral("Sin juego detectado")
 						 : QStringLiteral("Juego: %1").arg(name));
+}
+
+void MoonLitDashboard::setFullscreenActive(bool active)
+{
+	autoModeButton->blockSignals(true);
+	fullscreenButton->blockSignals(true);
+	autoModeButton->setChecked(!active);
+	fullscreenButton->setChecked(active);
+	autoModeButton->blockSignals(false);
+	fullscreenButton->blockSignals(false);
 }
 
 void MoonLitDashboard::setCaptureStatus(const QString &status)

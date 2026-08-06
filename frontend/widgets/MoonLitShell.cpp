@@ -14,6 +14,7 @@
 
 #include "OBSBasic.hpp"
 #include "MoonLitDashboard.hpp"
+#include "MoonLitGamePickerDialog.hpp"
 #include "MoonLitLibraryWidget.hpp"
 #include "MoonLitMixer.hpp"
 
@@ -123,7 +124,33 @@ void OBSBasic::InitializeMoonLitShell()
 		connect(moonlitDashboard, &MoonLitDashboard::saveClipRequested, this, &OBSBasic::ReplayBufferSave);
 		connect(moonlitDashboard, &MoonLitDashboard::settingsRequested, this, [this]() {
 			MoonLitSettingsDialog dialog(this);
-			dialog.exec();
+			if (dialog.exec() == QDialog::Accepted && moonlitCaptureController) {
+				/* Ajustes can edit the remembered game list. */
+				moonlitCaptureController->reloadGameList();
+			}
+		});
+		connect(moonlitDashboard, &MoonLitDashboard::fullscreenModeRequested, this,
+			[this](bool enabled) {
+				if (moonlitCaptureController) {
+					moonlitCaptureController->setFullscreenMode(enabled);
+				}
+			});
+		connect(moonlitDashboard, &MoonLitDashboard::gamePickRequested, this, [this]() {
+			if (!moonlitCaptureController) {
+				return;
+			}
+			MoonLitGamePickerDialog dialog(this);
+			if (dialog.exec() != QDialog::Accepted) {
+				return;
+			}
+			const MoonLitTarget target = dialog.selectedTarget();
+			if (!target.isValid()) {
+				return;
+			}
+			if (dialog.rememberRequested()) {
+				moonlitCaptureController->rememberGame(target.executablePath, true);
+			}
+			moonlitCaptureController->selectGame(target);
 		});
 		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, &OBSBasic::ShowMoonLitLibrary);
 		connect(moonlitLibrary, &MoonLitLibraryWidget::backRequested, this, &OBSBasic::ShowMoonLitDashboard);

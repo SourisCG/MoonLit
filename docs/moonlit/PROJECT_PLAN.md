@@ -522,6 +522,25 @@ Resultado: 45 tests verdes; verificado por UIA — mixer 152px con 4 pistas,
 persistencia 42% sobrevive reinicio, sliders de Ajustes leen/escriben el
 volumen real del dispositivo (70→55→70 %).
 
+## P13 - Modo manual de captura (2026-08-05, noche)
+
+Entregables: modo **Pantalla completa** (toggle en el dashboard, DXGI del
+monitor primario, sin pausa por Alt+Tab, buffer automático vía la rama
+monitorFallback del state machine) y **Selección manual de juego**
+(diálogo con lista filtrable de ventanas visibles, captura WGC + audio del
+proceso, detector bloqueado y vigilancia de vida del proceso). Los juegos
+seleccionados con "Recordar este juego" van a `MoonLit.GameList` y el
+detector los reconoce solo después; la lista se edita en Ajustes.
+`WindowsProcessUtil` (extraído del detector) + `MoonLitGamePickerDialog` +
+fila de modo en el dashboard.
+
+Fijados dos gotchas: `monitor_capture` de OBS 32 requiere `monitor_id`
+(string) o no captura nada; y `reveal()` sin shield ocultaba el capture
+item (pantalla completa quedaba "inicializando" pese al buffer activo).
+
+Resultado: 48 tests verdes; verificado — fullscreen graba y guarda clip
+(h264 + audio), selección manual de Brave graba con WGC + loopback.
+
 ## GitHub Release Procedure
 
 The local GitHub CLI is currently unauthenticated. Before publication:

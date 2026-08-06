@@ -4,6 +4,7 @@ add_executable(
   EncoderResolverTests.cpp
   ExportMathTests.cpp
   ExportQueueTests.cpp
+  GameListMatchTests.cpp
   JsonImportTests.cpp
   MediaTests.cpp
   MoonLitPathsTests.cpp

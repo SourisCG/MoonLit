@@ -90,6 +90,23 @@ MOONLIT_TEST(capture_machine_handles_monitor_fallback_lifecycle)
 	return ok;
 }
 
+MOONLIT_TEST(capture_machine_fullscreen_mode_starts_replay)
+{
+	CaptureStateMachine machine;
+	CaptureTickInput input = idleInput();
+	/* Full-screen mode: monitor capture installed, no window target. */
+	input.hasCaptureSource = true;
+	input.monitorFallback = true;
+	input.targetValid = false;
+	input.fallbackReady = false;
+	bool ok = expect(machine.decideTick(input) == TickAction::StatusInitializing, "fullscreen initializing", failure);
+	input.fallbackReady = true;
+	ok &= expect(machine.decideTick(input) == TickAction::StartReplay, "fullscreen starts replay", failure);
+	input.replayActive = true;
+	ok &= expect(machine.decideTick(input) == TickAction::MonitorFallbackReady, "fullscreen stays recording", failure);
+	return ok;
+}
+
 MOONLIT_TEST(capture_machine_ignores_tick_while_closing_or_unfocused)
 {
 	CaptureStateMachine machine;

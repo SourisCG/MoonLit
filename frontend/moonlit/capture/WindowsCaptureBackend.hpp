@@ -19,6 +19,7 @@ public:
 	BackendKind kind() const override { return BackendKind::Wgc; }
 	bool attachWindow(const CaptureTarget &target) override;
 	bool attachMonitorFallback(const CaptureTarget &target) override;
+	bool attachFullscreen() override;
 	bool hasCapture() const override { return captureSource_ != nullptr; }
 	bool hasVideo() const override;
 	CaptureHealth health() const override;
