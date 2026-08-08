@@ -19,6 +19,26 @@
 #include <windows.h>
 #endif
 
+#ifdef _WIN32
+static bool isFullscreenWindow(HWND window)
+{
+	if (!window || !IsWindow(window) || IsIconic(window) || !IsWindowVisible(window)) {
+		return false;
+	}
+	const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+	if (!monitor) {
+		return false;
+	}
+	MONITORINFO info = {};
+	info.cbSize = sizeof(info);
+	RECT windowRect = {};
+	if (!GetMonitorInfoW(monitor, &info) || !GetWindowRect(window, &windowRect)) {
+		return false;
+	}
+	return EqualRect(&info.rcMonitor, &windowRect);
+}
+#endif
+
 MoonLitGameDetector::MoonLitGameDetector(QObject *parent) : QObject(parent)
 {
 	monotonicTimer_.start();
@@ -145,14 +165,34 @@ bool MoonLitGameDetector::isLikelyGame(const MoonLitTarget &target) const
 {
 #ifdef _WIN32
 	const QString path = target.executablePath.toLower();
-	const bool knownLauncherPath = path.contains(QStringLiteral("\\steamapps\\common\\")) ||
-				       path.contains(QStringLiteral("\\epic games\\")) ||
-				       path.contains(QStringLiteral("\\gog galaxy\\games\\")) ||
-				       path.contains(QStringLiteral("\\games\\"));
-	if (knownLauncherPath) {
+	static const QStringList knownLauncherPaths = {
+		QStringLiteral("\\steamapps\\common\\"),
+		QStringLiteral("\\steamapps\\"),
+		QStringLiteral("\\epic games\\"),
+		QStringLiteral("\\gog galaxy\\games\\"),
+		QStringLiteral("\\battle.net\\"),
+		QStringLiteral("\\world of warcraft\\"),
+		QStringLiteral("\\riot games\\"),
+		QStringLiteral("\\ubisoft game launcher\\"),
+		QStringLiteral("\\ubisoft connect\\"),
+		QStringLiteral("\\ea games\\"),
+		QStringLiteral("\\ea app\\"),
+		QStringLiteral("\\windowsapps\\"),
+		QStringLiteral("\\itch.io\\apps\\"),
+		QStringLiteral("\\games\\"),
+	};
+	for (const QString &fragment : knownLauncherPaths) {
+		if (path.contains(fragment)) {
+			return true;
+		}
+	}
+	if (MoonLit::WindowsProcessUtil::matchesManualGameList(target.executablePath, gameList_)) {
 		return true;
 	}
-	return MoonLit::WindowsProcessUtil::matchesManualGameList(target.executablePath, gameList_);
+	/* A foreground window covering a full monitor is treated as a game:
+	 * covers launcher-less installs, emulators and exclusive-fullscreen
+	 * titles that do not live under a known launcher directory. */
+	return isFullscreenWindow(reinterpret_cast<HWND>(target.window));
 #else
 	Q_UNUSED(target);
 	return false;

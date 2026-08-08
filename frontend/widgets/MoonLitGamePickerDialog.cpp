@@ -37,7 +37,7 @@ MoonLitGamePickerDialog::MoonLitGamePickerDialog(QWidget *parent) : QDialog(pare
 		"QPushButton:disabled { color: %7; }"
 		"QCheckBox { color: %1; }")
 				      .arg(css(text()), css(bgSurface()), css(border()), css(bgElevated()),
-					   QColor(0x24, 0x25, 0x2f).name(), css(accent()), css(textMuted())));
+					   css(bgDeep()), css(accentHover()), css(textMuted())));
 
 	auto *layout = new QVBoxLayout(this);
 	layout->setSpacing(10);

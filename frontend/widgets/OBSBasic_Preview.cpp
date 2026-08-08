@@ -263,8 +263,15 @@ void OBSBasic::on_previewDisabledWidget_customContextMenuRequested()
 void OBSBasic::EnablePreviewDisplay(bool enable)
 {
 	obs_display_set_enabled(ui->preview->GetDisplay(), enable);
+#ifdef MOONLIT_BUILD
+	/* MoonLit replaces the stock preview chrome with its own surface; the
+	 * preview container and the "preview disabled" panel stay permanently
+	 * hidden, otherwise restoring from the tray re-shows them next to the
+	 * MoonLit UI. */
+#else
 	ui->previewContainer->setVisible(enable);
 	ui->previewDisabledWidget->setVisible(!enable);
+#endif
 }
 
 void OBSBasic::TogglePreview()

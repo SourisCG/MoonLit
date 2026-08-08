@@ -12,22 +12,26 @@
 #include <QColor>
 #include <QString>
 
-/* Single source of truth for the MoonLit look: a Dracula-inspired dark
- * palette with the MoonLit purple as the brand accent. All widgets build
- * their stylesheets from these constants so the theme stays consistent. */
+/* Single source of truth for the MoonLit look: a night-sky palette built on
+ * the five brand colors (asphalt #080303, aubergine #37060d, big stone
+ * #13232f, night rider #110808, ebony #111627) with warm white text and a
+ * few derived interaction tones. All widgets build their stylesheets from
+ * these constants so the theme stays consistent. */
 namespace MoonLitTheme {
 
-inline QColor bgDeep() { return QColor(0x1e, 0x1f, 0x29); } /* window / dashboard */
-inline QColor bgSurface() { return QColor(0x28, 0x2a, 0x36); } /* cards, panels, inputs */
-inline QColor bgElevated() { return QColor(0x34, 0x37, 0x46); } /* hover / selection */
-inline QColor border() { return QColor(0x44, 0x47, 0x5a); } /* Dracula current-line */
-inline QColor text() { return QColor(0xf8, 0xf8, 0xf2); } /* Dracula foreground */
-inline QColor textMuted() { return QColor(0x62, 0x72, 0xa4); } /* Dracula comment */
-inline QColor accent() { return QColor(0x76, 0x67, 0xf5); } /* MoonLit purple */
-inline QColor accentHover() { return QColor(0x8b, 0x7c, 0xf9); }
-inline QColor rec() { return QColor(0xff, 0x55, 0x55); } /* Dracula red */
-inline QColor ok() { return QColor(0x50, 0xfa, 0x7b); } /* Dracula green */
-inline QColor warning() { return QColor(0xff, 0xb8, 0x6c); } /* Dracula orange */
+inline QColor bgDeep() { return QColor(0x08, 0x03, 0x03); } /* asphalt: window / sky behind everything */
+inline QColor bgSurface() { return QColor(0x11, 0x16, 0x27); } /* ebony: cards, panels, inputs */
+inline QColor bgElevated() { return QColor(0x13, 0x23, 0x2f); } /* big stone: hover / selection */
+inline QColor border() { return QColor(0x37, 0x06, 0x0d); } /* aubergine: borders */
+inline QColor accent() { return QColor(0x37, 0x06, 0x0d); } /* aubergine: brand accent */
+inline QColor accentHover() { return QColor(0x57, 0x11, 0x1f); } /* lifted aubergine: interactive hover */
+inline QColor night() { return QColor(0x11, 0x08, 0x08); } /* night rider: pressed / deep panels */
+inline QColor text() { return QColor(0xf2, 0xe9, 0xe9); } /* warm white */
+inline QColor textMuted() { return QColor(0x8b, 0x7d, 0x80); } /* warm grey */
+inline QColor star() { return QColor(0xff, 0xf2, 0xea); } /* starfield white */
+inline QColor rec() { return QColor(0xe5, 0x48, 0x4d); } /* recording red */
+inline QColor ok() { return QColor(0x6e, 0xe7, 0xa0); } /* saved green */
+inline QColor warning() { return QColor(0xf5, 0xb8, 0x6c); } /* warning orange */
 
 inline QString css(const QColor &color)
 {

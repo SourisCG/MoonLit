@@ -1,8 +1,13 @@
 #include "MoonLitSettingsDialog.hpp"
 
+#include <moonlit/hotkeys/HotkeyManager.hpp>
 #include <moonlit/output/EncoderResolver.hpp>
 #include <moonlit/platform/IPlatformServices.hpp>
 
+#include <settings/OBSHotkeyEdit.hpp>
+
+#include <widgets/MoonLitStarfield.hpp>
+#include <widgets/MoonLitTheme.hpp>
 #include <widgets/OBSBasic.hpp>
 
 #include <obs.h>
@@ -14,16 +19,21 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <string>
@@ -155,13 +165,88 @@ std::string EncoderIdToToken(const std::string &id)
 	return id;
 }
 
+/* A tab page for the settings dialog: a scroll area wrapping a form, so
+ * small screens scroll inside the tab instead of the dialog growing past
+ * the screen. The viewport stays transparent so the starfield shows. */
+struct SettingsTab {
+	QScrollArea *scroll = nullptr;
+	QWidget *page = nullptr;
+	QFormLayout *form = nullptr;
+};
+
+SettingsTab MakeSettingsTab(QWidget *parent)
+{
+	SettingsTab tab;
+	tab.scroll = new QScrollArea(parent);
+	tab.scroll->setWidgetResizable(true);
+	tab.scroll->setFrameShape(QFrame::NoFrame);
+	tab.scroll->viewport()->setAutoFillBackground(false);
+	tab.page = new QWidget;
+	tab.page->setObjectName(QStringLiteral("settingsPage"));
+	tab.form = new QFormLayout(tab.page);
+	tab.form->setContentsMargins(16, 12, 16, 12);
+	tab.form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	tab.scroll->setWidget(tab.page);
+	return tab;
+}
+
 } /* namespace */
 
-MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : QDialog(parent), main_(main)
+MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, MoonLit::HotkeyManager *hotkeys,
+					     QWidget *parent)
+	: QDialog(parent), main_(main), hotkeys_(hotkeys)
 {
+	using namespace MoonLitTheme;
 	setWindowTitle(QStringLiteral("Ajustes de MoonLit"));
 	setModal(true);
-	setMinimumWidth(420);
+	setObjectName(QStringLiteral("moonlitSettingsDialog"));
+	setStyleSheet(QStringLiteral(
+		"QDialog#moonlitSettingsDialog { background: #080303; }"
+		"QLabel { color: %1; }"
+		"QGroupBox { border: 1px solid %2; border-radius: 8px; margin-top: 10px;"
+		" padding: 8px; color: %1; }"
+		"QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: %1; }"
+		"QLineEdit, QSpinBox, QComboBox, QListWidget { background: %3; color: %1;"
+		" border: 1px solid %2; border-radius: 7px; padding: 6px; }"
+		"QComboBox::drop-down { border: 0; }"
+		"QComboBox QAbstractItemView { background: %4; color: %1; selection-background-color: %5; }"
+		"QListWidget::item { padding: 6px; border-bottom: 1px solid %2; }"
+		"QListWidget::item:selected { background: %4; color: %1; }"
+		"QPushButton { min-height: 30px; padding: 0 12px; border: 1px solid %2;"
+		" border-radius: 7px; background: %3; color: %1; }"
+		"QPushButton:hover { background: %4; border-color: %6; }"
+		"QPushButton:pressed { background: %7; }"
+		"QPushButton:disabled { color: %8; background: %3; }"
+		"QCheckBox { color: %1; }"
+		"QSlider::groove:horizontal { height: 4px; background: %2; border-radius: 2px; }"
+		"QSlider::handle:horizontal { width: 12px; margin: -5px 0; border-radius: 6px;"
+		" background: %6; }"
+		"QTabWidget::pane { border: 1px solid %2; border-radius: 8px; top: -1px; background: transparent; }"
+		"QTabBar::tab { background: transparent; color: %8; padding: 8px 16px;"
+		" border: 0; border-top-left-radius: 8px; border-top-right-radius: 8px;"
+		" margin-right: 2px; font-weight: 500; }"
+		"QTabBar::tab:hover { color: %1; background: %4; }"
+		"QTabBar::tab:selected { color: %1; background: %3; border-bottom: 2px solid %6; }"
+		"QScrollArea { background: transparent; border: none; }"
+		"QWidget#settingsPage { background: transparent; }"
+		"QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }"
+		"QScrollBar::handle:vertical { background: %4; border-radius: 4px; min-height: 30px; }"
+		"QScrollBar::handle:vertical:hover { background: %6; }"
+		"QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }"
+		"QScrollBar::handle:horizontal { background: %4; border-radius: 4px; min-width: 30px; }"
+		"QScrollBar::handle:horizontal:hover { background: %6; }"
+		"QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }"
+		"QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
+				.arg(css(text()), css(border()), css(bgSurface()), css(bgElevated()),
+				     css(accent()), css(accentHover()), css(night()), css(textMuted())));
+
+	/* Night-sky background behind the form. It paints only the stars: the
+	 * dialog itself paints the asphalt sky, so the starfield's animation
+	 * repaints never wipe out the settings widgets above it. */
+	starfield_ = new MoonLitStarfield(this);
+	starfield_->setPaintBackground(false);
+	starfield_->setAttribute(Qt::WA_TransparentForMouseEvents);
+	starfield_->lower();
 
 	encoderCombo = new QComboBox(this);
 	encoderCombo->addItem(QStringLiteral("Auto (recomendar)"), QString());
@@ -182,6 +267,21 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 		encoderCombo->addItem(QString::fromUtf8(display ? display : encoderId),
 				      QString::fromStdString(token));
 	}
+
+	/* The four recording quality levels of OBS simple mode, with the same
+	 * config values SimpleOutput consumes (Stream/Small/HQ/Lossless). */
+	qualityCombo = new QComboBox(this);
+	qualityCombo->addItem(QStringLiteral("Igual que la retransmisión"), QStringLiteral("Stream"));
+	qualityCombo->addItem(QStringLiteral("Pequeño"), QStringLiteral("Small"));
+	qualityCombo->addItem(QStringLiteral("Alta"), QStringLiteral("HQ"));
+	qualityCombo->addItem(QStringLiteral("Sin pérdida (utvideo AVI)"), QStringLiteral("Lossless"));
+
+	presetCombo = new QComboBox(this);
+	connect(encoderCombo, &QComboBox::currentIndexChanged, this,
+		[this](int) { PopulatePresetCombo(); });
+	connect(qualityCombo, &QComboBox::currentIndexChanged, this,
+		[this](int) { PopulatePresetCombo(); });
+	PopulatePresetCombo();
 
 	replaySeconds = new QSpinBox(this);
 	replaySeconds->setRange(1, 600);
@@ -269,9 +369,30 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	autoStart = new QCheckBox(QStringLiteral("Iniciar MoonLit con Windows (oculto en la bandeja)"), this);
 
+	minimizeToTray = new QCheckBox(
+		QStringLiteral("Minimizar a la bandeja: la X deja la app en segundo plano"), this);
+
 	clipSound = new QCheckBox(QStringLiteral("Sonido al guardar clip"), this);
 
 	noiseSuppression = new QCheckBox(QStringLiteral("Supresion de ruido (tipo Krisp)"), this);
+
+	/* Captures a key combination with optional modifiers: click the field
+	 * and press e.g. Ctrl+F8. "Restablecer F8" restores the default. */
+	saveClipHotkeyEdit = new OBSHotkeyEdit(this);
+	saveClipHotkeyEdit->setPlaceholderText(QStringLiteral("Pulsa una combinación…"));
+	saveClipHotkeyEdit->setToolTip(QStringLiteral("Haz clic y pulsa la combinación (ej. Ctrl+F8)"));
+	resetHotkeyButton = new QPushButton(QStringLiteral("Restablecer F8"), this);
+	resetHotkeyButton->setToolTip(QStringLiteral("Vuelve a F8"));
+	connect(resetHotkeyButton, &QPushButton::clicked, this, [this]() {
+		saveClipHotkeyEdit->original = {0, OBS_KEY_F8};
+		saveClipHotkeyEdit->ResetKey();
+	});
+
+	QLabel *hotkeyNote = new QLabel(
+		QStringLiteral("Combinación global para guardar el clip, también con el juego en primer plano "
+			       "(puede incluir Ctrl, Alt, Shift o Win)."),
+		this);
+	hotkeyNote->setWordWrap(true);
 
 	QLabel *formatNote = new QLabel(
 		QStringLiteral("Formato de grabación: MKV (autoritativo; MP4 solo como exportación)."), this);
@@ -287,6 +408,11 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 			       "Acceso controlado a carpetas de Windows; podés cambiarla aquí cuando quieras."),
 		this);
 	folderNote->setWordWrap(true);
+
+	QLabel *losslessNote = new QLabel(
+		QStringLiteral("Con 'Sin pérdida' se graba AVI utvideo y el guardado de clips queda desactivado."),
+		this);
+	losslessNote->setWordWrap(true);
 
 	QLabel *deviceVolumeNote = new QLabel(
 		QStringLiteral("El volumen de entrada/salida ajusta el dispositivo real de Windows (lo que se oye), "
@@ -312,7 +438,7 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 
 	QGroupBox *aboutGroup = new QGroupBox(QStringLiteral("Acerca de MoonLit"), this);
 	QLabel *aboutText = new QLabel(
-		QStringLiteral("MoonLit 0.1.1\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
+		QStringLiteral("MoonLit 0.1.2\nGrabadora de clips local basada en OBS Studio 32.2.1.\n"
 			       "Software libre bajo GPLv2."),
 		aboutGroup);
 	aboutText->setWordWrap(true);
@@ -323,51 +449,93 @@ MoonLitSettingsDialog::MoonLitSettingsDialog(OBSBasic *main, QWidget *parent) : 
 	pathLayout->addWidget(outputPath, 1);
 	pathLayout->addWidget(browse);
 
-	QFormLayout *form = new QFormLayout;
-	form->addRow(QStringLiteral("Encoder de vídeo:"), encoderCombo);
-	form->addRow(QStringLiteral("Duración del buffer:"), replaySeconds);
-	form->addRow(QStringLiteral("Tamaño máximo:"), replaySizeMb);
-	QLabel *tracksHeader = new QLabel(QStringLiteral("Pistas de audio:"), this);
-	form->addRow(tracksHeader, (QLayout *)nullptr);
-	form->addRow(QStringLiteral("Pista 1 (mezcla):"), trackMixed);
-	form->addRow(QStringLiteral("Pista 2 (juego):"), trackGame);
-	form->addRow(QStringLiteral("Pista 3 (micrófono):"), trackMic);
-	form->addRow(QStringLiteral("Pista 4 (chat):"), trackChat);
-	form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
-	form->addRow(folderNote);
-	form->addRow(audioNote);
-	form->addRow(QStringLiteral("Microfono (entrada):"), micDevice);
+	/* The four audio track toggles fit in one row. */
+	auto *tracksRow = new QHBoxLayout;
+	tracksRow->setSpacing(14);
+	tracksRow->addWidget(trackMixed);
+	tracksRow->addWidget(trackGame);
+	tracksRow->addWidget(trackMic);
+	tracksRow->addWidget(trackChat);
+	tracksRow->addStretch(1);
+
+	/* Responsive layout: settings are grouped in tabs, and every tab is a
+	 * scroll area, so the dialog keeps a fixed window size and small
+	 * screens scroll inside the tab instead of growing past the screen. */
+	QTabWidget *tabs = new QTabWidget(this);
+	tabs->setObjectName(QStringLiteral("moonlitSettingsTabs"));
+
+	SettingsTab recording = MakeSettingsTab(tabs);
+	recording.form->addRow(QStringLiteral("Encoder de vídeo:"), encoderCombo);
+	recording.form->addRow(QStringLiteral("Calidad de grabación:"), qualityCombo);
+	recording.form->addRow(QStringLiteral("Preset:"), presetCombo);
+	recording.form->addRow(losslessNote);
+	recording.form->addRow(QStringLiteral("Duración del buffer:"), replaySeconds);
+	recording.form->addRow(QStringLiteral("Tamaño máximo:"), replaySizeMb);
+	recording.form->addRow(QStringLiteral("Pistas de audio:"), tracksRow);
+	recording.form->addRow(QStringLiteral("Carpeta de grabación:"), pathLayout);
+	recording.form->addRow(folderNote);
+	recording.form->addRow(audioNote);
+	recording.form->addRow(formatNote);
+	tabs->addTab(recording.scroll, QStringLiteral("Grabación"));
+
+	SettingsTab audio = MakeSettingsTab(tabs);
+	audio.form->addRow(QStringLiteral("Microfono (entrada):"), micDevice);
 	auto *micVolumeRow = new QHBoxLayout;
 	micVolumeRow->addWidget(micVolumeSlider, 1);
 	micVolumeRow->addWidget(micVolumeLabel);
 	micVolumeRow->addWidget(micMute);
-	form->addRow(QStringLiteral("Volumen del microfono:"), micVolumeRow);
-	form->addRow(QStringLiteral("Audio de escritorio (salida):"), desktopDevice);
+	audio.form->addRow(QStringLiteral("Volumen del microfono:"), micVolumeRow);
+	audio.form->addRow(QStringLiteral("Audio de escritorio (salida):"), desktopDevice);
 	auto *desktopVolumeRow = new QHBoxLayout;
 	desktopVolumeRow->addWidget(desktopVolumeSlider, 1);
 	desktopVolumeRow->addWidget(desktopVolumeLabel);
 	desktopVolumeRow->addWidget(desktopMute);
-	form->addRow(QStringLiteral("Volumen de salida:"), desktopVolumeRow);
-	form->addRow(deviceVolumeNote);
-	form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
-	form->addRow(QStringLiteral("Juegos recordados:"), gameListWidget);
-	form->addRow(removeGameButton);
-	form->addRow(gameListNote);
-	form->addRow(autoStart);
-	form->addRow(clipSound);
-	form->addRow(noiseSuppression);
-	form->addRow(formatNote);
+	audio.form->addRow(QStringLiteral("Volumen de salida:"), desktopVolumeRow);
+	audio.form->addRow(deviceVolumeNote);
+	audio.form->addRow(QStringLiteral("Chat (ejecutable):"), chatExe);
+	tabs->addTab(audio.scroll, QStringLiteral("Audio"));
+
+	SettingsTab games = MakeSettingsTab(tabs);
+	games.form->addRow(QStringLiteral("Juegos recordados:"), gameListWidget);
+	games.form->addRow(removeGameButton);
+	games.form->addRow(gameListNote);
+	tabs->addTab(games.scroll, QStringLiteral("Juegos"));
+
+	SettingsTab general = MakeSettingsTab(tabs);
+	general.form->addRow(autoStart);
+	general.form->addRow(minimizeToTray);
+	general.form->addRow(clipSound);
+	general.form->addRow(noiseSuppression);
+	auto *hotkeyRow = new QHBoxLayout;
+	hotkeyRow->addWidget(saveClipHotkeyEdit, 1);
+	hotkeyRow->addWidget(resetHotkeyButton);
+	general.form->addRow(QStringLiteral("Tecla para guardar clip:"), hotkeyRow);
+	general.form->addRow(hotkeyNote);
+	general.form->addRow(aboutGroup);
+	tabs->addTab(general.scroll, QStringLiteral("General"));
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 	connect(buttons, &QDialogButtonBox::accepted, this, &MoonLitSettingsDialog::SaveAndAccept);
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
-	layout->addLayout(form);
-	layout->addWidget(aboutGroup);
+	layout->setContentsMargins(10, 10, 10, 10);
+	layout->setSpacing(8);
+	layout->addWidget(tabs, 1);
 	layout->addWidget(buttons);
 
+	resize(620, 700);
+	setMinimumSize(480, 520);
+
 	LoadCurrentValues();
+}
+
+void MoonLitSettingsDialog::resizeEvent(QResizeEvent *event)
+{
+	QDialog::resizeEvent(event);
+	if (starfield_) {
+		starfield_->setGeometry(rect());
+	}
 }
 
 void MoonLitSettingsDialog::BrowseOutputPath()
@@ -388,6 +556,15 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 	if (savedIndex >= 0) {
 		encoderCombo->setCurrentIndex(savedIndex);
 	}
+
+	const char *savedQuality = config_get_string(config, "SimpleOutput", "RecQuality");
+	const int qualityIndex = qualityCombo->findData(QString::fromUtf8(savedQuality ? savedQuality : "Stream"));
+	if (qualityIndex >= 0) {
+		qualityCombo->setCurrentIndex(qualityIndex);
+	}
+
+	/* Reads the saved preset for the current encoder (and its key). */
+	PopulatePresetCombo();
 
 	replaySeconds->setValue(config_get_int(config, "SimpleOutput", "RecRBTime"));
 	replaySizeMb->setValue(config_get_int(config, "SimpleOutput", "RecRBSize"));
@@ -414,8 +591,15 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 
 	autoStart->setChecked(IsAutoStartEnabled());
 
+	minimizeToTray->setChecked(config_get_bool(App()->GetUserConfig(), "BasicWindow", "SysTrayMinimizeToTray"));
+
 	clipSound->setChecked(config_get_bool(config, "MoonLit", "ClipSound"));
 	noiseSuppression->setChecked(config_get_bool(config, "MoonLit", "NoiseSuppression"));
+
+	if (hotkeys_) {
+		saveClipHotkeyEdit->original = hotkeys_->saveClipHotkey();
+		saveClipHotkeyEdit->ResetKey();
+	}
 
 	gameListWidget->clear();
 	const char *gameList = config_get_string(config, "MoonLit", "GameList");
@@ -431,6 +615,85 @@ void MoonLitSettingsDialog::LoadCurrentValues()
 	PopulateVolumeRow(desktopVolumeLabel, desktopVolumeSlider, desktopMute, &desktopEndpoint_,
 			  MoonLit::EndpointVolume::Direction::Render,
 			  desktopDevice->currentData().toString());
+}
+
+void MoonLitSettingsDialog::PopulatePresetCombo()
+{
+	const QString token = encoderCombo->currentData().toString();
+	const QString quality = qualityCombo->currentData().toString();
+
+	presetCombo->blockSignals(true);
+	presetCombo->clear();
+
+	auto addPreset = [this](const char *name, const char *value) {
+		presetCombo->addItem(QString::fromUtf8(name), QString::fromUtf8(value));
+	};
+
+	bool hasPresets = true;
+	if (token == QStringLiteral("qsv") || token == QStringLiteral("qsv_av1")) {
+		addPreset("speed", "speed");
+		addPreset("balanced", "balanced");
+		addPreset("quality", "quality");
+	} else if (token == QStringLiteral("amd") || token == QStringLiteral("amd_hevc")) {
+		addPreset("Speed", "speed");
+		addPreset("Balanced", "balanced");
+		addPreset("Quality", "quality");
+	} else if (token == QStringLiteral("amd_av1")) {
+		addPreset("Speed", "speed");
+		addPreset("Balanced", "balanced");
+		addPreset("Quality", "quality");
+		addPreset("High Quality", "highQuality");
+	} else if (token == QStringLiteral("nvenc") || token == QStringLiteral("nvenc_hevc") ||
+		   token == QStringLiteral("nvenc_av1")) {
+		/* NVENC exposes its real preset list through the encoder
+		 * properties ("preset2" for the legacy ffmpeg wrapper). */
+		const std::string id = MoonLit::EncoderResolver::SimpleTokenToEncoderId(token.toStdString());
+		OBSProperties props = obs_get_encoder_properties(id.c_str());
+		const bool ffmpeg = id.rfind("ffmpeg_", 0) == 0;
+		obs_property_t *p = obs_properties_get(props, ffmpeg ? "preset2" : "preset");
+		hasPresets = p && obs_property_list_item_count(p) > 0;
+		if (hasPresets) {
+			const size_t num = obs_property_list_item_count(p);
+			for (size_t i = 0; i < num; ++i) {
+				addPreset(obs_property_list_item_name(p, i), obs_property_list_item_string(p, i));
+			}
+		}
+	} else if (token == QStringLiteral("x264")) {
+		addPreset("ultrafast", "ultrafast");
+		addPreset("superfast", "superfast");
+		addPreset("veryfast", "veryfast");
+		addPreset("faster", "faster");
+		addPreset("fast", "fast");
+	} else {
+		/* Raw obs ids (ffmpeg svt/aom, ...) enumerate their preset
+		 * property when they expose one; otherwise no presets. */
+		OBSProperties props = obs_get_encoder_properties(token.toUtf8().constData());
+		obs_property_t *p = obs_properties_get(props, "preset");
+		hasPresets = p && obs_property_list_item_count(p) > 0;
+		if (hasPresets) {
+			const size_t num = obs_property_list_item_count(p);
+			for (size_t i = 0; i < num; ++i) {
+				addPreset(obs_property_list_item_name(p, i), obs_property_list_item_string(p, i));
+			}
+		}
+	}
+
+	/* Stream reuses the streaming settings and Lossless records utvideo;
+	 * neither one uses per-codec presets. */
+	const bool qualityUsesPresets = quality != QStringLiteral("Stream") &&
+					quality != QStringLiteral("Lossless");
+	presetCombo->setVisible(qualityUsesPresets && hasPresets);
+
+	if (hasPresets) {
+		const char *presetKey = MoonLit::EncoderResolver::SimpleTokenToPresetKey(token.toStdString());
+		const char *saved = config_get_string(main_->Config(), "SimpleOutput", presetKey);
+		int index = saved ? presetCombo->findData(QString::fromUtf8(saved)) : -1;
+		if (index < 0) {
+			index = 0;
+		}
+		presetCombo->setCurrentIndex(index);
+	}
+	presetCombo->blockSignals(false);
 }
 
 void MoonLitSettingsDialog::PopulateVolumeRow(QLabel *label, QSlider *slider, QPushButton *mute,
@@ -449,6 +712,17 @@ void MoonLitSettingsDialog::SaveValues()
 	const std::string token = encoderCombo->currentData().toString().toStdString();
 	config_set_string(config, "SimpleOutput", "RecEncoder", token.c_str());
 	config_set_string(config, "SimpleOutput", "StreamEncoder", token.c_str());
+
+	const std::string quality = qualityCombo->currentData().toString().toStdString();
+	config_set_string(config, "SimpleOutput", "RecQuality", quality.c_str());
+
+	/* Presets apply to per-codec quality levels; Stream and Lossless ignore
+	 * them, so leave the saved value alone when they are selected. */
+	if (quality != "Stream" && quality != "Lossless" && presetCombo->count() > 0) {
+		const char *presetKey = MoonLit::EncoderResolver::SimpleTokenToPresetKey(token);
+		const std::string preset = presetCombo->currentData().toString().toStdString();
+		config_set_string(config, "SimpleOutput", presetKey, preset.c_str());
+	}
 
 	config_set_int(config, "SimpleOutput", "RecRBTime", replaySeconds->value());
 	config_set_int(config, "SimpleOutput", "RecRBSize", replaySizeMb->value());
@@ -492,6 +766,11 @@ void MoonLitSettingsDialog::SaveValues()
 
 	config_set_bool(config, "MoonLit", "ClipSound", clipSound->isChecked());
 	config_set_bool(config, "MoonLit", "NoiseSuppression", noiseSuppression->isChecked());
+	config_set_bool(App()->GetUserConfig(), "BasicWindow", "SysTrayMinimizeToTray", minimizeToTray->isChecked());
+
+	if (hotkeys_) {
+		hotkeys_->setSaveClipHotkey(config, saveClipHotkeyEdit->key);
+	}
 
 	QStringList gameList;
 	for (int row = 0; row < gameListWidget->count(); ++row) {

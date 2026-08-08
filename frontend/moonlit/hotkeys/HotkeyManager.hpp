@@ -1,5 +1,9 @@
 #pragma once
 
+#include <obs.hpp>
+
+#include <util/config-file.h>
+
 #include <QObject>
 
 #include <cstdint>
@@ -18,9 +22,19 @@ class HotkeyManager final : public QObject {
 public:
 	explicit HotkeyManager(QObject *parent = nullptr);
 
-	/* Registers "MoonLit.SaveClip" bound to F8 by default. The action is
-	 * invoked on the UI thread, safe to call from the hotkey thread. */
-	void registerSaveClip(const std::function<void()> &action);
+	/* Registers "MoonLit.SaveClip", bound to F8 by default. Any binding the
+	 * user has saved under "Hotkeys"/"MoonLit.SaveClip" is restored; the
+	 * action is invoked on the UI thread, safe to call from the hotkey
+	 * thread. */
+	void registerSaveClip(config_t *config, const std::function<void()> &action);
+
+	/* Replaces the save-clip binding (a key combination with optional
+	 * Ctrl/Shift/Alt/Win modifiers, e.g. Ctrl+F8) and persists it to the
+	 * given config so it survives restarts. An empty combination unbinds. */
+	void setSaveClipHotkey(config_t *config, obs_key_combination_t combo);
+
+	/* Current save-clip key combination, or {0, OBS_KEY_NONE} if unbound. */
+	obs_key_combination_t saveClipHotkey() const;
 
 private:
 	std::function<void()> action_;

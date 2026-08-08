@@ -46,7 +46,7 @@ protected:
 private:
 	static constexpr int kHandleWidth = 8;
 	static constexpr int kMinSegmentMs = 100;
-	static constexpr int kTrackHeight = 84;
+	static constexpr int kTrackHeight = 72;
 
 	int indexAt(int x) const;
 	QRect segmentRect(int index) const;

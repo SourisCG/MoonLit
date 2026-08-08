@@ -14,6 +14,12 @@ target_sources(
     widgets/ClipFrameStrip.hpp
     widgets/MoonLitMixer.cpp
     widgets/MoonLitMixer.hpp
+    widgets/MoonLitNavBar.cpp
+    widgets/MoonLitNavBar.hpp
+    widgets/MoonLitStarfield.cpp
+    widgets/MoonLitStarfield.hpp
+    widgets/MoonLitThumbCard.cpp
+    widgets/MoonLitThumbCard.hpp
     widgets/AudioMixer.cpp
     widgets/AudioMixer.hpp
     widgets/ColorSelect.cpp

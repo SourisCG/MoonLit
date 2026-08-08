@@ -62,6 +62,8 @@ class OBSProjector;
 class VolumeControl;
 class MoonLitDashboard;
 class MoonLitLibraryWidget;
+class MoonLitNavBar;
+class MoonLitStarfield;
 #ifdef _WIN32
 class MoonLitGameDetector;
 #endif
@@ -75,6 +77,7 @@ class YouTubeAppDock;
 #endif
 class QMessageBox;
 class QWidgetAction;
+class QStackedWidget;
 struct QuickTransition;
 
 namespace OBS {
@@ -274,6 +277,9 @@ private:
 	std::string patronJson;
 
 	std::unique_ptr<Ui::OBSBasic> ui;
+	QPointer<MoonLitStarfield> moonlitRoot;
+	QPointer<MoonLitNavBar> moonlitNav;
+	QPointer<QStackedWidget> moonlitStack;
 	QPointer<MoonLitDashboard> moonlitDashboard;
 	QPointer<MoonLitLibraryWidget> moonlitLibrary;
 #ifdef MOONLIT_BUILD
@@ -281,6 +287,7 @@ private:
 	bool moonlitSessionEnding = false;
 	void ShowMoonLitLibrary();
 	void ShowMoonLitDashboard();
+	void OpenMoonLitSettings();
 	void UpdateMoonLitMixer();
 	QPointer<MoonLit::HotkeyManager> moonlitHotkeys;
 #endif
@@ -289,8 +296,8 @@ private:
 	/* MoonLit::ICaptureHost */
 	OBSScene moonlitCurrentScene() override;
 	bool replayBufferActive() override;
-	void startReplayBuffer() override;
-	void stopReplayBuffer() override;
+	bool startReplayBuffer(bool silent = false) override;
+	void stopReplayBuffer(bool silent = false) override;
 	config_t *activeConfig() override;
 #ifdef _WIN32
 	MoonLit::CaptureController *moonlitCaptureController = nullptr;
@@ -1088,10 +1095,29 @@ private:
 	bool replayBufferStopping = false;
 	std::string lastReplay;
 
+	/* Shared implementation; `silent` skips modal dialogs and returns the
+	 * synchronous start result instead of showing an error box. */
+	bool StartReplayBufferImpl(bool silent);
+	void StopReplayBufferImpl(bool silent);
+	/* True while a silent (automatic) replay start/stop is in flight; lets
+	 * the output handler suppress its own error dialogs. */
+	bool silentReplay_ = false;
+	bool silentReplayStop_ = false;
+
+public:
+	/* MoonLit: read by BasicOutputHandler to suppress error dialogs during
+	 * automatic replay starts. */
+	bool ReplayBufferSilent() const { return silentReplay_; }
+
 public slots:
 	void ShowReplayBufferPauseWarning();
 	void StartReplayBuffer();
 	void StopReplayBuffer();
+
+	/* MoonLit: same as above but without modal confirmations or error
+	 * dialogs; used for automatic (detector-driven) capture. */
+	void StartReplayBufferSilently();
+	void StopReplayBufferSilently();
 
 	void ReplayBufferStart();
 	void ReplayBufferSave();

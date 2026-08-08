@@ -1769,8 +1769,8 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 	/* Close-to-tray: the X button hides the window so recording continues.
 	 * A forced exit (tray action), a Windows shutdown (WM_QUERYENDSESSION) or
 	 * an application quit still closes normally. */
-	if (!moonlitForceQuit && !moonlitSessionEnding && !QApplication::closingDown() && !event->spontaneous() &&
-	    trayIcon && trayIcon->isVisible()) {
+	if (!moonlitForceQuit && !moonlitSessionEnding && !QApplication::closingDown() && event->spontaneous() &&
+	    sysTrayMinimizeToTray() && trayIcon && trayIcon->isVisible()) {
 		event->ignore();
 		hide();
 		return;

@@ -29,6 +29,11 @@ public:
 	 * Returns an empty string for ids that are not simple tokens. */
 	static std::string SimpleTokenToEncoderId(const std::string &token);
 
+	/* Maps a simple token or raw obs encoder id to the SimpleOutput config
+	 * key that holds its preset, matching SimpleOutput::Update():
+	 * QSVPreset / AMDPreset / AMDAV1Preset / NVENCPreset2 / Preset. */
+	static const char *SimpleTokenToPresetKey(const std::string &token);
+
 	/* The fixed fallback chain, best first. */
 	static const std::vector<std::string> &FallbackChain();
 

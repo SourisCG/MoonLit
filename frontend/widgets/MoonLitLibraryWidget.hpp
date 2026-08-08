@@ -28,6 +28,7 @@ class QSpinBox;
 class QThread;
 class QTimer;
 class ClipFrameStrip;
+class MoonLitThumbCard;
 class MoonLitTimelineEditor;
 class QStackedWidget;
 
@@ -69,6 +70,7 @@ private slots:
 	void onTimelinesLoaded(const QVector<MoonLit::TimelineProject> &projects, const QString &error);
 	void onTimelineDeleted(const QString &id, const QString &error);
 	void onTimelineLoaded(const MoonLit::TimelineProject &project, const QString &error);
+	void onRecentLoaded(QVector<MoonLit::Clip> clips, const QString &error);
 
 private:
 	enum class LibraryFilter { All, Available, Missing };
@@ -76,7 +78,15 @@ private:
 	void setStatus(const QString &status, bool error = false);
 	std::optional<MoonLit::Clip> selectedClip() const;
 	void populateList(const QVector<MoonLit::Clip> &clips);
+	void reflowGrid();
+	void loadRecentClips();
 	void openTimelineEditor();
+
+protected:
+	void resizeEvent(QResizeEvent *event) override;
+	void showEvent(QShowEvent *event) override;
+
+private:
 
 	MoonLit::MoonLitPaths paths_ = MoonLit::MoonLitPaths::defaultPaths();
 	MoonLit::SqliteClipRepository repository_{paths_};
@@ -95,7 +105,7 @@ private:
 	QScrollArea *gridScroll_ = nullptr;
 	QWidget *gridContainer_ = nullptr;
 	QGridLayout *gridLayout_ = nullptr;
-	QHash<QString, QPushButton *> gridCards_;
+	QHash<QString, MoonLitThumbCard *> gridCards_;
 	QString selectedId_;
 	QElapsedTimer lastCardClick_;
 	QLabel *detailsLabel_ = nullptr;

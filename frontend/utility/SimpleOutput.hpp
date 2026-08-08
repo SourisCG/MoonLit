@@ -25,7 +25,9 @@ struct SimpleOutput : BasicOutputHandler {
 	void UpdateRecordingSettings_qsv11(int crf, bool av1);
 	void UpdateRecordingSettings_nvenc(int cqp);
 	void UpdateRecordingSettings_nvenc_hevc_av1(int cqp);
+	void UpdateRecordingSettings_nvenc_preset(OBSDataAutoRelease &settings);
 	void UpdateRecordingSettings_amd_cqp(int cqp);
+	void UpdateRecordingSettings_ffmpeg_cqp(int cqp);
 	void UpdateRecordingSettings_apple(int quality);
 #ifdef ENABLE_HEVC
 	void UpdateRecordingSettings_apple_hevc(int quality);

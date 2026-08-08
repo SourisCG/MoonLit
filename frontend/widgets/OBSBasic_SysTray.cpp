@@ -20,6 +20,7 @@
 #include "OBSBasic.hpp"
 
 #ifdef MOONLIT_BUILD
+#include <moonlit/hotkeys/HotkeyManager.hpp>
 #include <moonlit/ui/MoonLitSettingsDialog.hpp>
 #endif
 
@@ -31,7 +32,7 @@ void OBSBasic::SystemTrayInit()
 	QIcon trayIconFile = QIcon(":/res/images/obs_macos.svg");
 	trayIconFile.setIsMask(true);
 #elif defined(MOONLIT_BUILD)
-	QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.svg");
+	QIcon trayIconFile = QIcon(":/res/images/moonlit-icon.png");
 #else
 	QIcon trayIconFile = QIcon(":/res/images/obs.png");
 #endif
@@ -112,7 +113,7 @@ void OBSBasic::SystemTrayInit()
 	connect(moonlitOpenLibrary, &QAction::triggered, this, &OBSBasic::ShowMoonLitLibrary);
 	connect(moonlitSettings, &QAction::triggered, this, [this]() {
 		ShowMoonLitDashboard();
-		MoonLitSettingsDialog dialog(this);
+		MoonLitSettingsDialog dialog(this, moonlitHotkeys);
 		dialog.exec();
 	});
 	connect(exit, &QAction::triggered, this, [this]() {
@@ -189,6 +190,12 @@ bool OBSBasic::sysTrayMinimizeToTray()
 
 void OBSBasic::updateSysTrayProjectorMenu()
 {
+	/* MoonLit does not create the projector menus (they live in the stock
+	 * OBS tray menu); clicking the tray icon must not dereference them. */
+	if (!previewProjector || !studioProgramProjector) {
+		return;
+	}
+
 	previewProjector->clear();
 	studioProgramProjector->clear();
 	AddProjectorMenuMonitors(previewProjector, this, &OBSBasic::OpenPreviewProjector);

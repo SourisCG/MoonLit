@@ -77,28 +77,44 @@ void OBSBasic::ShowReplayBufferPauseWarning()
 
 void OBSBasic::StartReplayBuffer()
 {
+	StartReplayBufferImpl(false);
+}
+
+void OBSBasic::StartReplayBufferSilently()
+{
+	StartReplayBufferImpl(true);
+}
+
+bool OBSBasic::StartReplayBufferImpl(bool silent)
+{
 	if (!outputHandler || !outputHandler->replayBuffer) {
-		return;
+		return false;
 	}
 	if (outputHandler->ReplayBufferActive()) {
-		return;
+		return true;
 	}
 	if (disableOutputsRef) {
-		return;
+		return false;
 	}
 
-	if (!UIValidation::NoSourcesConfirmation(this)) {
-		return;
+	if (!silent && !UIValidation::NoSourcesConfirmation(this)) {
+		return false;
 	}
 
 	if (!OutputPathValid()) {
+		if (silent) {
+			return false;
+		}
 		OutputPathInvalidMessage();
-		return;
+		return false;
 	}
 
 	if (LowDiskSpace()) {
+		if (silent) {
+			return false;
+		}
 		DiskSpaceMessage();
-		return;
+		return false;
 	}
 
 	OnEvent(OBS_FRONTEND_EVENT_REPLAY_BUFFER_STARTING);
@@ -109,9 +125,16 @@ void OBSBasic::StartReplayBuffer()
 	SaveProject();
 	disableSaving--;
 
-	if (outputHandler->StartReplayBuffer() && os_atomic_load_bool(&recording_paused)) {
+	if (silent) {
+		silentReplay_ = true;
+	}
+	const bool started = outputHandler->StartReplayBuffer();
+	silentReplay_ = false;
+
+	if (started && os_atomic_load_bool(&recording_paused) && !silent) {
 		ShowReplayBufferPauseWarning();
 	}
+	return started;
 }
 
 void OBSBasic::ReplayBufferStopping()
@@ -132,6 +155,16 @@ void OBSBasic::ReplayBufferStopping()
 
 void OBSBasic::StopReplayBuffer()
 {
+	StopReplayBufferImpl(false);
+}
+
+void OBSBasic::StopReplayBufferSilently()
+{
+	StopReplayBufferImpl(true);
+}
+
+void OBSBasic::StopReplayBufferImpl(bool silent)
+{
 	if (!outputHandler || !outputHandler->replayBuffer) {
 		return;
 	}
@@ -141,6 +174,7 @@ void OBSBasic::StopReplayBuffer()
 	disableSaving--;
 
 	if (outputHandler->ReplayBufferActive()) {
+		silentReplayStop_ = silent;
 		outputHandler->StopReplayBuffer(replayBufferStopping);
 	}
 
@@ -232,29 +266,41 @@ void OBSBasic::ReplayBufferStop(int code)
 
 	blog(LOG_INFO, REPLAY_BUFFER_STOP);
 
-	if (code == OBS_OUTPUT_UNSUPPORTED && isVisible()) {
-		emit ReplaySaveFailed(code);
-		OBSMessageBox::critical(this, QTStr("Output.RecordFail.Title"), QTStr("Output.RecordFail.Unsupported"));
+	/* Automatic (silent) stops surface errors through the MoonLit dashboard
+	 * instead of modal dialogs. */
+	const bool silent = silentReplayStop_;
+	silentReplayStop_ = false;
 
-	} else if (code == OBS_OUTPUT_NO_SPACE && isVisible()) {
+	if (code == OBS_OUTPUT_UNSUPPORTED) {
 		emit ReplaySaveFailed(code);
-		OBSMessageBox::warning(this, QTStr("Output.RecordNoSpace.Title"), QTStr("Output.RecordNoSpace.Msg"));
-
-	} else if (code != OBS_OUTPUT_SUCCESS && isVisible()) {
+		if (!silent) {
+			if (isVisible()) {
+				OBSMessageBox::critical(this, QTStr("Output.RecordFail.Title"),
+							QTStr("Output.RecordFail.Unsupported"));
+			} else {
+				SysTrayNotify(QTStr("Output.RecordFail.Unsupported"), QSystemTrayIcon::Warning);
+			}
+		}
+	} else if (code == OBS_OUTPUT_NO_SPACE) {
 		emit ReplaySaveFailed(code);
-		OBSMessageBox::critical(this, QTStr("Output.RecordError.Title"), QTStr("Output.RecordError.Msg"));
-
-	} else if (code == OBS_OUTPUT_UNSUPPORTED && !isVisible()) {
+		if (!silent) {
+			if (isVisible()) {
+				OBSMessageBox::warning(this, QTStr("Output.RecordNoSpace.Title"),
+						       QTStr("Output.RecordNoSpace.Msg"));
+			} else {
+				SysTrayNotify(QTStr("Output.RecordNoSpace.Msg"), QSystemTrayIcon::Warning);
+			}
+		}
+	} else if (code != OBS_OUTPUT_SUCCESS) {
 		emit ReplaySaveFailed(code);
-		SysTrayNotify(QTStr("Output.RecordFail.Unsupported"), QSystemTrayIcon::Warning);
-
-	} else if (code == OBS_OUTPUT_NO_SPACE && !isVisible()) {
-		emit ReplaySaveFailed(code);
-		SysTrayNotify(QTStr("Output.RecordNoSpace.Msg"), QSystemTrayIcon::Warning);
-
-	} else if (code != OBS_OUTPUT_SUCCESS && !isVisible()) {
-		emit ReplaySaveFailed(code);
-		SysTrayNotify(QTStr("Output.RecordError.Msg"), QSystemTrayIcon::Warning);
+		if (!silent) {
+			if (isVisible()) {
+				OBSMessageBox::critical(this, QTStr("Output.RecordError.Title"),
+							QTStr("Output.RecordError.Msg"));
+			} else {
+				SysTrayNotify(QTStr("Output.RecordError.Msg"), QSystemTrayIcon::Warning);
+			}
+		}
 	}
 
 	OnEvent(OBS_FRONTEND_EVENT_REPLAY_BUFFER_STOPPED);

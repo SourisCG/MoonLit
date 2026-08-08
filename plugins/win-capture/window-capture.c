@@ -105,6 +105,7 @@ struct window_capture {
 	struct dc_capture capture;
 
 	bool previously_failed;
+	float wgc_retry_timer;
 	void *winrt_module;
 	struct winrt_exports exports;
 	struct winrt_capture *capture_winrt;
@@ -191,8 +192,12 @@ static bool target_window_matches(const struct window_capture *wc, HWND window)
 static enum window_capture_method choose_method(enum window_capture_method method, bool wgc_supported,
 						const char *current_class, bool require_wgc)
 {
+	(void)require_wgc;
 	if (!wgc_supported)
-		return require_wgc ? METHOD_WGC : METHOD_BITBLT;
+		/* MoonLit requires a working capture even when WGC is unavailable:
+		 * fall back to BitBlt instead of pinning a permanently dead WGC
+		 * method (the controller then monitors health and still starts). */
+		return METHOD_BITBLT;
 
 	if (method != METHOD_AUTO)
 		return method;
@@ -543,6 +548,7 @@ static void force_reset(struct window_capture *wc)
 	wc->cursor_check_time = CURSOR_CHECK_TIME;
 
 	wc->previously_failed = false;
+	wc->wgc_retry_timer = 0.0f;
 }
 
 static void wc_update(void *data, obs_data_t *settings)
@@ -758,7 +764,7 @@ static void wc_tick(void *data, float seconds)
 		wc->wgc_supported_checked = true;
 		if (!wc->exports.winrt_capture_supported()) {
 			wc->wgc_available = false;
-			wc->method = wc->require_wgc ? METHOD_WGC : METHOD_BITBLT;
+			wc->method = METHOD_BITBLT;
 			reset_capture = true;
 		}
 	}
@@ -805,6 +811,7 @@ static void wc_tick(void *data, float seconds)
 		}
 
 		wc->previously_failed = false;
+		wc->wgc_retry_timer = 0.0f;
 		reset_capture = true;
 
 	} else if (IsIconic(wc->window) || !IsWindowVisible(wc->window)) {
@@ -815,6 +822,7 @@ static void wc_tick(void *data, float seconds)
 		if (!wc_wgc_active(wc)) {
 			wc_release_wgc(wc);
 			wc->previously_failed = false;
+			wc->wgc_retry_timer = 0.0f;
 		} else if (wc_wgc_has_frame(wc)) {
 			wc_set_hooked(wc, true);
 		}
@@ -888,12 +896,24 @@ static void wc_tick(void *data, float seconds)
 	} else if (wc->method == METHOD_WGC) {
 		pthread_mutex_lock(&wc->update_mutex);
 		if (wc->wgc_available && wc->window && (wc->capture_winrt == NULL)) {
+			if (wc->previously_failed) {
+				/* A single failed winrt_capture_init_window (DRM,
+				 * exclusive fullscreen, overlay contention) must
+				 * not pin the source to a dead state forever:
+				 * retry every few seconds. */
+				wc->wgc_retry_timer += seconds;
+				if (wc->wgc_retry_timer >= 5.0f) {
+					wc->previously_failed = false;
+					wc->wgc_retry_timer = 0.0f;
+				}
+			}
 			if (!wc->previously_failed) {
 				wc->capture_winrt = wc->exports.winrt_capture_init_window(
 					wc->cursor, wc->window, wc->client_area, wc->force_sdr);
 
 				if (!wc->capture_winrt) {
 					wc->previously_failed = true;
+					wc->wgc_retry_timer = 0.0f;
 				}
 			}
 		}

@@ -57,6 +57,19 @@ MOONLIT_TEST(capture_machine_starts_replay_on_wgc_first_frame)
 	return ok;
 }
 
+MOONLIT_TEST(capture_machine_starts_replay_on_bitblt_fallback)
+{
+	CaptureStateMachine machine;
+	CaptureTickInput input = idleInput();
+	input.hasCaptureSource = true;
+	input.healthAvailable = true;
+	input.healthActive = true;
+	input.healthFirstFrame = true;
+	input.healthWgc = false;
+	bool ok = expect(machine.decideTick(input) == TickAction::StartReplay, "bitblt fallback starts replay", failure);
+	return ok;
+}
+
 MOONLIT_TEST(capture_machine_waits_then_falls_back_to_monitor)
 {
 	CaptureStateMachine machine;

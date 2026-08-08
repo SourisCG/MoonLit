@@ -45,12 +45,12 @@ void CaptureController::start()
 
 	backend_ = std::make_unique<WindowsCaptureBackend>(host_);
 	refreshMixer();
-	reloadGameList();
 
 	detector_ = new MoonLitGameDetector(this);
 	connect(detector_, &MoonLitGameDetector::targetDetected, this, &CaptureController::onTargetDetected);
 	connect(detector_, &MoonLitGameDetector::targetFocusChanged, this, &CaptureController::onTargetFocusChanged);
 	connect(detector_, &MoonLitGameDetector::targetLost, this, &CaptureController::onTargetLost);
+	reloadGameList();
 
 	healthTimer_ = new QTimer(this);
 	healthTimer_->setInterval(250);
@@ -74,7 +74,7 @@ void CaptureController::shutdown()
 	if (backend_) {
 		backend_->shield();
 		if (host_ && host_->replayBufferActive()) {
-			host_->stopReplayBuffer();
+			host_->stopReplayBuffer(true);
 		}
 		backend_->detach();
 	}
@@ -188,7 +188,7 @@ void CaptureController::onTargetLost()
 		backend_->shield();
 	}
 	if (host_ && host_->replayBufferActive()) {
-		host_->stopReplayBuffer();
+		host_->stopReplayBuffer(true);
 	}
 	clear();
 }
@@ -253,10 +253,12 @@ void CaptureController::onHealthTick()
 		if (!host_->replayBufferActive() && !replayStartRequested_ && !replayAutoBlocked_) {
 			replayRetryTimer_.restart();
 			replayStartRequested_ = true;
-			host_->startReplayBuffer();
-			if (!host_->replayBufferActive()) {
+			if (!host_->startReplayBuffer(true)) {
 				replayStartRequested_ = false;
 				replayAutoBlocked_ = ++startFailures_ >= 3;
+				setStatus(replayAutoBlocked_
+					  ? QStringLiteral("grabacion automatica bloqueada tras 3 fallos (revisa la carpeta de grabacion y el espacio en disco)")
+					  : QStringLiteral("error al iniciar la grabacion, reintentando"));
 			}
 		}
 		break;
@@ -354,7 +356,7 @@ void CaptureController::setFullscreenMode(bool enabled)
 	} else {
 		mode_ = CaptureMode::Auto;
 		if (host_ && host_->replayBufferActive()) {
-			host_->stopReplayBuffer();
+			host_->stopReplayBuffer(true);
 		}
 		clear();
 		setGame(QString());
@@ -447,7 +449,7 @@ void CaptureController::manualTargetLost()
 		backend_->shield();
 	}
 	if (host_ && host_->replayBufferActive()) {
-		host_->stopReplayBuffer();
+		host_->stopReplayBuffer(true);
 	}
 	clear();
 	if (detector_) {

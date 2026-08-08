@@ -22,6 +22,24 @@ void ClipJobs::reload()
 	emit libraryLoaded(repository_->list(true), error);
 }
 
+/* Lightweight startup query: only the most recent clips, for the dashboard
+ * recents. Never builds the full library grid on the UI thread. */
+void ClipJobs::loadRecent(int limit)
+{
+	if (!repository_) {
+		emit recentLoaded({}, QStringLiteral("Repository not available"));
+		return;
+	}
+	QString error;
+	QVector<Clip> clips = repository_->list(true);
+	std::sort(clips.begin(), clips.end(),
+		  [](const Clip &left, const Clip &right) { return left.createdAtUtc > right.createdAtUtc; });
+	if (limit > 0 && clips.size() > limit) {
+		clips.resize(limit);
+	}
+	emit recentLoaded(clips, error);
+}
+
 void ClipJobs::ingest(const QString &path)
 {
 	QString error;

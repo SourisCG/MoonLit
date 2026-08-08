@@ -26,13 +26,13 @@ MoonLitMixer::MoonLitMixer(QWidget *parent) : QWidget(parent)
 		"QLabel:disabled { color: %2; }"
 		"QPushButton { min-height: 26px; padding: 0 10px; border: 1px solid %3;"
 		" border-radius: 6px; background: %4; color: %1; }"
-		"QPushButton:hover { border-color: %5; }"
+		"QPushButton:hover { border-color: %7; }"
 		"QPushButton:checked { background: %6; border-color: %6; color: #ffffff; }"
 		"QSlider::groove:horizontal { height: 4px; background: %3; border-radius: 2px; }"
 		"QSlider::handle:horizontal { width: 12px; margin: -5px 0; border-radius: 6px;"
-		" background: %5; }")
+		" background: %7; }")
 				      .arg(css(text()), css(textMuted()), css(border()), css(bgSurface()),
-					   css(accent()), css(rec())));
+					   css(accent()), css(rec()), css(accentHover())));
 
 	syncTimer_ = new QTimer(this);
 	syncTimer_->setInterval(400);

@@ -479,7 +479,12 @@ void SimpleOutput::UpdateRecordingSettings_x264_crf(int crf)
 	obs_data_set_bool(settings, "use_bufsize", true);
 	obs_data_set_string(settings, "rate_control", "CRF");
 	obs_data_set_string(settings, "profile", "high");
-	obs_data_set_string(settings, "preset", lowCPUx264 ? "ultrafast" : "veryfast");
+
+	const char *preset = config_get_string(main->Config(), "SimpleOutput", "Preset");
+	if (!preset || !*preset) {
+		preset = lowCPUx264 ? "ultrafast" : "veryfast";
+	}
+	obs_data_set_string(settings, "preset", preset);
 
 	obs_encoder_update(videoRecording, settings);
 }
@@ -517,7 +522,29 @@ void SimpleOutput::UpdateRecordingSettings_qsv11(int crf, bool av1)
 		obs_data_set_int(settings, "cqp", crf);
 	}
 
+	const char *preset = config_get_string(main->Config(), "SimpleOutput", "QSVPreset");
+	if (!preset || !*preset) {
+		preset = "balanced";
+	}
+	obs_data_set_string(settings, "preset", preset);
+
 	obs_encoder_update(videoRecording, settings);
+}
+
+/* Applies the NVENC preset from the simple output config to a recording
+ * encoder, using "preset2" for the legacy ffmpeg wrapper. */
+void SimpleOutput::UpdateRecordingSettings_nvenc_preset(OBSDataAutoRelease &settings)
+{
+	const char *preset = config_get_string(main->Config(), "SimpleOutput", "NVENCPreset2");
+	if (!preset || !*preset) {
+		preset = "default";
+	}
+	const char *encoder_id = obs_encoder_get_id(videoRecording);
+	if (strncmp(encoder_id, "ffmpeg_", 7) == 0) {
+		obs_data_set_string(settings, "preset2", preset);
+	} else {
+		obs_data_set_string(settings, "preset", preset);
+	}
 }
 
 void SimpleOutput::UpdateRecordingSettings_nvenc(int cqp)
@@ -526,6 +553,8 @@ void SimpleOutput::UpdateRecordingSettings_nvenc(int cqp)
 	obs_data_set_string(settings, "rate_control", "CQP");
 	obs_data_set_string(settings, "profile", "high");
 	obs_data_set_int(settings, "cqp", cqp);
+
+	UpdateRecordingSettings_nvenc_preset(settings);
 
 	obs_encoder_update(videoRecording, settings);
 }
@@ -536,6 +565,8 @@ void SimpleOutput::UpdateRecordingSettings_nvenc_hevc_av1(int cqp)
 	obs_data_set_string(settings, "rate_control", "CQP");
 	obs_data_set_string(settings, "profile", "main");
 	obs_data_set_int(settings, "cqp", cqp);
+
+	UpdateRecordingSettings_nvenc_preset(settings);
 
 	obs_encoder_update(videoRecording, settings);
 }
@@ -567,8 +598,35 @@ void SimpleOutput::UpdateRecordingSettings_amd_cqp(int cqp)
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_string(settings, "rate_control", "CQP");
 	obs_data_set_string(settings, "profile", "high");
-	obs_data_set_string(settings, "preset", "quality");
+
+	const char *encoder_id = obs_encoder_get_id(videoRecording);
+	const char *presetKey = strcmp(encoder_id, "av1_texture_amf") == 0 ? "AMDAV1Preset" : "AMDPreset";
+	const char *preset = config_get_string(main->Config(), "SimpleOutput", presetKey);
+	if (!preset || !*preset) {
+		preset = "quality";
+	}
+	obs_data_set_string(settings, "preset", preset);
 	obs_data_set_int(settings, "cqp", cqp);
+	obs_encoder_update(videoRecording, settings);
+}
+
+/* Quality for raw ffmpeg encoders (svt/aom, ...): CQP with the computed
+ * quality level, plus the generic preset when the encoder exposes one. */
+void SimpleOutput::UpdateRecordingSettings_ffmpeg_cqp(int cqp)
+{
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_string(settings, "rate_control", "CQP");
+	obs_data_set_int(settings, "cqp", cqp);
+
+	const char *preset = config_get_string(main->Config(), "SimpleOutput", "Preset");
+	if (preset && *preset) {
+		OBSProperties props = obs_encoder_properties(videoRecording);
+		obs_property_t *p = obs_properties_get(props, "preset");
+		if (p) {
+			obs_data_set_string(settings, "preset", preset);
+		}
+	}
+
 	obs_encoder_update(videoRecording, settings);
 }
 
@@ -614,6 +672,10 @@ void SimpleOutput::UpdateRecordingSettings()
 	} else if (videoEncoder == SIMPLE_ENCODER_APPLE_HEVC) {
 		UpdateRecordingSettings_apple_hevc(ultra_hq ? 70 : 50);
 #endif
+	} else {
+		/* Raw obs encoder ids (ffmpeg svt/aom, vaapi, ...) selected from
+		 * the MoonLit encoder list get the same quality treatment. */
+		UpdateRecordingSettings_ffmpeg_cqp(crf);
 	}
 	UpdateRecordingAudioSettings();
 }
@@ -954,7 +1016,9 @@ bool SimpleOutput::StartReplayBuffer()
 		return false;
 	}
 	if (!obs_output_start(replayBuffer)) {
-		QMessageBox::critical(main, QTStr("Output.StartReplayFailed"), QTStr("Output.StartFailedGeneric"));
+		if (!main->ReplayBufferSilent()) {
+			QMessageBox::critical(main, QTStr("Output.StartReplayFailed"), QTStr("Output.StartFailedGeneric"));
+		}
 		return false;
 	}
 

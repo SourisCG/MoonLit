@@ -6,6 +6,8 @@
 
 #include <QString>
 
+#include <cstdint>
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -380,8 +382,19 @@ bool WindowsCaptureBackend::monitorFallbackIsSafe(const CaptureTarget &target) c
 	MONITORINFO info = {};
 	info.cbSize = sizeof(info);
 	RECT windowRect = {};
-	return monitor && GetMonitorInfoW(monitor, &info) && GetWindowRect(window, &windowRect) &&
-	       EqualRect(&info.rcMonitor, &windowRect);
+	if (!monitor || !GetMonitorInfoW(monitor, &info) || !GetWindowRect(window, &windowRect))
+		return false;
+
+	/* Exact fullscreen, or a window covering at least 90% of the monitor
+	 * area (maximized games with borders / DWM margins still count). */
+	if (EqualRect(&info.rcMonitor, &windowRect))
+		return true;
+
+	const int64_t windowArea = static_cast<int64_t>(windowRect.right - windowRect.left) *
+				   (windowRect.bottom - windowRect.top);
+	const int64_t monitorArea = static_cast<int64_t>(info.rcMonitor.right - info.rcMonitor.left) *
+				    (info.rcMonitor.bottom - info.rcMonitor.top);
+	return monitorArea > 0 && windowArea >= monitorArea * 9 / 10;
 }
 
 bool WindowsCaptureBackend::installShield()

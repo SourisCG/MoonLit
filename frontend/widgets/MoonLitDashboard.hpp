@@ -24,6 +24,7 @@ class QPushButton;
 class QTimer;
 class MoonLitMixer;
 class MoonLitRecordButton;
+class MoonLitThumbCard;
 
 class MoonLitDashboard final : public QWidget {
 	Q_OBJECT
@@ -47,13 +48,19 @@ signals:
 	void saveClipRequested();
 	void settingsRequested();
 	void libraryRequested();
-	void recentClipRequested(const QString &id);
+	void recentClipRequested(const QString &id, const QString &path);
 	void fullscreenModeRequested(bool enabled);
 	void gamePickRequested();
 
 private:
 	void rebuildRecentClips();
+	void reflowRecentClips();
 
+protected:
+	void resizeEvent(QResizeEvent *event) override;
+	void showEvent(QShowEvent *event) override;
+
+private:
 	QLabel *stateLabel = nullptr;
 	QLabel *gameLabel = nullptr;
 	QLabel *captureLabel = nullptr;
@@ -68,5 +75,6 @@ private:
 	QTimer *noticeTimer = nullptr;
 	QGridLayout *recentGrid = nullptr;
 	QVector<MoonLit::Clip> recentClips_;
+	QVector<MoonLitThumbCard *> recentCards_;
 	MoonLitMixer *mixer_ = nullptr;
 };

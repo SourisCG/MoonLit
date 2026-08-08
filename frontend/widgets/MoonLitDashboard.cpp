@@ -16,6 +16,7 @@
 
 #include "MoonLitMixer.hpp"
 #include "MoonLitTheme.hpp"
+#include "MoonLitThumbCard.hpp"
 
 #include <QFileInfo>
 #include <QGridLayout>
@@ -24,7 +25,9 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QTimer>
@@ -61,7 +64,7 @@ protected:
 		QPainter painter(this);
 		painter.setRenderHint(QPainter::Antialiasing);
 
-		const QColor ring = active_ ? QColor(0xff, 0x6e, 0x6e) : MoonLitTheme::rec();
+		const QColor ring = active_ ? MoonLitTheme::rec().lighter(118) : MoonLitTheme::rec();
 		painter.setPen(QPen(ring, 3));
 		painter.setBrush(active_ ? MoonLitTheme::rec() : MoonLitTheme::bgSurface());
 		painter.drawEllipse(QRectF(1.5, 1.5, 117, 117));
@@ -84,23 +87,14 @@ namespace {
 
 using namespace MoonLitTheme;
 
+/* The dashboard shows only the most recent clips, never the whole library. */
+constexpr int kMaxRecentCards = 6;
+
 QLabel *makeLabel(const QString &text, QWidget *parent = nullptr)
 {
 	auto *label = new QLabel(text, parent);
 	label->setWordWrap(true);
 	return label;
-}
-
-QPushButton *makeCardButton(QWidget *parent)
-{
-	auto *button = new QPushButton(parent);
-	button->setFixedSize(150, 92);
-	button->setIconSize(QSize(142, 58));
-	button->setStyleSheet(QStringLiteral(
-		"QPushButton { background: %1; border: 1px solid %2; border-radius: 8px; }"
-		"QPushButton:hover { border-color: %3; }")
-				      .arg(css(bgSurface()), css(border()), css(accent())));
-	return button;
 }
 
 } // namespace
@@ -112,8 +106,8 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 
 	setStyleSheet(QStringLiteral(R"(
         #moonlitDashboard {
-            background: %1;
-            color: %2;
+            background: transparent;
+            color: %1;
         }
         QLabel#moonlitTitle {
             color: #ffffff;
@@ -122,73 +116,58 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
         }
         QLabel#moonlitSubtitle, QLabel#moonlitHint, QLabel#moonlitDetail,
         QLabel#moonlitSection {
-            color: %3;
+            color: %2;
         }
         QLabel#moonlitSection {
             font-size: 13px;
             font-weight: 600;
         }
         QLabel#moonlitState {
-            color: %4;
+            color: %3;
             font-size: 16px;
             font-weight: 600;
         }
         QPushButton {
             min-height: 38px;
             padding: 0 16px;
-            border: 1px solid %5;
+            border: 1px solid %4;
             border-radius: 8px;
-            background: %6;
-            color: %2;
+            background: %5;
+            color: %1;
             font-weight: 500;
         }
         QPushButton:hover {
-            border-color: %7;
-            background: %8;
+            border-color: %6;
+            background: %7;
         }
         QPushButton:pressed {
-            background: %9;
+            background: %10;
         }
         QPushButton:disabled {
-            color: %3;
-            background: %10;
-            border-color: %11;
+            color: %2;
+            background: %7;
+            border-color: %4;
         }
         QPushButton#moonlitPrimary {
             border: 0;
-            background: %7;
+            background: %6;
             color: #ffffff;
             font-weight: 600;
         }
         QPushButton#moonlitPrimary:hover {
-            background: %12;
+            background: %8;
         }
         QPushButton#moonlitPrimary:disabled {
-            background: %8;
-            color: %3;
+            background: %7;
+            color: %2;
         }
     )")
-			.arg(css(bgDeep()), css(text()), css(textMuted()), css(ok()), css(border()),
-			     css(bgSurface()), css(accent()), css(bgElevated()), QColor(0x2f, 0x31, 0x42).name(),
-			     QColor(0x24, 0x25, 0x2f).name(), QColor(0x3a, 0x3d, 0x4d).name(), css(accentHover()),
-			     css(rec()), QColor(0xff, 0x6e, 0x6e).name()));
+			.arg(css(text()), css(textMuted()), css(ok()), css(border()), css(bgSurface()),
+			     css(accent()), css(bgElevated()), css(accentHover()), css(rec()), css(night())));
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(32, 24, 32, 24);
 	root->setSpacing(16);
-
-	auto *header = new QHBoxLayout();
-	header->setSpacing(10);
-	auto *logo = new QLabel(this);
-	logo->setPixmap(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")).pixmap(34, 34));
-	auto *title = makeLabel(QStringLiteral("MoonLit"), this);
-	title->setObjectName(QStringLiteral("moonlitTitle"));
-	auto *settingsButton = new QPushButton(QStringLiteral("Ajustes"), this);
-	header->addWidget(logo);
-	header->addWidget(title);
-	header->addStretch(1);
-	header->addWidget(settingsButton);
-	root->addLayout(header);
 
 	/* Capture mode row: automatic game detection, full-screen capture or a
 	 * manually pinned process (Medal-style). */
@@ -248,16 +227,14 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 	center->addWidget(gameLabel, 0, Qt::AlignHCenter);
 	root->addLayout(center);
 
-	/* Actions: save clip (primary) and open the library. */
+	/* Actions: save clip (primary); navigation lives in the left rail. */
 	auto *actions = new QHBoxLayout();
 	actions->setSpacing(10);
 	saveButton = new QPushButton(QStringLiteral("Guardar clip"), this);
 	saveButton->setObjectName(QStringLiteral("moonlitPrimary"));
 	saveButton->setEnabled(false);
-	auto *libraryButton = new QPushButton(QStringLiteral("Biblioteca"), this);
 	actions->addStretch(1);
 	actions->addWidget(saveButton, 2);
-	actions->addWidget(libraryButton, 1);
 	actions->addStretch(1);
 	root->addLayout(actions);
 
@@ -302,8 +279,6 @@ MoonLitDashboard::MoonLitDashboard(QWidget *parent) : QWidget(parent)
 
 	connect(recordButton, &MoonLitRecordButton::clicked, this, &MoonLitDashboard::replayActionRequested);
 	connect(saveButton, &QPushButton::clicked, this, &MoonLitDashboard::saveClipRequested);
-	connect(libraryButton, &QPushButton::clicked, this, &MoonLitDashboard::libraryRequested);
-	connect(settingsButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
 	connect(folderButton, &QPushButton::clicked, this, &MoonLitDashboard::settingsRequested);
 
 	noticeTimer = new QTimer(this);
@@ -357,14 +332,16 @@ void MoonLitDashboard::setEncoderStatus(const QString &status)
 
 void MoonLitDashboard::setClipSaved(const QString &path)
 {
-	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #83d89b; font-weight: 600;"));
+	clipNoticeLabel->setStyleSheet(
+		QStringLiteral("color: %1; font-weight: 600;").arg(MoonLitTheme::css(MoonLitTheme::ok())));
 	clipNoticeLabel->setText(QStringLiteral("Clip guardado: %1").arg(QFileInfo(path).fileName()));
 	noticeTimer->start();
 }
 
 void MoonLitDashboard::setClipError(const QString &message)
 {
-	clipNoticeLabel->setStyleSheet(QStringLiteral("color: #e98b8b; font-weight: 600;"));
+	clipNoticeLabel->setStyleSheet(
+		QStringLiteral("color: %1; font-weight: 600;").arg(MoonLitTheme::css(MoonLitTheme::rec())));
 	clipNoticeLabel->setText(message);
 	folderButton->setVisible(true);
 	noticeTimer->start();
@@ -382,23 +359,67 @@ void MoonLitDashboard::rebuildRecentClips()
 		delete item->widget();
 		delete item;
 	}
+	recentCards_.clear();
+	reflowRecentClips();
+}
 
-	const int count = std::min<int>(9, recentClips_.size());
-	for (int index = 0; index < count; ++index) {
+void MoonLitDashboard::reflowRecentClips()
+{
+	/* The width can still be tiny while the startup layout settles (a card
+	 * build there would collapse to one column); the floor keeps the first
+	 * pass reasonable and every later resize/show self-heals the grid. */
+	const int columns = std::clamp(std::max(width(), 400) / (150 + 8), 1, 9);
+	const int count = std::min<int>({columns * 3, kMaxRecentCards, static_cast<int>(recentClips_.size())});
+
+	/* Create cards that are missing (icons decode lazily at paint time, so
+	 * this is cheap); existing cards are reused and only moved. */
+	while (recentCards_.size() < count) {
+		const int index = recentCards_.size();
 		const MoonLit::Clip &clip = recentClips_[index];
-		auto *card = makeCardButton(this);
-		if (QFileInfo::exists(clip.thumbnailPath)) {
-			card->setIcon(QIcon(clip.thumbnailPath));
-		} else {
-			card->setIcon(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")));
-		}
+		auto *card = new MoonLitThumbCard(this);
+		card->setFixedSize(150, 100);
+		card->setThumbnail(QFileInfo::exists(clip.thumbnailPath)
+						   ? QPixmap(clip.thumbnailPath)
+						   : QIcon(QStringLiteral(":/res/images/moonlit-icon.png")).pixmap(142, 80));
+		card->setTitle(clip.title);
 		card->setToolTip(clip.title);
-		connect(card, &QPushButton::clicked, this,
-			[this, id = clip.id]() { emit recentClipRequested(id); });
-		recentGrid->addWidget(card, index / 3, index % 3);
+		connect(card, &MoonLitThumbCard::clicked, this,
+			[this, id = clip.id, path = clip.mediaPath]() { emit recentClipRequested(id, path); });
+		recentCards_.append(card);
 	}
 
-	recentGrid->setColumnStretch(3, 1);
+	while (QLayoutItem *item = recentGrid->takeAt(0)) {
+		delete item;
+	}
+	for (int index = 0; index < count; ++index) {
+		recentGrid->addWidget(recentCards_.at(index), index / columns, index % columns);
+		recentCards_.at(index)->show();
+	}
+	for (int index = count; index < recentCards_.size(); ++index) {
+		recentCards_.at(index)->hide();
+	}
+	recentGrid->setColumnStretch(columns, 1);
+}
+
+void MoonLitDashboard::resizeEvent(QResizeEvent *event)
+{
+	QWidget::resizeEvent(event);
+	/* Reflow whenever the width changes, even before the widget is shown:
+	 * cards built during the startup layout (when width() is still small)
+	 * land in the right column count as soon as the real size lands. */
+	if (!recentClips_.isEmpty() && event->size().width() != event->oldSize().width()) {
+		reflowRecentClips();
+	}
+}
+
+void MoonLitDashboard::showEvent(QShowEvent *event)
+{
+	QWidget::showEvent(event);
+	/* Coming back from another view may reveal cards that were built while
+	 * hidden (small width); rebuild them for the current size. */
+	if (!recentClips_.isEmpty()) {
+		reflowRecentClips();
+	}
 }
 
 #include "MoonLitDashboard.moc"

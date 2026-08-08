@@ -17,6 +17,8 @@
 #include "MoonLitGamePickerDialog.hpp"
 #include "MoonLitLibraryWidget.hpp"
 #include "MoonLitMixer.hpp"
+#include "MoonLitNavBar.hpp"
+#include "MoonLitStarfield.hpp"
 
 #include <moonlit/ui/MoonLitSettingsDialog.hpp>
 
@@ -27,7 +29,11 @@
 #include <moonlit/capture/CaptureController.hpp>
 #endif
 
+#include <QDesktopServices>
+#include <QHBoxLayout>
+#include <QStackedWidget>
 #include <QStringList>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -81,21 +87,33 @@ QString availableVideoEncoders()
 
 void OBSBasic::ShowMoonLitLibrary()
 {
-	if (!moonlitDashboard || !moonlitLibrary) {
+	if (!moonlitStack || !moonlitLibrary) {
 		return;
 	}
-	moonlitDashboard->hide();
 	moonlitLibrary->refresh();
-	moonlitLibrary->show();
+	moonlitStack->setCurrentWidget(moonlitLibrary);
+	if (moonlitNav) {
+		moonlitNav->setActiveItem(MoonLitNavBar::Item::Library);
+	}
 }
 
 void OBSBasic::ShowMoonLitDashboard()
 {
-	if (moonlitLibrary) {
-		moonlitLibrary->hide();
+	if (!moonlitStack || !moonlitDashboard) {
+		return;
 	}
-	if (moonlitDashboard) {
-		moonlitDashboard->show();
+	moonlitStack->setCurrentWidget(moonlitDashboard);
+	if (moonlitNav) {
+		moonlitNav->setActiveItem(MoonLitNavBar::Item::Home);
+	}
+}
+
+void OBSBasic::OpenMoonLitSettings()
+{
+	MoonLitSettingsDialog dialog(this, moonlitHotkeys);
+	if (dialog.exec() == QDialog::Accepted && moonlitCaptureController) {
+		/* Ajustes can edit the remembered game list. */
+		moonlitCaptureController->reloadGameList();
 	}
 }
 
@@ -110,25 +128,37 @@ void OBSBasic::InitializeMoonLitShell()
 		 * low-level obs hotkey delivery (GetAsyncKeyState polling, no hooks:
 		 * anti-cheat safe). */
 		moonlitHotkeys = new MoonLit::HotkeyManager(this);
-		moonlitHotkeys->registerSaveClip([this]() { ReplayBufferSave(); });
+		moonlitHotkeys->registerSaveClip(Config(), [this]() { ReplayBufferSave(); });
 #endif
 
-		moonlitDashboard = new MoonLitDashboard(this);
-		ui->previewLayout->addWidget(moonlitDashboard);
-		moonlitLibrary = new MoonLitLibraryWidget(this);
-		ui->previewLayout->addWidget(moonlitLibrary);
-		moonlitLibrary->hide();
+		/* Root surface: the starfield paints the asphalt sky behind the
+		 * translucent surfaces of the nav rail and the content views. */
+		moonlitRoot = new MoonLitStarfield(this);
+		moonlitRoot->setObjectName(QStringLiteral("moonlitRoot"));
+		auto *rootLayout = new QHBoxLayout(moonlitRoot);
+		rootLayout->setContentsMargins(0, 0, 0, 0);
+		rootLayout->setSpacing(0);
+
+		moonlitNav = new MoonLitNavBar(moonlitRoot);
+		rootLayout->addWidget(moonlitNav);
+
+		moonlitStack = new QStackedWidget(moonlitRoot);
+		moonlitDashboard = new MoonLitDashboard(moonlitStack);
+		moonlitLibrary = new MoonLitLibraryWidget(moonlitStack);
+		moonlitStack->addWidget(moonlitDashboard);
+		moonlitStack->addWidget(moonlitLibrary);
+		rootLayout->addWidget(moonlitStack, 1);
+
+		ui->previewLayout->addWidget(moonlitRoot);
+
+		connect(moonlitNav, &MoonLitNavBar::homeRequested, this, &OBSBasic::ShowMoonLitDashboard);
+		connect(moonlitNav, &MoonLitNavBar::libraryRequested, this, &OBSBasic::ShowMoonLitLibrary);
+		connect(moonlitNav, &MoonLitNavBar::settingsRequested, this, &OBSBasic::OpenMoonLitSettings);
 
 		connect(moonlitDashboard, &MoonLitDashboard::replayActionRequested, this,
 			[this]() { ReplayBufferActionTriggered(); });
 		connect(moonlitDashboard, &MoonLitDashboard::saveClipRequested, this, &OBSBasic::ReplayBufferSave);
-		connect(moonlitDashboard, &MoonLitDashboard::settingsRequested, this, [this]() {
-			MoonLitSettingsDialog dialog(this);
-			if (dialog.exec() == QDialog::Accepted && moonlitCaptureController) {
-				/* Ajustes can edit the remembered game list. */
-				moonlitCaptureController->reloadGameList();
-			}
-		});
+		connect(moonlitDashboard, &MoonLitDashboard::settingsRequested, this, &OBSBasic::OpenMoonLitSettings);
 		connect(moonlitDashboard, &MoonLitDashboard::fullscreenModeRequested, this,
 			[this](bool enabled) {
 				if (moonlitCaptureController) {
@@ -152,8 +182,17 @@ void OBSBasic::InitializeMoonLitShell()
 			}
 			moonlitCaptureController->selectGame(target);
 		});
-		connect(moonlitDashboard, &MoonLitDashboard::libraryRequested, this, &OBSBasic::ShowMoonLitLibrary);
-		connect(moonlitLibrary, &MoonLitLibraryWidget::backRequested, this, &OBSBasic::ShowMoonLitDashboard);
+		connect(moonlitDashboard, &MoonLitDashboard::recentClipRequested, this,
+			[this](const QString &id, const QString &path) {
+				/* Medal-style: a recent clip opens directly with the default
+				 * player; only missing clips fall back to the library. */
+				if (!path.isEmpty()) {
+					QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+					return;
+				}
+				ShowMoonLitLibrary();
+				moonlitLibrary->selectClip(id);
+			});
 		connect(moonlitLibrary, &MoonLitLibraryWidget::libraryUpdated, moonlitDashboard,
 			[this](const QVector<MoonLit::Clip> &clips) {
 				QVector<MoonLit::Clip> recent = clips;
@@ -162,11 +201,6 @@ void OBSBasic::InitializeMoonLitShell()
 						  return left.createdAtUtc > right.createdAtUtc;
 					  });
 				moonlitDashboard->setRecentClips(recent);
-			});
-		connect(moonlitDashboard, &MoonLitDashboard::recentClipRequested, this,
-			[this](const QString &id) {
-				ShowMoonLitLibrary();
-				moonlitLibrary->selectClip(id);
 			});
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitLibrary, &MoonLitLibraryWidget::ingestClip);
 		connect(this, &OBSBasic::ReplayClipSaved, moonlitDashboard,
@@ -242,14 +276,14 @@ bool OBSBasic::replayBufferActive()
 	return ReplayBufferActive();
 }
 
-void OBSBasic::startReplayBuffer()
+bool OBSBasic::startReplayBuffer(bool silent)
 {
-	StartReplayBuffer();
+	return StartReplayBufferImpl(silent);
 }
 
-void OBSBasic::stopReplayBuffer()
+void OBSBasic::stopReplayBuffer(bool silent)
 {
-	StopReplayBuffer();
+	StopReplayBufferImpl(silent);
 }
 
 config_t *OBSBasic::activeConfig()

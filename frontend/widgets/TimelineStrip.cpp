@@ -93,7 +93,7 @@ void TimelineStrip::paintEvent(QPaintEvent *event)
 	QPainter painter(this);
 	painter.setRenderHint(QPainter::Antialiasing, false);
 
-	painter.fillRect(QRect(0, kTrackTop, width(), kTrackHeight), QColor(0x21, 0x22, 0x2c));
+	painter.fillRect(QRect(0, kTrackTop, width(), kTrackHeight), bgSurface());
 
 	for (int index = 0; index < segments_.size(); ++index) {
 		QRect rect = segmentRect(index);

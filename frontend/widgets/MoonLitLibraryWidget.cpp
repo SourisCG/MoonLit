@@ -2,6 +2,7 @@
 
 #include "ClipFrameStrip.hpp"
 #include "MoonLitTheme.hpp"
+#include "MoonLitThumbCard.hpp"
 #include "MoonLitTimelineEditor.hpp"
 
 #include <obs.h>
@@ -23,9 +24,11 @@
 #include <QMetaObject>
 #include <QPixmap>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
+#include <QShowEvent>
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QThread>
@@ -61,23 +64,21 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	using namespace MoonLitTheme;
 	setObjectName(QStringLiteral("moonlitLibrary"));
 	setStyleSheet(QStringLiteral(R"(
-        #moonlitLibrary { background: %1; color: %2; }
+        #moonlitLibrary { background: transparent; color: %1; }
         QLabel#libraryTitle { color: #ffffff; font-size: 24px; font-weight: 700; }
-        QLabel#libraryDetails, QLabel#libraryStatus { color: %3; }
-        QLineEdit, QListWidget, QSpinBox, QComboBox { background: %4; color: %2; border: 1px solid %5; border-radius: 7px; padding: 7px; }
+        QLabel#libraryDetails, QLabel#libraryStatus { color: %2; }
+        QLineEdit, QListWidget, QSpinBox, QComboBox { background: %4; color: %1; border: 1px solid %3; border-radius: 7px; padding: 7px; }
         QComboBox::drop-down { border: 0; }
-        QComboBox QAbstractItemView { background: %6; color: %2; selection-background-color: %7; }
-        QListWidget::item { padding: 8px; border-bottom: 1px solid %8; }
-        QListWidget::item:selected { background: %9; }
-        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid %5; border-radius: 7px; background: %4; color: %2; font-weight: 500; }
-        QPushButton:hover { background: %9; border-color: %7; }
-        QPushButton:pressed { background: %10; }
-        QPushButton:disabled { color: %3; background: %11; border-color: %12; }
+        QComboBox QAbstractItemView { background: %5; color: %1; selection-background-color: %6; }
+        QListWidget::item { padding: 8px; border-bottom: 1px solid %3; }
+        QListWidget::item:selected { background: %5; color: %1; }
+        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid %3; border-radius: 7px; background: %4; color: %1; font-weight: 500; }
+        QPushButton:hover { background: %5; border-color: %6; }
+        QPushButton:pressed { background: %7; }
+        QPushButton:disabled { color: %2; background: %4; border-color: %3; }
     )")
-			.arg(css(bgDeep()), css(text()), css(textMuted()), css(bgSurface()), css(border()),
-			     QColor(0x2f, 0x31, 0x42).name(), css(accent()), QColor(0x3a, 0x3d, 0x4d).name(),
-			     css(bgElevated()), QColor(0x2f, 0x31, 0x42).name(), QColor(0x24, 0x25, 0x2f).name(),
-			     QColor(0x3a, 0x3d, 0x4d).name()));
+			.arg(css(text()), css(textMuted()), css(border()), css(bgSurface()), css(bgElevated()),
+			     css(accent()), css(night())));
 
 	searchDebounceTimer_ = new QTimer(this);
 	searchDebounceTimer_->setSingleShot(true);
@@ -89,13 +90,11 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	root->setSpacing(12);
 
 	auto *header = new QHBoxLayout();
-	auto *backButton = new QPushButton(QStringLiteral("Volver"), this);
 	auto *title = new QLabel(QStringLiteral("Biblioteca"), this);
 	title->setObjectName(QStringLiteral("libraryTitle"));
 	auto *refreshButton = new QPushButton(QStringLiteral("Actualizar"), this);
 	auto *importButton = new QPushButton(QStringLiteral("Importar"), this);
 	auto *timelineButton = new QPushButton(QStringLiteral("Timeline"), this);
-	header->addWidget(backButton);
 	header->addWidget(title);
 	header->addStretch(1);
 	header->addWidget(timelineButton);
@@ -131,7 +130,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	gridLayout_->setSpacing(10);
 	gridLayout_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 	gridScroll_->setWidget(gridContainer_);
-	gridScroll_->setMinimumWidth(460);
+	gridScroll_->setMinimumWidth(360);
 	content->addWidget(gridScroll_, 2);
 
 	auto *detailsContainer = new QWidget(libraryPage_);
@@ -217,7 +216,6 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	statusLabel_->setWordWrap(true);
 	root->addWidget(statusLabel_);
 
-	connect(backButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::backRequested);
 	connect(refreshButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::refresh);
 	connect(importButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::importFiles);
 	connect(timelineButton, &QPushButton::clicked, this, &MoonLitLibraryWidget::openTimelineEditor);
@@ -273,6 +271,7 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	jobs_->moveToThread(workerThread_);
 	connect(workerThread_, &QThread::finished, jobs_, &QObject::deleteLater);
 	connect(jobs_, &MoonLit::ClipJobs::libraryLoaded, this, &MoonLitLibraryWidget::onLibraryLoaded);
+	connect(jobs_, &MoonLit::ClipJobs::recentLoaded, this, &MoonLitLibraryWidget::onRecentLoaded);
 	connect(jobs_, &MoonLit::ClipJobs::clipIngested, this, &MoonLitLibraryWidget::onClipIngested);
 	connect(jobs_, &MoonLit::ClipJobs::clipRemoved, this, &MoonLitLibraryWidget::onClipRemoved);
 	connect(jobs_, &MoonLit::ClipJobs::clipEditsSaved, this, &MoonLitLibraryWidget::onClipEditsSaved);
@@ -315,7 +314,10 @@ MoonLitLibraryWidget::MoonLitLibraryWidget(QWidget *parent) : QWidget(parent)
 	workerThread_->start();
 	queue_->start();
 
-	refresh();
+	/* Startup is light: only the most recent clips reach the dashboard. The
+	 * full grid is built when Clips is opened (ShowMoonLitLibrary refreshes),
+	 * so a big library never stalls the initial screen. */
+	loadRecentClips();
 }
 
 MoonLitLibraryWidget::~MoonLitLibraryWidget()
@@ -351,6 +353,13 @@ void MoonLitLibraryWidget::refresh()
 		QMetaObject::invokeMethod(jobs_, [this]() { jobs_->reload(); }, Qt::QueuedConnection);
 	else
 		QMetaObject::invokeMethod(jobs_, [this, query]() { jobs_->search(query); }, Qt::QueuedConnection);
+}
+
+void MoonLitLibraryWidget::loadRecentClips()
+{
+	if (!jobs_)
+		return;
+	QMetaObject::invokeMethod(jobs_, [this]() { jobs_->loadRecent(12); }, Qt::QueuedConnection);
 }
 
 void MoonLitLibraryWidget::ingestClip(const QString &path)
@@ -399,6 +408,10 @@ void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 		selectedId_ = clips.first().id;
 	}
 
+	/* Responsive: card columns follow the grid viewport width (190px cards,
+	 * 10px spacing), so the grid reflows instead of overflowing. */
+	const int columns = std::max(1, gridScroll_->viewport()->width() / 200);
+
 	int shown = 0;
 	for (const MoonLit::Clip &clip : clips) {
 		const bool missing = clip.missing;
@@ -407,46 +420,32 @@ void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 		if (filter == LibraryFilter::Missing && !missing)
 			continue;
 
-		QString text = clip.title;
+		QString detail;
 		if (clip.metadata.durationMs > 0) {
-			text += QStringLiteral("\n%1 s").arg(clip.metadata.durationMs / 1000);
+			detail = QStringLiteral("%1 s").arg(clip.metadata.durationMs / 1000);
 		}
 		if (missing) {
-			text += QStringLiteral("\n[Faltante]");
+			if (!detail.isEmpty()) {
+				detail += QStringLiteral(" · ");
+			}
+			detail += QStringLiteral("[Faltante]");
 		}
 
-		auto *card = new QPushButton(text, gridContainer_);
+		auto *card = new MoonLitThumbCard(gridContainer_);
 		card->setProperty("clipId", clip.id);
-		card->setFixedSize(190, 120);
-		card->setIconSize(QSize(176, 66));
+		card->setFixedSize(190, 136);
 		card->setToolTip(clip.mediaPath);
-		if (QFileInfo::exists(clip.thumbnailPath)) {
-			card->setIcon(QIcon(clip.thumbnailPath));
-		} else {
-			card->setIcon(QIcon(QStringLiteral(":/res/images/moonlit-icon.png")));
-		}
-		card->setStyleSheet(QStringLiteral(
-			"QPushButton { background: %1; border: 1px solid %2; border-radius: 8px;"
-			" text-align: center; color: %3; padding: 4px; font-size: 11px; }"
-			"QPushButton:hover { border-color: %4; }"
-			"QPushButton[selected=\"true\"] { border: 2px solid %4; }")
-					      .arg(MoonLitTheme::css(MoonLitTheme::bgSurface()),
-						   MoonLitTheme::css(MoonLitTheme::border()),
-						   MoonLitTheme::css(MoonLitTheme::text()),
-						   MoonLitTheme::css(MoonLitTheme::accent())));
-		card->setCheckable(true);
-		card->setChecked(clip.id == selectedId_);
-		card->setProperty("selected", clip.id == selectedId_);
+		card->setThumbnail(QFileInfo::exists(clip.thumbnailPath)
+					   ? QPixmap(clip.thumbnailPath)
+					   : QIcon(QStringLiteral(":/res/images/moonlit-icon.png")).pixmap(182, 102));
+		card->setTitle(clip.title, detail);
+		card->setSelected(clip.id == selectedId_);
 
-		connect(card, &QPushButton::clicked, this, [this, id = clip.id]() {
+		connect(card, &MoonLitThumbCard::clicked, this, [this, id = clip.id]() {
 			selectedId_ = id;
 			updateSelection();
 			for (auto it = gridCards_.cbegin(); it != gridCards_.cend(); ++it) {
-				const bool selected = it.key() == id;
-				it.value()->setChecked(selected);
-				it.value()->setProperty("selected", selected);
-				it.value()->style()->unpolish(it.value());
-				it.value()->style()->polish(it.value());
+				it.value()->setSelected(it.key() == id);
 			}
 			/* A second click shortly after the first opens the clip. */
 			if (lastCardClick_.isValid() && lastCardClick_.elapsed() < 400) {
@@ -455,11 +454,11 @@ void MoonLitLibraryWidget::populateList(const QVector<MoonLit::Clip> &clips)
 			lastCardClick_.restart();
 		});
 
-		gridLayout_->addWidget(card, shown / 3, shown % 3);
+		gridLayout_->addWidget(card, shown / columns, shown % columns);
 		gridCards_.insert(clip.id, card);
 		++shown;
 	}
-	gridLayout_->setRowStretch(shown / 3, 1);
+	gridLayout_->setRowStretch(shown / columns, 1);
 
 	setStatus(QStringLiteral("%1 clip(s) local(es)").arg(shown));
 	emit libraryUpdated(clips);
@@ -471,6 +470,45 @@ void MoonLitLibraryWidget::onFilterChanged(int)
 	if (!gridScroll_)
 		return;
 	populateList(clips_);
+}
+
+void MoonLitLibraryWidget::reflowGrid()
+{
+	/* Reflow only: existing cards move to new grid cells, nothing is
+	 * recreated (no icon re-decodes) and libraryUpdated is not re-emitted
+	 * (that would rebuild the dashboard recents for no reason). */
+	const int columns = std::max(1, gridScroll_->viewport()->width() / 200);
+	while (QLayoutItem *item = gridLayout_->takeAt(0)) {
+		delete item;
+	}
+	int index = 0;
+	for (auto it = gridCards_.cbegin(); it != gridCards_.cend(); ++it) {
+		gridLayout_->addWidget(it.value(), index / columns, index % columns);
+		++index;
+	}
+	gridLayout_->setRowStretch(std::max(0, (index - 1) / columns), 1);
+}
+
+void MoonLitLibraryWidget::resizeEvent(QResizeEvent *event)
+{
+	QWidget::resizeEvent(event);
+	/* Reflow whenever the width changes, even before the widget is shown:
+	 * cards built during the startup layout (when the viewport width is
+	 * still small) must land in the right column count as soon as the real
+	 * size lands. Reflow moves widgets only, it never re-decodes icons. */
+	if (!gridCards_.isEmpty() && event->size().width() != event->oldSize().width()) {
+		reflowGrid();
+	}
+}
+
+void MoonLitLibraryWidget::showEvent(QShowEvent *event)
+{
+	QWidget::showEvent(event);
+	/* Coming back from another view may reveal cards that were built while
+	 * hidden (small width); reflow them to the current size. */
+	if (!gridCards_.isEmpty()) {
+		reflowGrid();
+	}
 }
 
 void MoonLitLibraryWidget::importFiles()
@@ -512,14 +550,31 @@ void MoonLitLibraryWidget::onClipIngested(const QString &id, const QString &erro
 {
 	if (!error.isEmpty())
 		setStatus(error, true);
-	refresh();
+	/* On the dashboard a full reload would rebuild every card for nothing:
+	 * refresh the recent clips only. The grid reloads when Clips is opened. */
+	if (stack_ && stack_->currentWidget() == libraryPage_) {
+		refresh();
+	} else {
+		loadRecentClips();
+	}
 }
 
 void MoonLitLibraryWidget::onClipRemoved(const QString &id, const QString &error)
 {
 	if (!error.isEmpty())
 		setStatus(error, true);
-	refresh();
+	if (stack_ && stack_->currentWidget() == libraryPage_) {
+		refresh();
+	} else {
+		loadRecentClips();
+	}
+}
+
+void MoonLitLibraryWidget::onRecentLoaded(QVector<MoonLit::Clip> clips, const QString &error)
+{
+	if (!error.isEmpty())
+		setStatus(error, true);
+	emit libraryUpdated(clips);
 }
 
 void MoonLitLibraryWidget::onSearchResults(QVector<MoonLit::Clip> clips, const QString &query)

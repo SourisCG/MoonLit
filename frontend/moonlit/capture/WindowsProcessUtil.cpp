@@ -86,7 +86,10 @@ bool readWindowTarget(quintptr window, MoonLitTarget &target)
 	target.windowClass = encodeName(windowClass);
 	target.executablePath = path;
 	target.executable = path.section(QChar('\\'), -1);
-	return !target.title.isEmpty() && !isIgnoredExecutable(target.executable);
+	/* Empty titles are accepted: some fullscreen/exclusive games expose an
+	 * untitled root window. The game-path heuristic (or the manual list)
+	 * still filters non-game foreground windows. */
+	return !isIgnoredExecutable(target.executable);
 }
 
 bool processAlive(const MoonLitTarget &target)

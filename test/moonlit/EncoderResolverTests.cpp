@@ -72,6 +72,33 @@ MOONLIT_TEST(resolver_handles_raw_obs_ids)
 	return ok;
 }
 
+MOONLIT_TEST(resolver_maps_preset_keys)
+{
+	bool ok = expect(std::string(EncoderResolver::SimpleTokenToPresetKey("qsv")) == "QSVPreset",
+			 "qsv preset lives under QSVPreset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("qsv_av1")) == "QSVPreset",
+		     "qsv_av1 preset lives under QSVPreset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("amd")) == "AMDPreset",
+		     "amd preset lives under AMDPreset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("amd_hevc")) == "AMDPreset",
+		     "amd_hevc preset lives under AMDPreset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("amd_av1")) == "AMDAV1Preset",
+		     "amd_av1 preset lives under AMDAV1Preset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("nvenc")) == "NVENCPreset2",
+		     "nvenc preset lives under NVENCPreset2", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("nvenc_hevc")) == "NVENCPreset2",
+		     "nvenc_hevc preset lives under NVENCPreset2", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("nvenc_av1")) == "NVENCPreset2",
+		     "nvenc_av1 preset lives under NVENCPreset2", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("x264")) == "Preset",
+		     "x264 preset lives under Preset", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("ffmpeg_svt_av1")) == "Preset",
+		     "raw obs ids use the generic Preset key", failure);
+	ok &= expect(std::string(EncoderResolver::SimpleTokenToPresetKey("")) == "Preset",
+		     "empty token falls back to the generic Preset key", failure);
+	return ok;
+}
+
 MOONLIT_TEST(resolver_first_available_follows_chain_order)
 {
 	EncoderResolver resolver([](const char *) { return true; });

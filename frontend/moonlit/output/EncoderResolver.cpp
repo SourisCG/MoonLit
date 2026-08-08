@@ -53,6 +53,19 @@ string EncoderResolver::SimpleTokenToEncoderId(const string &token)
 	return string();
 }
 
+const char *EncoderResolver::SimpleTokenToPresetKey(const string &token)
+{
+	if (token == "qsv" || token == "qsv_av1")
+		return "QSVPreset";
+	if (token == "amd" || token == "amd_hevc")
+		return "AMDPreset";
+	if (token == "amd_av1")
+		return "AMDAV1Preset";
+	if (token == "nvenc" || token == "nvenc_hevc" || token == "nvenc_av1")
+		return "NVENCPreset2";
+	return "Preset";
+}
+
 bool EncoderResolver::IsAvailable(const string &id) const
 {
 	if (id.empty() || !available_)

@@ -35,31 +35,31 @@ MoonLitTimelineEditor::MoonLitTimelineEditor(QWidget *parent) : QWidget(parent)
 	using namespace MoonLitTheme;
 	setObjectName(QStringLiteral("moonlitTimelineEditor"));
 	setStyleSheet(QStringLiteral(R"(
+        #moonlitTimelineEditor { background: transparent; }
         QLabel#timelineTitle { color: #ffffff; font-size: 24px; font-weight: 700; }
         QLabel#timelineDetail { color: %1; }
-        QLineEdit, QComboBox, QSpinBox { background: %2; color: %3; border: 1px solid %4; border-radius: 7px; padding: 7px; }
+        QLineEdit, QComboBox, QSpinBox { background: %2; color: %3; border: 1px solid %4; border-radius: 7px; padding: 6px; }
         QComboBox::drop-down { border: 0; }
         QComboBox QAbstractItemView { background: %5; color: %3; selection-background-color: %6; }
-        QPushButton { min-height: 34px; padding: 0 12px; border: 1px solid %4; border-radius: 7px; background: %2; color: %3; font-weight: 500; }
+        QPushButton { min-height: 30px; padding: 0 10px; border: 1px solid %4; border-radius: 7px; background: %2; color: %3; font-weight: 500; }
         QPushButton:hover { background: %7; border-color: %6; }
         QPushButton:pressed { background: %5; }
-        QPushButton:disabled { color: %1; background: %8; border-color: %9; }
+        QPushButton:disabled { color: %1; background: %8; border-color: %4; }
     )")
-			.arg(css(textMuted()), css(bgSurface()), css(text()), css(border()),
-			     QColor(0x2f, 0x31, 0x42).name(), css(accent()), css(bgElevated()),
-			     QColor(0x24, 0x25, 0x2f).name(), QColor(0x3a, 0x3d, 0x4d).name()));
+			.arg(css(textMuted()), css(bgSurface()), css(text()), css(border()), css(bgElevated()),
+			     css(accent()), css(bgElevated()), css(bgDeep())));
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(28, 24, 28, 24);
 	root->setSpacing(12);
 
 	auto *header = new QHBoxLayout();
-	backButton_ = new QPushButton(QStringLiteral("Volver a biblioteca"), this);
+	backButton_ = new QPushButton(QStringLiteral("Volver"), this);
 	auto *title = new QLabel(QStringLiteral("Timeline"), this);
 	title->setObjectName(QStringLiteral("timelineTitle"));
-	newButton_ = new QPushButton(QStringLiteral("Nuevo timeline"), this);
+	newButton_ = new QPushButton(QStringLiteral("Nuevo"), this);
 	saveButton_ = new QPushButton(QStringLiteral("Guardar"), this);
-	exportButton_ = new QPushButton(QStringLiteral("Exportar MP4"), this);
+	exportButton_ = new QPushButton(QStringLiteral("Exportar"), this);
 	header->addWidget(backButton_);
 	header->addWidget(title);
 	header->addStretch(1);
@@ -83,7 +83,7 @@ MoonLitTimelineEditor::MoonLitTimelineEditor(QWidget *parent) : QWidget(parent)
 	auto *segmentLabel = new QLabel(QStringLiteral("Agregar clip:"), this);
 	addClipCombo_ = new QComboBox(this);
 	addButton_ = new QPushButton(QStringLiteral("Agregar"), this);
-	removeButton_ = new QPushButton(QStringLiteral("Quitar seleccion"), this);
+	removeButton_ = new QPushButton(QStringLiteral("Quitar"), this);
 	segmentRow->addWidget(segmentLabel);
 	segmentRow->addWidget(addClipCombo_, 1);
 	segmentRow->addWidget(addButton_);

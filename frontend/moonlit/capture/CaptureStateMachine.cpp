@@ -28,7 +28,9 @@ TickAction CaptureStateMachine::decideTick(const CaptureTickInput &input) const
 		return TickAction::MonitorFallbackReady;
 	}
 
-	if (input.healthAvailable && input.healthActive && input.healthFirstFrame && input.healthWgc) {
+	/* Window capture is ready once a frame is being delivered, whether via
+	 * WGC or the BitBlt fallback (used when WGC is unavailable). */
+	if (input.healthAvailable && input.healthActive && input.healthFirstFrame) {
 		if (!input.replayActive && !input.replayStartRequested && !input.replayAutoBlocked &&
 		    input.replayRetryElapsed) {
 			return TickAction::StartReplay;

@@ -1,5 +1,7 @@
 #include "ClipFrameStrip.hpp"
 
+#include "MoonLitTheme.hpp"
+
 #include <QMouseEvent>
 #include <QPainter>
 
@@ -57,10 +59,10 @@ void ClipFrameStrip::updateTrimFromMouse(int x)
 void ClipFrameStrip::paintEvent(QPaintEvent *)
 {
 	QPainter painter(this);
-	painter.fillRect(rect(), QColor(QStringLiteral("#1b1e25")));
+	painter.fillRect(rect(), MoonLitTheme::bgSurface());
 
 	if (frames_.isEmpty() || durationMs_ <= 0) {
-		painter.setPen(QColor(QStringLiteral("#9ba3b4")));
+		painter.setPen(MoonLitTheme::textMuted());
 		painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("Cargando vista previa..."));
 		return;
 	}
@@ -87,10 +89,10 @@ void ClipFrameStrip::paintEvent(QPaintEvent *)
 
 	/* Trim handles. */
 	painter.setPen(Qt::NoPen);
-	painter.setBrush(QColor(QStringLiteral("#7667f5")));
+	painter.setBrush(MoonLitTheme::rec());
 	painter.drawRect(QRect(startX - kHandleWidth / 2, 6, kHandleWidth, stripHeight));
 	painter.drawRect(QRect(endX - kHandleWidth / 2, 6, kHandleWidth, stripHeight));
-	painter.setPen(QColor(QStringLiteral("#f2f4f8")));
+	painter.setPen(MoonLitTheme::text());
 	painter.drawLine(QPointF(startX, 6), QPointF(startX, 6 + stripHeight));
 	painter.drawLine(QPointF(endX, 6), QPointF(endX, 6 + stripHeight));
 }

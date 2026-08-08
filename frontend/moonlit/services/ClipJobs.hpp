@@ -32,6 +32,7 @@ public:
 
 public slots:
 	void reload();
+	void loadRecent(int limit);
 	void ingest(const QString &path);
 	void removeClip(const QString &id);
 	void search(const QString &query);
@@ -45,6 +46,7 @@ public slots:
 
 signals:
 	void libraryLoaded(QVector<Clip> clips, const QString &error);
+	void recentLoaded(QVector<Clip> clips, const QString &error);
 	void clipIngested(const QString &id, const QString &error);
 	void clipRemoved(const QString &id, const QString &error);
 	void clipEditsSaved(const QString &id, const QString &error);

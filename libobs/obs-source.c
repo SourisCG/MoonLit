@@ -4036,6 +4036,11 @@ void obs_source_output_audio(obs_source_t *source, const struct obs_source_audio
 		return;
 	if (!obs_ptr_valid(audio_in, "obs_source_output_audio"))
 		return;
+	/* The audio output can be closed while a capture thread is still
+	 * mid-call (e.g. a WASAPI source torn down during obs_shutdown):
+	 * drop the audio instead of dereferencing freed memory. */
+	if (!obs->audio.audio)
+		return;
 
 	/* sets unused data pointers to NULL automatically because apparently
 	 * some filter plugins aren't checking the actual channel count, and

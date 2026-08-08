@@ -6,7 +6,7 @@
 #   5. NSIS installer, then signed.
 #   6. SHA-256 of the artifacts.
 #
-# Usage: pwsh -NoProfile -File package.ps1 [-Version 0.1.1] [-Rundir <dir>] [-OutDir <dir>]
+# Usage: pwsh -NoProfile -File package.ps1 [-Version 0.1.2] [-Rundir <dir>] [-OutDir <dir>]
 #        [-SkipSign] [-CertPath <pfx>] [-PasswordFile <txt>]
 #
 # -SkipSign: produce unsigned artifacts (CI without a signing secret). The
@@ -15,7 +15,7 @@
 #   local development PFX under .deps/certs/ (gitignored).
 
 param(
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.1.2",
     [string]$Rundir = (Join-Path (Get-Location) "build_moonlit_v1_x64\rundir\RelWithDebInfo"),
     [string]$OutDir = (Join-Path (Get-Location) "build_moonlit_v1_x64\package"),
     [switch]$SkipSign,
