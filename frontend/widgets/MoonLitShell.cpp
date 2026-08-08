@@ -128,7 +128,6 @@ void OBSBasic::InitializeMoonLitShell()
 		 * low-level obs hotkey delivery (GetAsyncKeyState polling, no hooks:
 		 * anti-cheat safe). */
 		moonlitHotkeys = new MoonLit::HotkeyManager(this);
-		moonlitHotkeys->registerSaveClip(Config(), [this]() { ReplayBufferSave(); });
 #endif
 
 		/* Root surface: the starfield paints the asphalt sky behind the
@@ -258,6 +257,15 @@ void OBSBasic::InitializeMoonLitShell()
 	ui->transitionsDock->hide();
 	controlsDock->hide();
 	statsDock->hide();
+
+#ifdef MOONLIT_BUILD
+	/* Register the save-clip hotkey here, not in the constructor pass: the
+	 * constructor runs before InitBasicConfig loads the profile, so
+	 * Config() is still null there and the binding could not be restored. */
+	if (moonlitHotkeys && Config()) {
+		moonlitHotkeys->registerSaveClip(Config(), [this]() { ReplayBufferSave(); });
+	}
+#endif
 
 	moonlitDashboard->setReplayState(ReplayBufferActive());
 	moonlitDashboard->setCaptureStatus(QStringLiteral("fuente OBS existente"));

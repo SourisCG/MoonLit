@@ -34,7 +34,7 @@ void HotkeyManager::registerSaveClip(config_t *config, const std::function<void(
 		},
 		this);
 	if (id != OBS_INVALID_HOTKEY_ID) {
-		const char *info = config_get_string(config, "Hotkeys", "MoonLit.SaveClip");
+		const char *info = config ? config_get_string(config, "Hotkeys", "MoonLit.SaveClip") : nullptr;
 		if (info) {
 			OBSDataAutoRelease data = obs_data_create_from_json(info);
 			OBSDataArrayAutoRelease array = obs_data_get_array(data, "bindings");
