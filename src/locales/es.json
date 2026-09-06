@@ -17,8 +17,30 @@
   "gallery": {
     "title": "Clips",
     "empty": "Sin clips todavía. El motor de captura llega en la Fase 3.",
-    "coming": "La galería llega en Fases 2–3. Esto es el cascarón de Fase 1."
+    "coming": "La galería llega en Fases 2–3. Esto es el cascarón de Fase 1.",
+    "missing": "falta el archivo",
+    "favorite": "Marcar favorito"
   },
+  "settings": {
+    "clips_dir": "Carpeta de clips",
+    "browse": "Examinar",
+    "buffer": "Búfer de repetición (segundos)",
+    "max_gb": "Almacenamiento máx. (GB)",
+    "secret": {
+      "title": "Bóveda de secretos (keyring del SO)",
+      "test": "Probar escritura/lectura",
+      "testing": "Probando bóveda…",
+      "ok": "Bóveda OK: guardar → leer → borrar funcionó."
+    }
+  },
+  "games": {
+    "name_ph": "Nombre visible (ej. Minecraft)",
+    "exe_ph": "Ejecutable objetivo (ej. javaw.exe)",
+    "add": "Registrar",
+    "empty": "Sin apps personalizadas.",
+    "picker_note": "El selector de procesos en ejecución llega en la Fase 4."
+  },
+  "common": { "loading": "Cargando…", "delete": "Eliminar" },
   "lang": { "label": "Idioma" },
   "window": {
     "minimize": "Minimizar",

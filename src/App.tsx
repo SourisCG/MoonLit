@@ -3,17 +3,24 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { Clapperboard, Gamepad2, Settings } from "lucide-react";
+import { Clapperboard, Gamepad2, Settings, Star, Trash2 } from "lucide-react";
 import { MoonlitStarfield } from "./components/starfield/MoonlitStarfield";
 import { MoonlitLogo } from "./components/logo/MoonlitLogo";
 import { Topbar } from "./components/topbar/Topbar";
+import { SettingsModal } from "./components/settings/SettingsModal";
+import { AppManager } from "./components/settings/AppManager";
+import { useClips } from "./hooks/useClips";
 import type { HotkeyEvent } from "./types";
 
 /** Ignore repeats of the same press closer than this (extra guard over Rust debounce). */
 const FRONTEND_DEDUPE_MS = 300;
 
+type View = "clips" | "games" | "settings";
+
 export default function App() {
   const { t, i18n } = useTranslation();
+  const [view, setView] = useState<View>("clips");
+  const { clips, toggleFavorite, deleteClip } = useClips();
   const [hotkey, setHotkey] = useState("F9");
   const [presses, setPresses] = useState(0);
   const [lastPress, setLastPress] = useState<string | null>(null);
@@ -76,21 +83,27 @@ export default function App() {
               </div>
 
               <nav className="space-y-1">
-                <button className="w-full rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-left text-sm font-medium text-cyan-300 shadow-[0_0_10px_rgba(56,189,248,0.1)]">
-                  <span className="inline-flex items-center gap-2">
-                    <Clapperboard size={15} /> {t("nav.clips")}
-                  </span>
-                </button>
-                <button className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
-                  <span className="inline-flex items-center gap-2">
-                    <Gamepad2 size={15} /> {t("nav.games")}
-                  </span>
-                </button>
-                <button className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
-                  <span className="inline-flex items-center gap-2">
-                    <Settings size={15} /> {t("nav.settings")}
-                  </span>
-                </button>
+                {(
+                  [
+                    { id: "clips", icon: <Clapperboard size={15} />, label: t("nav.clips") },
+                    { id: "games", icon: <Gamepad2 size={15} />, label: t("nav.games") },
+                    { id: "settings", icon: <Settings size={15} />, label: t("nav.settings") },
+                  ] as { id: View; icon: React.ReactNode; label: string }[]
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setView(item.id)}
+                    className={
+                      view === item.id
+                        ? "w-full rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-left text-sm font-medium text-cyan-300 shadow-[0_0_10px_rgba(56,189,248,0.1)]"
+                        : "w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+                    }
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {item.icon} {item.label}
+                    </span>
+                  </button>
+                ))}
               </nav>
 
               <div className="mt-6 rounded-xl border border-white/5 bg-black/30 p-3 text-xs text-slate-400">
@@ -141,19 +154,85 @@ export default function App() {
           </aside>
 
           <main className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-white/5 bg-moonlit-panel/30 p-6 shadow-2xl backdrop-blur-xl">
-            <h2 className="text-xl font-bold text-slate-100">{t("gallery.title")}</h2>
-            <p className="mt-1 text-sm text-slate-400">{t("gallery.coming")}</p>
-            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="group relative overflow-hidden rounded-xl border border-dashed border-white/10 bg-moonlit-card/60 p-6 text-center"
-                >
-                  <Clapperboard size={22} className="mx-auto text-slate-600" />
-                  <p className="mt-2 text-xs text-slate-500">{t("gallery.empty")}</p>
+            {view === "settings" && (
+              <>
+                <h2 className="text-xl font-bold text-slate-100">{t("nav.settings")}</h2>
+                <div className="mt-4">
+                  <SettingsModal />
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+            {view === "games" && (
+              <>
+                <h2 className="text-xl font-bold text-slate-100">{t("nav.games")}</h2>
+                <div className="mt-4">
+                  <AppManager />
+                </div>
+              </>
+            )}
+            {view === "clips" && (
+              <>
+                <h2 className="text-xl font-bold text-slate-100">
+                  {t("gallery.title")}{" "}
+                  <span className="font-mono text-sm font-normal text-slate-500">
+                    ({clips.length})
+                  </span>
+                </h2>
+                {clips.length === 0 ? (
+                  <>
+                    <p className="mt-1 text-sm text-slate-400">{t("gallery.coming")}</p>
+                    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className="group relative overflow-hidden rounded-xl border border-dashed border-white/10 bg-moonlit-card/60 p-6 text-center"
+                        >
+                          <Clapperboard size={22} className="mx-auto text-slate-600" />
+                          <p className="mt-2 text-xs text-slate-500">{t("gallery.empty")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <ul className="mt-4 space-y-2">
+                    {clips.map((c) => (
+                      <li
+                        key={c.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/30 px-4 py-2.5"
+                      >
+                        <div className="text-sm">
+                          <p className="font-medium text-slate-200">
+                            {c.game_title}{" "}
+                            {!c.exists && (
+                              <span className="text-xs text-amber-400">
+                                ({t("gallery.missing")})
+                              </span>
+                            )}
+                          </p>
+                          <p className="font-mono text-xs text-slate-500">{c.file_name}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => void toggleFavorite(c.id)}
+                            className={`rounded-lg p-1.5 transition ${c.is_favorite ? "text-amber-300" : "text-slate-500 hover:text-amber-200"}`}
+                            title={t("gallery.favorite")}
+                          >
+                            <Star size={15} fill={c.is_favorite ? "currentColor" : "none"} />
+                          </button>
+                          <button
+                            onClick={() => void deleteClip(c.id)}
+                            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-red-500/20 hover:text-red-300"
+                            title={t("common.delete")}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </main>
         </div>
       </div>
