@@ -89,7 +89,16 @@ function ClipRow({ clip, actions }: { clip: ClipMetadata; actions: RowActions })
   };
   const reveal = async () => {
     try {
-      await revealItemInDir(await absOf(clip.file_name));
+      const abs = await absOf(clip.file_name);
+      try {
+        // Primary: select the file (needs a FileManager1 owner on the bus;
+        // often missing on KDE without Dolphin running).
+        await revealItemInDir(abs);
+      } catch {
+        // Fallback: plain-open the containing folder (xdg-open, guaranteed).
+        const sep = abs.includes("\\") ? "\\" : "/";
+        await openPath(abs.slice(0, abs.lastIndexOf(sep)));
+      }
       actions.onSuccess();
     } catch (e) {
       actions.onError(`reveal: ${String(e)}`);
