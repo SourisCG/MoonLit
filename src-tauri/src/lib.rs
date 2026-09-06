@@ -173,6 +173,7 @@ pub fn run() {
             commands::fix_gsr_caps,
             commands::list_audio_devices,
             commands::preview_track,
+            commands::open_clip_external,
             commands::video_options,
         ])
         .run(tauri::generate_context!())

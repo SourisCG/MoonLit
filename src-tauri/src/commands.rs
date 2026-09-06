@@ -756,11 +756,62 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
         vendor,
     })
 }
+/// Open a clip with the system default player, entirely from the backend.
+///
+/// Rationale: frontend `openPath` goes through IPC capability checks
+/// (`opener:allow-open-path`); doing it here bypasses that layer, so one
+/// fewer thing can silently break. Every step is logged (backend log IS
+/// visible to developers) and failures name their layer. Fallback chain:
+/// opener crate -> OS launcher (`xdg-open` / `cmd /C start`).
 /// NOTE: Tauri camelCases Rust params on the wire: frontend sends `clipId`,
 /// never `clip_id` (see docs/01_ARCHITECTURE.md IPC rule).
 #[tauri::command]
-pub async fn preview_track(app: AppHandle, clip_id: String, track: u32) -> Result<String, String> {
-    if track < 1 || track > 3 {
+pub async fn open_clip_external(app: AppHandle, clip_id: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let db = app.state::<DbState>();
+    let base = db.clips_dir()?;
+    let clips = db.list_clips()?;
+    let clip = clips
+        .into_iter()
+        .find(|c| c.id == clip_id)
+        .ok_or("clip not found")?;
+    let abs = base.join(&clip.file_name);
+    eprintln!("[moonlit] open_clip_external: {}", abs.display());
+    if !abs.exists() {
+        return Err(format!("file gone from disk: {}", clip.file_name));
+    }
+    match app.opener().open_path(abs.to_string_lossy(), None::<&str>) {
+        Ok(()) => {
+            eprintln!("[moonlit] open_clip_external: opener ok");
+            return Ok(());
+        }
+        Err(e) => eprintln!("[moonlit] open_clip_external: opener failed ({e}), trying OS launcher"),
+    }
+    #[cfg(target_os = "windows")]
+    let launched = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &abs.to_string_lossy()])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("OS launcher failed: {e}"));
+    #[cfg(not(target_os = "windows"))]
+    let launched = std::process::Command::new("xdg-open")
+        .arg(&abs)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("OS launcher failed: {e}"));
+    match launched {
+        Ok(()) => {
+            eprintln!("[moonlit] open_clip_external: OS launcher ok");
+            Ok(())
+        }
+        Err(e) => Err(format!("opener + OS launcher both failed ({e})")),
+    }
+}
+
+/// NOTE: Tauri camelCases Rust params on the wire: frontend sends `clipId`,
+/// never `clip_id` (see docs/01_ARCHITECTURE.md IPC rule).
+#[tauri::command]
+pub async fn preview_track(app: AppHandle, clip_id: String, track: u32) -> Result<String, String> {    if track < 1 || track > 3 {
         return Err("track must be 1 (mix), 2 (game) or 3 (mic)".into());
     }
     let db = app.state::<DbState>();

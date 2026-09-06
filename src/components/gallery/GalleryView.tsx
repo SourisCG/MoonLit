@@ -90,7 +90,8 @@ function ClipRow({ clip, actions }: { clip: ClipMetadata; actions: RowActions })
   const { t } = useTranslation();
   const openVideo = async () => {
     try {
-      await openPath(await absOf(clip.file_name));
+      // Backend-owned open: bypasses IPC capability checks, logs each layer.
+      await invoke("open_clip_external", { clipId: clip.id });
       actions.onSuccess();
     } catch (e) {
       actions.onError(`open: ${String(e)}`);
