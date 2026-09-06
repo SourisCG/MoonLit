@@ -46,12 +46,30 @@ gpu-screen-recorder \
 - Fallback: XDG Portal `ScreenCast` with `persist_mode=2` + saved `restore_token` + onboarding screen ("Pick Entire Screen → Check Remember → Share"). If stream metadata looks like a single window, warn the user.
 - Audio discovery: `pactl list short sources` / `pw-dump`. `*.monitor` = output, others = inputs.
 
-### 2.4 Deps (Linux)
+### 2.5 Live per-track gain (no editing, no monitoring side effects)
+
+GSR has no volume flag, so gain is applied at the PipeWire layer:
+each `-a` input is its own recording stream (source-output). Setting
+`pactl set-source-output-volume <idx> <pct>` changes ONLY what GSR captures —
+device volumes (what the user hears) are untouched. Same mechanism as
+pavucontrol's Recording tab, which upstream itself recommends.
+
+- Streams are found via `pactl -f json list source-outputs`, matched by
+  `application.name` (~gpu-screen-recorder) and `media.name` (~monitor = game),
+  with index-order fallback. Re-polled after spawn (streams appear async).
+- Gains (`gain_game/gain_mic`, `mute_game/mute_mic`) persist in `settings`,
+  apply live through `set_track_gain`/`set_track_mute`, and re-apply on every
+  `start_buffer`. Range 0–150%.
+- Windows: gains persist identically; software multiplication lands on the
+  Windows trip (we own the cpal path there).
+
+### 2.6 Deps (Linux)
 
 ```toml
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.29", features = ["signal"] }
-tokio = { version = "1", features = ["process", "time", "fs"] }
+nix = { version = "0.29", features = ["signal", "process"] }
+tokio = { version = "1", features = ["process", "time"] }
+rodio = "0.21" # confirmation ding (synthesized, no assets)
 ```
 
 ## 3. Windows: `windows-capture` + hardware encoder

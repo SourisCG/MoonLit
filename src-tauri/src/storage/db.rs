@@ -9,8 +9,9 @@ use tauri::AppHandle;
 use super::models::{ClipRecord, CustomApp, RegisterAppInput};
 use super::paths;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
+const MIGRATION_002: &str = include_str!("../../migrations/002_gains.sql");
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -23,8 +24,14 @@ impl DbState {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(|e| format!("cannot read schema version: {e}"))?;
         if version < SCHEMA_VERSION {
-            conn.execute_batch(MIGRATION_001)
-                .map_err(|e| format!("migration failed: {e}"))?;
+            if version < 1 {
+                conn.execute_batch(MIGRATION_001)
+                    .map_err(|e| format!("migration 001 failed: {e}"))?;
+            }
+            if version < 2 {
+                conn.execute_batch(MIGRATION_002)
+                    .map_err(|e| format!("migration 002 failed: {e}"))?;
+            }
             conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
                 .map_err(|e| format!("cannot stamp schema version: {e}"))?;
         }
@@ -243,6 +250,10 @@ impl DbState {
             "hotkey",
             "max_storage_gb",
             "locale",
+            "gain_game",
+            "gain_mic",
+            "mute_game",
+            "mute_mic",
         ];
         if !ALLOWED.contains(&key) {
             return Err(format!("unknown setting: {key}"));

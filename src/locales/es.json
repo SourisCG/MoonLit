@@ -45,7 +45,9 @@
     "start": "Iniciar búfer",
     "stop": "Detener",
     "save_now": "Guardar clip ahora",
-    "recording": "Grabando búfer de repetición"
+    "recording": "Grabando búfer de repetición",
+    "game": "Juego",
+    "mic": "Mic"
   },
   "lang": { "label": "Idioma" },
   "window": {

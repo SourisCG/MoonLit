@@ -10,6 +10,7 @@ import { Topbar } from "./components/topbar/Topbar";
 import { SettingsModal } from "./components/settings/SettingsModal";
 import { AppManager } from "./components/settings/AppManager";
 import { GalleryView } from "./components/gallery/GalleryView";
+import { TrackMixer } from "./components/settings/TrackMixer";
 import { useClips } from "./hooks/useClips";
 import { useEngine } from "./hooks/useEngine";
 import { useLocale } from "./hooks/useLocale";
@@ -172,6 +173,7 @@ export default function App() {
                   <p className="mt-1.5 font-mono text-[11px] text-red-400">{engineError}</p>
                 )}
               </div>
+              <TrackMixer />
               <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-xs">
                 <span className="text-slate-400">{t("lang.label")}</span>
                 <div className="flex gap-1">
