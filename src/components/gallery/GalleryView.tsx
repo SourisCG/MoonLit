@@ -73,7 +73,7 @@ function ClipRow({ clip }: { clip: ClipMetadata }) {
   };
   const hearMic = async () => {
     try {
-      const abs = await invoke<string>("preview_track", { clipId: clip.id, track: 2 });
+      const abs = await invoke<string>("preview_track", { clip_id: clip.id, track: 2 });
       setMicPreview(convertFileSrc(abs));
     } catch (e) {
       console.error(e);

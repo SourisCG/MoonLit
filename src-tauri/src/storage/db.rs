@@ -181,7 +181,19 @@ impl DbState {
         Ok(clip)
     }
 
-    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {        let conn = self.lock()?;
+    /// Correct a stored duration (measured, not assumed).
+    pub fn update_duration(&self, id: &str, duration_ms: i64) -> Result<(), String> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE clips SET duration_ms = ?1 WHERE id = ?2",
+            params![duration_ms, id],
+        )
+        .map_err(|e| format!("cannot update duration: {e}"))?;
+        Ok(())
+    }
+
+    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {
+        let conn = self.lock()?;
         let changed = conn
             .execute(
                 "UPDATE clips SET is_favorite = 1 - is_favorite WHERE id = ?1",

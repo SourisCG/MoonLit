@@ -8,10 +8,10 @@ use tauri::{
     Manager, WindowEvent,
 };
 
-mod capture;
 mod commands;
 mod cue;
 mod editor;
+mod os;
 mod sidecar;
 mod state;
 mod storage;
@@ -132,6 +132,11 @@ pub fn run() {
             let db = storage::DbState::open(app.handle()).map_err(std::io::Error::other)?;
             app.manage(db);
             app.manage(state::AppState::default());
+            // One-time duration backfill for pre-probing rows (background).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                commands::backfill_durations(&handle).await;
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
