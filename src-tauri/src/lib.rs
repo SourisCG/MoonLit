@@ -87,9 +87,9 @@ pub fn run() {
             let show = MenuItem::with_id(app, "show", "Show MoonLit", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
-            // Dedicated tray asset: transparent moon mark. The window icon
-            // carries an opaque rounded background which renders as an ugly
-            // square in system trays — never use it here.
+            // Dedicated tray asset: transparent moon mark, kept separate
+            // from the window icon set so tray and taskbar can evolve
+            // independently — never load the window icon here.
             fn load_tray_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
                 let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
                 let (w, h) = (rgba.width(), rgba.height());
@@ -175,6 +175,7 @@ pub fn run() {
             commands::list_clips,
             commands::toggle_favorite,
             commands::delete_clip,
+            commands::purge_missing_clips,
             commands::resolve_clip_src,
             commands::get_settings,
             commands::set_setting,

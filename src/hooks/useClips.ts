@@ -39,5 +39,11 @@ export function useClips() {
     [refresh],
   );
 
-  return { clips, loading, error, refresh, toggleFavorite, deleteClip };
+  const purgeMissing = useCallback(async (): Promise<number> => {
+    const n = await invoke<number>("purge_missing_clips");
+    await refresh();
+    return n;
+  }, [refresh]);
+
+  return { clips, loading, error, refresh, toggleFavorite, deleteClip, purgeMissing };
 }

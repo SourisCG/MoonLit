@@ -259,6 +259,14 @@ impl DbState {
         Ok(())
     }
 
+    /// Delete only the DB row (files already gone). Used by purge-missing.
+    pub fn delete_row(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM clips WHERE id = ?1", params![id])
+            .map_err(|e| format!("cannot delete clip row: {e}"))?;
+        Ok(())
+    }
+
     pub fn get_settings(&self) -> Result<HashMap<String, String>, String> {
         let conn = self.lock()?;
         let mut stmt = conn

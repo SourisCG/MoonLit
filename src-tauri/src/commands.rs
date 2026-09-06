@@ -27,6 +27,25 @@ pub fn delete_clip(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_clip(&id)
 }
 
+/// Drop DB rows whose files are gone from disk. Returns rows removed.
+#[tauri::command]
+pub fn purge_missing_clips(db: State<'_, DbState>) -> Result<u32, String> {
+    let base = db.clips_dir()?;
+    let missing: Vec<String> = db
+        .list_clips()?
+        .into_iter()
+        .filter(|c| {
+            !crate::storage::paths::resolve_clip_path(&base, &c.file_name).exists()
+        })
+        .map(|c| c.id)
+        .collect();
+    let n = missing.len() as u32;
+    for id in &missing {
+        db.delete_row(id)?;
+    }
+    Ok(n)
+}
+
 /// Absolute filesystem path for a clip file name (for <video> / convertFileSrc).
 #[tauri::command]
 pub fn resolve_clip_src(db: State<'_, DbState>, file_name: String) -> Result<String, String> {
@@ -93,7 +112,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         };
     // NVENC HQ opts only where valid (NVIDIA + h264/hevc); elsewhere backend defaults.
     let nvenc_opts = if vendor == "nvidia" && (codec == "h264" || codec == "hevc") {
-        Some(video_quality::nvenc_hq_opts().to_string())
+        Some(video_quality::nvenc_hq_opts(&codec))
     } else {
         None
     };

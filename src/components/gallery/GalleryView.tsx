@@ -161,8 +161,9 @@ export function GalleryView({ refreshToken }: { refreshToken: number }) {
   const { t } = useTranslation();
   // Single shared instance: rows act on THIS list (a per-row instance would
   // refresh a phantom copy and the UI would look dead).
-  const { clips, loading, refresh, toggleFavorite, deleteClip } = useClips();
+  const { clips, loading, refresh, toggleFavorite, deleteClip, purgeMissing } = useClips();
   const [lastError, setLastError] = useState<string | null>(null);
+  const [purged, setPurged] = useState<number | null>(null);
 
   useEffect(() => {
     if (refreshToken > 0) void refresh();
@@ -207,13 +208,32 @@ export function GalleryView({ refreshToken }: { refreshToken: number }) {
     );
   }
 
+  const onPurge = () => {
+    setPurged(null);
+    purgeMissing().then(
+      (n) => {
+        setPurged(n);
+        setLastError(null);
+      },
+      (e) => fail(String(e)),
+    );
+  };
+
   return (
     <>
-      {lastError && (
-        <p className="mb-2 truncate font-mono text-xs text-red-400" title={lastError}>
-          {lastError}
-        </p>
-      )}
+      <div className="mb-2 flex items-center gap-3">
+        {lastError && (
+          <p className="flex-1 truncate font-mono text-xs text-red-400" title={lastError}>
+            {lastError}
+          </p>
+        )}
+        {purged !== null && !lastError && (
+          <p className="flex-1 text-xs text-slate-500">{t("gallery.purged", { count: purged })}</p>
+        )}
+        <button onClick={onPurge} className="ml-auto text-xs text-slate-500 transition hover:text-slate-200" title={t("gallery.purge")}>
+          {t("gallery.purge")}
+        </button>
+      </div>
       <ul className="mt-2 space-y-2">
         {clips.map((c) => (
           <ClipRow key={c.id} clip={c} actions={actions} />

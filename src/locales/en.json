@@ -21,7 +21,9 @@
     "missing": "file missing",
     "favorite": "Toggle favorite",
     "hear_mic": "Hear microphone track",
-    "reveal": "Show in folder"
+    "reveal": "Show in folder",
+    "purge": "Clean missing",
+    "purged": "Removed {{count}} missing entries"
   },
   "audio": {
     "title": "Capture audio",
