@@ -38,9 +38,81 @@ pub fn get_settings(db: State<'_, DbState>) -> Result<HashMap<String, String>, S
     db.get_settings()
 }
 
+async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
+    let db = app.state::<DbState>();
+    let dir = db.clips_dir()?;
+    let secs = buffer_seconds(&db) as u32;
+    let (gsr_bin, source) = crate::sidecar::gsr_binary(app)?;
+    eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
+    let mut engine = Engine::new();
+    engine
+        .start_buffer(CaptureConfig {
+            duration_seconds: secs,
+            fps: 60,
+            output_dir: dir,
+            gsr_bin: Some(gsr_bin),
+        })
+        .await?;
+    #[cfg(target_os = "linux")]
+    let tracks = crate::capture::audio::linked_count().await;
+    #[cfg(not(target_os = "linux"))]
+    let tracks = 0;
+    let status = EngineStatus {
+        running: true,
+        backend: engine.backend_name().to_string(),
+        tracks_linked: tracks,
+    };
+    {
+        let st = app.state::<AppState>();
+        *st.recorder.lock().await = Some(engine);
+    }
+    // Apply persisted per-track gains to the fresh GSR streams (best effort).
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = apply_saved_gains(&app2).await {
+            eprintln!("[moonlit] initial gain apply failed: {e}");
+        }
+    });
+    Ok(status)
+}
+
+async fn stop_engine(app: &AppHandle) -> Result<EngineStatus, String> {
+    let st = app.state::<AppState>();
+    let mut guard = st.recorder.lock().await;
+    if let Some(mut engine) = guard.take() {
+        engine.stop_buffer().await?;
+    }
+    drop(guard);
+    Ok(EngineStatus {
+        running: false,
+        backend: backend_name().to_string(),
+        tracks_linked: 0,
+    })
+}
+
 #[tauri::command]
-pub fn set_setting(db: State<'_, DbState>, key: String, value: String) -> Result<(), String> {
-    db.set_setting(&key, &value)
+pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    {
+        let db = app.state::<DbState>();
+        db.set_setting(&key, &value)?;
+    }
+    // Changing the buffer length with the engine running restarts it so the
+    // new length (and the stored clip durations) always match the recorder.
+    if key == "buffer_seconds" {
+        let running = {
+            let st = app.state::<AppState>();
+            let guard = st.recorder.lock().await;
+            let r = guard.is_some();
+            drop(guard);
+            r
+        };
+        if running {
+            stop_engine(&app).await?;
+            start_engine(&app).await?;
+            notify(&app, "Búfer reiniciado con la nueva duración", "Buffer restarted with new length");
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -84,6 +156,8 @@ pub fn secret_delete(alias: String) -> Result<(), String> {
 pub struct EngineStatus {
     pub running: bool,
     pub backend: String,
+    /// GSR audio tracks currently linked (0, 1 or 2). UI-visible, no silent fails.
+    pub tracks_linked: usize,
 }
 
 #[cfg(target_os = "linux")]
@@ -125,58 +199,32 @@ pub async fn start_buffer(app: AppHandle) -> Result<EngineStatus, String> {
             return Err("buffer already running".into());
         }
     }
-    let db = app.state::<DbState>();
-    let dir = db.clips_dir()?;
-    let secs = buffer_seconds(&db) as u32;
-    let (gsr_bin, source) = crate::sidecar::gsr_binary(&app)?;
-    eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
-    let mut engine = Engine::new();
-    engine
-        .start_buffer(CaptureConfig {
-            duration_seconds: secs,
-            fps: 60,
-            output_dir: dir,
-            gsr_bin: Some(gsr_bin),
-        })
-        .await?;
-    let status = EngineStatus {
-        running: true,
-        backend: engine.backend_name().to_string(),
-    };
-    {
-        let st = app.state::<AppState>();
-        *st.recorder.lock().await = Some(engine);
-    }
-    // Apply persisted per-track gains to the fresh GSR streams (best effort).
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = apply_saved_gains(&app2).await {
-            eprintln!("[moonlit] initial gain apply failed: {e}");
-        }
-    });
-    Ok(status)
+    start_engine(&app).await
 }
 
 #[tauri::command]
 pub async fn stop_buffer(app: AppHandle) -> Result<EngineStatus, String> {
-    let st = app.state::<AppState>();
-    let mut guard = st.recorder.lock().await;
-    if let Some(mut engine) = guard.take() {
-        engine.stop_buffer().await?;
-    }
-    Ok(EngineStatus {
-        running: false,
-        backend: backend_name().to_string(),
-    })
+    stop_engine(&app).await
 }
 
 #[tauri::command]
 pub async fn engine_status(app: AppHandle) -> Result<EngineStatus, String> {
     let st = app.state::<AppState>();
     let guard = st.recorder.lock().await;
+    let running = guard.is_some();
+    drop(guard);
+    #[cfg(target_os = "linux")]
+    let tracks = if running {
+        crate::capture::audio::linked_count().await
+    } else {
+        0
+    };
+    #[cfg(not(target_os = "linux"))]
+    let tracks = 0;
     Ok(EngineStatus {
-        running: guard.is_some(),
+        running,
         backend: backend_name().to_string(),
+        tracks_linked: tracks,
     })
 }
 

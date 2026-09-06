@@ -47,7 +47,8 @@
     "save_now": "Save clip now",
     "recording": "Recording replay buffer",
     "game": "Game",
-    "mic": "Mic"
+    "mic": "Mic",
+    "tracks": "{{n}} tracks linked"
   },
   "lang": { "label": "Language" },
   "window": {

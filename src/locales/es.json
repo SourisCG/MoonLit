@@ -47,7 +47,8 @@
     "save_now": "Guardar clip ahora",
     "recording": "Grabando búfer de repetición",
     "game": "Juego",
-    "mic": "Mic"
+    "mic": "Mic",
+    "tracks": "{{n}} pistas enlazadas"
   },
   "lang": { "label": "Idioma" },
   "window": {

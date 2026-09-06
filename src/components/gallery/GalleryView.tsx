@@ -9,7 +9,7 @@ function Thumb({ clip }: { clip: ClipMetadata }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    invoke<string>("resolve_clip_src", { fileName: clip.thumbnail_name })
+    invoke<string>("resolve_clip_src", { file_name: clip.thumbnail_name })
       .then((abs) => {
         if (!cancelled) setSrc(convertFileSrc(abs));
       })

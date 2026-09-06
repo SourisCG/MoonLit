@@ -25,6 +25,10 @@ fn prop(o: &Output, key: &str) -> String {
 }
 
 /// GSR recording streams, each tagged with its track.
+///
+/// Real-world names (GSR 5.x/6.x over PipeWire):
+/// `application.name` = "gsr-default_output" / "gsr-default_input"
+/// (older builds may use "gpu-screen-recorder"). Never assume one form.
 pub async fn gsr_streams() -> Result<Vec<(u32, Track)>, String> {
     let out = Command::new("pactl")
         .args(["-f", "json", "list", "source-outputs"])
@@ -38,17 +42,30 @@ pub async fn gsr_streams() -> Result<Vec<(u32, Track)>, String> {
         serde_json::from_slice(&out.stdout).map_err(|e| format!("pactl parse: {e}"))?;
     let gsr: Vec<&Output> = outputs
         .iter()
-        .filter(|o| prop(o, "application.name").contains("gpu-screen-recorder"))
+        .filter(|o| {
+            let app = prop(o, "application.name");
+            app.starts_with("gsr-") || app.contains("gpu-screen-recorder")
+        })
         .collect();
     if gsr.is_empty() {
         return Ok(vec![]);
     }
+    fn is_game(o: &Output) -> bool {
+        let hay = format!("{} {}", prop(o, "media.name"), prop(o, "node.name"));
+        hay.contains("monitor") || hay.contains("output") || hay.contains("sink")
+    }
+    fn is_mic(o: &Output) -> bool {
+        let hay = format!("{} {}", prop(o, "media.name"), prop(o, "node.name"));
+        hay.contains("input") || hay.contains("source") || hay.contains("mic")
+    }
     let mut tagged: Vec<(u32, Track)> = Vec::new();
     let mut untagged: Vec<u32> = Vec::new();
     for o in &gsr {
-        let media = prop(o, "media.name");
-        let node = prop(o, "node.name");
-        if media.contains("monitor") || node.contains("monitor") {
+        // Check mic first: "default_input" contains neither "output" nor
+        // "monitor", but be explicit since some names mix both words.
+        if is_mic(o) && !is_game(o) {
+            tagged.push((o.index, Track::Mic));
+        } else if is_game(o) {
             tagged.push((o.index, Track::Game));
         } else {
             untagged.push(o.index);
@@ -57,9 +74,9 @@ pub async fn gsr_streams() -> Result<Vec<(u32, Track)>, String> {
     // Fallback: GSR spawns -a in order (game first), source-outputs follow
     // creation order, so lowest index = game.
     untagged.sort_unstable();
-    for (i, idx) in untagged.into_iter().enumerate() {
+    for idx in untagged {
         let has_game = tagged.iter().any(|(_, t)| *t == Track::Game);
-        tagged.push((idx, if i == 0 && !has_game { Track::Game } else { Track::Mic }));
+        tagged.push((idx, if has_game { Track::Mic } else { Track::Game }));
     }
     Ok(tagged)
 }
@@ -93,9 +110,33 @@ async fn set_mute(index: u32, muted: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Single-shot stream query (no waiting): how many GSR tracks are linked
+/// right now. Used for visible UI status; errors count as zero.
+pub async fn linked_count() -> usize {
+    // One attempt only: duplicate the query without the wait loop.
+    let out = match Command::new("pactl")
+        .args(["-f", "json", "list", "source-outputs"])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return 0,
+    };
+    let outputs: Vec<Output> = match serde_json::from_slice(&out.stdout) {
+        Ok(v) => v,
+        Err(_) => return 0,
+    };
+    outputs
+        .iter()
+        .filter(|o| {
+            let app = prop(o, "application.name");
+            app.starts_with("gsr-") || app.contains("gpu-screen-recorder")
+        })
+        .count()
+}
+
 /// Wait (streams appear async after spawn) then apply gains to each track.
-pub async fn apply_gains(
-    game_pct: u32,
+pub async fn apply_gains(    game_pct: u32,
     mic_pct: u32,
     mute_game: bool,
     mute_mic: bool,
