@@ -6,6 +6,7 @@ import { FolderOpen, KeyRound } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
 import { useLocale } from "../../hooks/useLocale";
 import { AudioSection } from "./AudioSection";
+import { VideoSection } from "./VideoSection";
 import type { EngineStatus } from "../../hooks/useEngine";
 
 const SECRET_TEST_ALIAS = "phase2_selftest";
@@ -145,6 +146,9 @@ export function SettingsModal({ engineStatus }: { engineStatus: EngineStatus }) 
 
       <h3 className="pt-2 text-sm font-semibold text-slate-200">{t("audio.title")}</h3>
       <AudioSection status={engineStatus} />
+
+      <h3 className="pt-2 text-sm font-semibold text-slate-200">{t("video.title")}</h3>
+      <VideoSection />
 
       <p className="pt-2 font-mono text-[11px] text-slate-600">
         build {buildId()}

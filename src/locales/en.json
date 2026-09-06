@@ -30,6 +30,14 @@
     "linked": "{{n}} tracks linked",
     "stopped_hint": "Start the buffer to link audio tracks."
   },
+  "video": {
+    "title": "Recording video",
+    "codec": "Codec",
+    "resolution": "Resolution",
+    "source": "Source (no rescale)",
+    "estimate": "CBR {{bitrate}} kbps · ~{{ram}} MB per 60 s in RAM",
+    "hq_note": "Fixed HQ: CBR + P7 + high quality + AQ (verified NVENC recipe, no knobs to turn)."
+  },
   "settings": {
     "clips_dir": "Clips folder",
     "browse": "Browse",

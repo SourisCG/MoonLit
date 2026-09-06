@@ -37,6 +37,29 @@ source); solos are `gsr-<arg>`. Matching is exact against our `-a` args.
 - `-r 30`: N-second RAM ring. `-o` is a **directory** in replay mode; GSR names files `replay_YYYY-MM-DD_HH-MM-SS.mp4`.
 - `-a` (repeatable): Track 1 = MIX (`"desktop|mic"`), Track 2 = desktop/game, Track 3 = mic (AAC stereo each).
 
+### 2.2 Video quality: Medal ladder + old-MoonLit NVENC HQ recipe
+
+Bitrates are Medal's official recommended table (CBR). GSR runs
+`-bm cbr -q <kbps> -tune quality -keyint 2`, plus NVENC HQ passthrough
+on NVIDIA + h264/hevc only: `preset=p7;tune=hq;profile=high;bf=2;spatial-aq=1;multipass=disabled`
+(all keys validated live against our bundled GSR: accepted, saves clean,
+bitrate on target).
+
+| Height | H264 | H265 | AV1 | 60 s RAM (h264) |
+|---|---|---|---|---|
+| source | row of real height | … | … | … |
+| 360p | 3M | 3M | 3M | ~23 MB |
+| 720p | 10M | 7M | 7M | ~75 MB |
+| 1080p | 20M (= old-MoonLit 20000 Kbps table) | 12M | 8M | ~150 MB |
+| 1440p | 25M | 20M | 15M | ~188 MB |
+
+Notes: 1080p@20M matches the old-MoonLit advanced table 1:1 (CBR/P7/HQ/AQ/BF2/keyint-2s).
+`preset=p7`/`profile=high` alone were tested and only work as part of the full
+set above (alone they starve keyframes in tiny test buffers — an artifact of
+short `-r`, not production buffers; the full set saves clean).
+VAAPI/QSV/AMD keep GSR defaults (`very_high`, no passthrough opts).
+FPS stays 60; `-s` omitted at source resolution.
+
 ### 2.2 Control from Rust
 
 - Spawn as `tokio::process::Child` on app start / game start.

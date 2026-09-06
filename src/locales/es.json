@@ -30,6 +30,14 @@
     "linked": "{{n}} pistas enlazadas",
     "stopped_hint": "Inicia el búfer para enlazar las pistas de audio."
   },
+  "video": {
+    "title": "Video de grabación",
+    "codec": "Códec",
+    "resolution": "Resolución",
+    "source": "Origen (sin reescalar)",
+    "estimate": "CBR {{bitrate}} kbps · ~{{ram}} MB por 60 s en RAM",
+    "hq_note": "HQ fijo: CBR + P7 + alta calidad + AQ (receta NVENC verificada, sin perillas)."
+  },
   "settings": {
     "clips_dir": "Carpeta de clips",
     "browse": "Examinar",
