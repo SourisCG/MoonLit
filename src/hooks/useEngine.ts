@@ -7,10 +7,16 @@ export interface EngineStatus {
   running: boolean;
   backend: string;
   tracks_linked: number;
+  audio_error: string | null;
 }
 
 export function useEngine(onClipSaved: () => void) {
-  const [status, setStatus] = useState<EngineStatus>({ running: false, backend: "", tracks_linked: 0 });
+  const [status, setStatus] = useState<EngineStatus>({
+    running: false,
+    backend: "",
+    tracks_linked: 0,
+    audio_error: null,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,6 +30,10 @@ export function useEngine(onClipSaved: () => void) {
 
   useEffect(() => {
     void refresh();
+    // Live link status while recording (streams appear async after spawn).
+    const poll = window.setInterval(() => {
+      invoke<EngineStatus>("engine_status").then(setStatus).catch(() => {});
+    }, 2000);
     let unlisten: (() => void) | undefined;
     (async () => {
       try {
@@ -33,7 +43,10 @@ export function useEngine(onClipSaved: () => void) {
         console.error(err);
       }
     })();
-    return () => unlisten?.();
+    return () => {
+      window.clearInterval(poll);
+      unlisten?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 

@@ -12,4 +12,6 @@ pub type Engine = crate::capture::linux::LinuxGsrEngine;
 #[derive(Default)]
 pub struct AppState {
     pub recorder: Mutex<Option<Engine>>,
+    /// Last audio-gain apply outcome (None = ok/never). Shown in UI, no silent fails.
+    pub audio_error: Mutex<Option<String>>,
 }

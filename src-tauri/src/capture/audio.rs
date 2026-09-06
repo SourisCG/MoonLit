@@ -1,7 +1,10 @@
 //! Live per-track capture gain (Linux/PipeWire).
 //! Mechanism: per-stream (source-output) volume via pactl. This changes ONLY
 //! what GSR records — never what the user hears (device volumes untouched).
-//! See docs/02_CAPTURE_ENGINE.md § volumes.
+//!
+//! Stream identity (proven in GSR source, main.cpp: description = "gsr-" + -a arg):
+//! a stream belongs to us iff application.name == "gsr-<our -a argument>".
+//! Heuristic fallback (monitor/output/input words) covers older/other builds.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -24,12 +27,7 @@ fn prop(o: &Output, key: &str) -> String {
     o.properties.get(key).cloned().unwrap_or_default().to_lowercase()
 }
 
-/// GSR recording streams, each tagged with its track.
-///
-/// Real-world names (GSR 5.x/6.x over PipeWire):
-/// `application.name` = "gsr-default_output" / "gsr-default_input"
-/// (older builds may use "gpu-screen-recorder"). Never assume one form.
-pub async fn gsr_streams() -> Result<Vec<(u32, Track)>, String> {
+async fn all_outputs() -> Result<Vec<Output>, String> {
     let out = Command::new("pactl")
         .args(["-f", "json", "list", "source-outputs"])
         .output()
@@ -38,41 +36,64 @@ pub async fn gsr_streams() -> Result<Vec<(u32, Track)>, String> {
     if !out.status.success() {
         return Err("pactl list failed".into());
     }
-    let outputs: Vec<Output> =
-        serde_json::from_slice(&out.stdout).map_err(|e| format!("pactl parse: {e}"))?;
-    let gsr: Vec<&Output> = outputs
+    serde_json::from_slice(&out.stdout).map_err(|e| format!("pactl parse: {e}"))
+}
+
+fn looks_like_ours(app_name: &str) -> bool {
+    app_name.starts_with("gsr-") || app_name.contains("gpu-screen-recorder")
+}
+
+fn classify(name: &str) -> Option<Track> {
+    if name.contains("monitor") || name.contains("output") || name.contains("sink") {
+        // "default_input" contains none of the mic words; check mic first below.
+        if name.contains("input") || name.contains("source") || name.contains("mic") {
+            // Ambiguous names (contain both families): prefer mic only when no
+            // game word other than a bare "output" device suffix is present.
+            if !name.contains("monitor") && !name.contains("sink") {
+                return Some(Track::Mic);
+            }
+        }
+        return Some(Track::Game);
+    }
+    if name.contains("input") || name.contains("source") || name.contains("mic") {
+        return Some(Track::Mic);
+    }
+    None
+}
+
+/// GSR recording streams tagged with their track.
+/// `known_args`: the exact `-a` values our engine spawned with (e.g.
+/// ["default_output", "default_input", "device:x"]). Exact match wins.
+pub async fn gsr_streams(known_args: &[String]) -> Result<Vec<(u32, Track)>, String> {
+    let outputs = all_outputs().await?;
+    let ours: Vec<&Output> = outputs
         .iter()
-        .filter(|o| {
-            let app = prop(o, "application.name");
-            app.starts_with("gsr-") || app.contains("gpu-screen-recorder")
-        })
+        .filter(|o| looks_like_ours(&prop(o, "application.name")))
         .collect();
-    if gsr.is_empty() {
+    if ours.is_empty() {
         return Ok(vec![]);
-    }
-    fn is_game(o: &Output) -> bool {
-        let hay = format!("{} {}", prop(o, "media.name"), prop(o, "node.name"));
-        hay.contains("monitor") || hay.contains("output") || hay.contains("sink")
-    }
-    fn is_mic(o: &Output) -> bool {
-        let hay = format!("{} {}", prop(o, "media.name"), prop(o, "node.name"));
-        hay.contains("input") || hay.contains("source") || hay.contains("mic")
     }
     let mut tagged: Vec<(u32, Track)> = Vec::new();
     let mut untagged: Vec<u32> = Vec::new();
-    for o in &gsr {
-        // Check mic first: "default_input" contains neither "output" nor
-        // "monitor", but be explicit since some names mix both words.
-        if is_mic(o) && !is_game(o) {
-            tagged.push((o.index, Track::Mic));
-        } else if is_game(o) {
-            tagged.push((o.index, Track::Game));
-        } else {
-            untagged.push(o.index);
+    for o in &ours {
+        let app = prop(o, "application.name");
+        let suffix = app.strip_prefix("gsr-").unwrap_or(&app);
+        // 1. Exact match against our -a args (game = first arg, mic = second).
+        if let Some(pos) = known_args.iter().position(|a| {
+            let a = a.to_lowercase();
+            suffix == a || suffix == format!("device:{a}") || suffix == format!("app:{a}")
+        }) {
+            tagged.push((o.index, if pos == 0 { Track::Game } else { Track::Mic }));
+            continue;
+        }
+        // 2. Heuristic fallback on media/node names.
+        let hay = format!("{} {}", prop(o, "media.name"), prop(o, "node.name"));
+        match classify(&hay) {
+            Some(t) => tagged.push((o.index, t)),
+            None => untagged.push(o.index),
         }
     }
-    // Fallback: GSR spawns -a in order (game first), source-outputs follow
-    // creation order, so lowest index = game.
+    // 3. Order fallback: GSR spawns -a in order (game first).
     untagged.sort_unstable();
     for idx in untagged {
         let has_game = tagged.iter().any(|(_, t)| *t == Track::Game);
@@ -110,58 +131,41 @@ async fn set_mute(index: u32, muted: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Single-shot stream query (no waiting): how many GSR tracks are linked
-/// right now. Used for visible UI status; errors count as zero.
-pub async fn linked_count() -> usize {
-    // One attempt only: duplicate the query without the wait loop.
-    let out = match Command::new("pactl")
-        .args(["-f", "json", "list", "source-outputs"])
-        .output()
-        .await
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return 0,
-    };
-    let outputs: Vec<Output> = match serde_json::from_slice(&out.stdout) {
-        Ok(v) => v,
-        Err(_) => return 0,
-    };
-    outputs
-        .iter()
-        .filter(|o| {
-            let app = prop(o, "application.name");
-            app.starts_with("gsr-") || app.contains("gpu-screen-recorder")
-        })
-        .count()
-}
-
 /// Wait (streams appear async after spawn) then apply gains to each track.
-pub async fn apply_gains(    game_pct: u32,
+/// Returns how many tracks were linked. Errors name the failing step.
+pub async fn apply_gains(
+    known_args: &[String],
+    game_pct: u32,
     mic_pct: u32,
     mute_game: bool,
     mute_mic: bool,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let deadline = std::time::Instant::now() + Duration::from_secs(4);
     loop {
-        let streams = gsr_streams().await?;
+        let streams = gsr_streams(known_args).await?;
         if !streams.is_empty() {
-            for (idx, track) in streams {
+            for (idx, track) in &streams {
                 match track {
                     Track::Game => {
-                        set_volume(idx, game_pct).await?;
-                        set_mute(idx, mute_game).await?;
+                        set_volume(*idx, game_pct).await?;
+                        set_mute(*idx, mute_game).await?;
                     }
                     Track::Mic => {
-                        set_volume(idx, mic_pct).await?;
-                        set_mute(idx, mute_mic).await?;
+                        set_volume(*idx, mic_pct).await?;
+                        set_mute(*idx, mute_mic).await?;
                     }
                 }
             }
-            return Ok(());
+            return Ok(streams.len());
         }
         if std::time::Instant::now() >= deadline {
-            return Err("no GSR audio streams appeared".into());
+            return Err("no GSR audio streams appeared within 4s".into());
         }
         sleep(Duration::from_millis(250)).await;
     }
+}
+
+/// Single-shot count for visible UI status (no waiting, errors count as zero).
+pub async fn linked_count(known_args: &[String]) -> usize {
+    gsr_streams(known_args).await.map(|s| s.len()).unwrap_or(0)
 }

@@ -16,6 +16,7 @@ use super::{CaptureConfig, CaptureEngine};
 pub struct LinuxGsrEngine {
     child: Option<Child>,
     output_dir: PathBuf,
+    audio_args: Vec<String>,
 }
 
 impl LinuxGsrEngine {
@@ -23,6 +24,7 @@ impl LinuxGsrEngine {
         Self {
             child: None,
             output_dir: PathBuf::new(),
+            audio_args: Vec::new(),
         }
     }
 
@@ -82,6 +84,10 @@ impl CaptureEngine for LinuxGsrEngine {
             .map_err(|e| format!("cannot create clips dir: {e}"))?;
         // NOTE: separate -a flags = separate audio tracks. A single
         // -a "out|in" would MERGE both sources into one track.
+        let audio_args = vec![
+            config.desktop_device.clone(),
+            config.mic_device.clone(),
+        ];
         let child = Command::new(&bin)
             .args([
                 "-w", "screen",
@@ -89,8 +95,12 @@ impl CaptureEngine for LinuxGsrEngine {
                 "-k", "h264",
                 "-c", "mp4",
                 "-r", &config.duration_seconds.to_string(),
-                "-a", "default_output",
-                "-a", "default_input",
+            ])
+            .arg("-a")
+            .arg(&audio_args[0])
+            .arg("-a")
+            .arg(&audio_args[1])
+            .args([
                 "-ac", "aac",
                 "-ab", "160",
                 "-o", config.output_dir.to_str().ok_or("bad clips dir")?,
@@ -102,6 +112,7 @@ impl CaptureEngine for LinuxGsrEngine {
             .spawn()
             .map_err(|e| format!("cannot launch {}: {e}", bin.display()))?;
         self.output_dir = config.output_dir;
+        self.audio_args = audio_args;
         self.child = Some(child);
         Ok(())
     }
@@ -129,6 +140,10 @@ impl CaptureEngine for LinuxGsrEngine {
 
     fn backend_name(&self) -> &'static str {
         "gpu-screen-recorder"
+    }
+
+    fn audio_args(&self) -> Vec<String> {
+        self.audio_args.clone()
     }
 }
 

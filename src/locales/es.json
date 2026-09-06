@@ -19,7 +19,16 @@
     "empty": "Sin clips todavía. El motor de captura llega en la Fase 3.",
     "coming": "La galería llega en Fases 2–3. Esto es el cascarón de Fase 1.",
     "missing": "falta el archivo",
-    "favorite": "Marcar favorito"
+    "favorite": "Marcar favorito",
+    "hear_mic": "Escuchar pista del micrófono",
+    "reveal": "Mostrar en carpeta"
+  },
+  "audio": {
+    "title": "Audio de captura",
+    "mic_src": "Micrófono",
+    "desktop_src": "Fuente de juego / escritorio",
+    "linked": "{{n}} pistas enlazadas",
+    "stopped_hint": "Inicia el búfer para enlazar las pistas de audio."
   },
   "settings": {
     "clips_dir": "Carpeta de clips",

@@ -5,10 +5,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, KeyRound } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
 import { useLocale } from "../../hooks/useLocale";
+import { AudioSection } from "./AudioSection";
+import type { EngineStatus } from "../../hooks/useEngine";
 
 const SECRET_TEST_ALIAS = "phase2_selftest";
 
-export function SettingsModal() {
+export function SettingsModal({ engineStatus }: { engineStatus: EngineStatus }) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
   const { settings, loading, error, setSetting } = useSettings();
@@ -140,6 +142,9 @@ export function SettingsModal() {
           {saving ? `${saving}…` : secretStatus}
         </p>
       )}
+
+      <h3 className="pt-2 text-sm font-semibold text-slate-200">{t("audio.title")}</h3>
+      <AudioSection status={engineStatus} />
     </div>
   );
 }
