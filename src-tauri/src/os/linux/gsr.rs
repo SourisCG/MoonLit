@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::time::sleep;
 
-use super::{CaptureConfig, CaptureEngine};
+use super::super::{CaptureConfig, CaptureEngine};
 
 pub struct LinuxGsrEngine {
     child: Option<Child>,

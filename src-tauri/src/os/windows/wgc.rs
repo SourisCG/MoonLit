@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use super::{CaptureConfig, CaptureEngine};
+use super::super::{CaptureConfig, CaptureEngine};
 
 pub struct WindowsCaptureEngine;
 

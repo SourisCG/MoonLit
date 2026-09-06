@@ -1,14 +1,8 @@
-//! Capture engines (Phase 3). Platform backends behind one trait.
-//! Linux: gpu-screen-recorder sidecar. Windows: native stub (full impl on Windows trip).
+//! Shared capture contract (OS-independent).
+//! Every backend under os/linux and os/windows implements this trait.
+//! Mirrors the OBS model: uniform interface, per-OS files behind it.
 
 use std::path::PathBuf;
-
-#[cfg(target_os = "linux")]
-pub mod linux;
-#[cfg(target_os = "linux")]
-pub mod audio;
-#[cfg(target_os = "windows")]
-pub mod windows;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CaptureConfig {
@@ -33,4 +27,13 @@ pub trait CaptureEngine: Send + Sync {
     fn audio_args(&self) -> Vec<String> {
         vec![]
     }
+}
+
+/// One capture device from `--list-audio-devices` (or OS enumeration).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AudioDevice {
+    pub id: String,
+    pub description: String,
+    /// "mic" or "desktop"
+    pub kind: String,
 }

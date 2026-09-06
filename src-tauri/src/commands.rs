@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::capture::{CaptureConfig, CaptureEngine};
+use crate::os::{
+    audio, backend_name, caps, devices, AudioDevice, CaptureConfig, CaptureEngine,
+};
 use crate::state::{AppState, Engine};
 use crate::storage::models::{ClipRecord, CustomApp, RegisterAppInput};
 use crate::storage::{secrets, DbState};
@@ -57,7 +59,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             mic_device,
         })
         .await?;
-    let tracks = engine_audio_linked(&engine).await;
+    let tracks = audio::linked_count(&engine.audio_args()).await;
     let status = EngineStatus {
         running: true,
         backend: engine.backend_name().to_string(),
@@ -83,15 +85,6 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         }
     });
     Ok(status)
-}
-
-#[cfg(target_os = "linux")]
-async fn engine_audio_linked(engine: &Engine) -> usize {
-    crate::capture::audio::linked_count(&engine.audio_args()).await
-}
-#[cfg(not(target_os = "linux"))]
-async fn engine_audio_linked(_engine: &Engine) -> usize {
-    0
 }
 
 fn setting_str(db: &DbState, key: &str, default: &str) -> String {
@@ -203,15 +196,6 @@ async fn set_audio_error(app: &AppHandle, err: Option<String>) {
     }
 }
 
-#[cfg(target_os = "linux")]
-fn backend_name() -> &'static str {
-    "gpu-screen-recorder"
-}
-#[cfg(not(target_os = "linux"))]
-fn backend_name() -> &'static str {
-    "windows-capture (stub)"
-}
-
 fn buffer_seconds(db: &DbState) -> i64 {
     db.get_settings()
         .ok()
@@ -256,14 +240,11 @@ pub async fn engine_status(app: AppHandle) -> Result<EngineStatus, String> {
     let guard = st.recorder.lock().await;
     let (running, args) = (guard.is_some(), guard.as_ref().map(|e| e.audio_args()).unwrap_or_default());
     drop(guard);
-    #[cfg(target_os = "linux")]
     let tracks = if running {
-        crate::capture::audio::linked_count(&args).await
+        audio::linked_count(&args).await
     } else {
         0
     };
-    #[cfg(not(target_os = "linux"))]
-    let tracks = 0;
     Ok(EngineStatus {
         running,
         backend: backend_name().to_string(),
@@ -287,7 +268,13 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
         .map_err(|e| format!("cannot stat clip: {e}"))?
         .len() as i64;
     let db = app.state::<DbState>();
-    let secs = buffer_seconds(&db);
+    let base = db.clips_dir()?;
+    let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(app)?;
+    // Real measured duration (the buffer is rarely full at save time).
+    // Falls back to the configured length only if probing fails.
+    let secs_ms = crate::editor::ffmpeg::probe_duration_ms(&ffmpeg, &path)
+        .await
+        .unwrap_or_else(|| buffer_seconds(&db) * 1000);
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -298,10 +285,8 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
         .ok_or("bad clip file name")?
         .to_string();
     let thumb_name = format!("thumb_{stem}.jpg");
-    let base = db.clips_dir()?;
-    let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(app)?;
     crate::editor::ffmpeg::make_thumbnail(&ffmpeg, &path, &base.join(&thumb_name)).await?;
-    let clip = db.insert_clip(&file_name, &thumb_name, "Unknown", secs * 1000, size)?;
+    let clip = db.insert_clip(&file_name, &thumb_name, "Unknown", secs_ms, size)?;
     crate::cue::play_ding();
     let _ = app.emit("moonlit://clip-saved", &clip);
     Ok(clip)
@@ -310,6 +295,31 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
 #[tauri::command]
 pub async fn save_clip_now(app: AppHandle) -> Result<ClipRecord, String> {
     do_save_clip(&app).await
+}
+
+/// One-time correction: measure real durations for rows saved before probing
+/// existed (the settings value was stored instead). Skips missing files and
+/// rows already within 1.5 s of measured. Runs once at boot in background.
+pub(crate) async fn backfill_durations(app: &AppHandle) {
+    let Some(db) = app.try_state::<DbState>() else {
+        return;
+    };
+    let Ok(clips) = db.list_clips() else { return };
+    let Ok(base) = db.clips_dir() else { return };
+    let Ok(ffmpeg) = crate::editor::ffmpeg::resolve_ffmpeg(app) else {
+        return;
+    };
+    for clip in clips {
+        let path = base.join(&clip.file_name);
+        if !path.exists() {
+            continue;
+        }
+        if let Some(ms) = crate::editor::ffmpeg::probe_duration_ms(&ffmpeg, &path).await {
+            if (ms - clip.duration_ms).abs() > 1500 {
+                let _ = db.update_duration(&clip.id, ms);
+            }
+        }
+    }
 }
 
 /// F9 entry point: counter event always fires; clip saves only when running.
@@ -378,16 +388,8 @@ async fn engine_audio_args(app: &AppHandle) -> Vec<String> {
 
 async fn apply_saved_gains(app: &AppHandle) -> Result<usize, String> {
     let g = read_gains(app);
-    #[cfg(target_os = "linux")]
-    {
-        let args = engine_audio_args(app).await;
-        crate::capture::audio::apply_gains(&args, g.game, g.mic, g.mute_game, g.mute_mic).await
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = g;
-        Err("per-stream gain lands on the Windows trip".into())
-    }
+    let args = engine_audio_args(app).await;
+    audio::apply_gains(&args, g.game, g.mic, g.mute_game, g.mute_mic).await
 }
 
 #[tauri::command]
@@ -460,7 +462,7 @@ pub struct GsrInfo {
 pub async fn gsr_info(app: AppHandle) -> Result<GsrInfo, String> {
     match crate::sidecar::gsr_binary(&app) {
         Ok((path, source)) => {
-            let caps_ok = crate::sidecar::gsr_caps_ok(&path);
+            let caps_ok = caps::caps_ok(&path);
             Ok(GsrInfo {
                 path: path.to_string_lossy().to_string(),
                 source: source.to_string(),
@@ -484,51 +486,14 @@ pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
     if source != "bundled" {
         return Err("one-click fix applies to the bundled binary only".into());
     }
-    crate::sidecar::fix_gsr_caps(&path).await
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct AudioDevice {
-    pub id: String,
-    pub description: String,
-    /// "mic" or "desktop"
-    pub kind: String,
+    caps::fix_caps(&path).await
 }
 
 /// Capture devices from OUR bundled GSR (`--list-audio-devices`, name|desc).
 #[tauri::command]
 pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
     let (bin, _) = crate::sidecar::gsr_binary(&app)?;
-    let out = tokio::process::Command::new(&bin)
-        .arg("--list-audio-devices")
-        .output()
-        .await
-        .map_err(|e| format!("cannot list audio devices: {e}"))?;
-    if !out.status.success() {
-        return Err("GSR device list failed".into());
-    }
-    let mut devices = Vec::new();
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let (id, desc) = match line.split_once('|') {
-            Some((a, b)) => (a.trim().to_string(), b.trim().to_string()),
-            None => (line.to_string(), line.to_string()),
-        };
-        if id.is_empty() {
-            continue;
-        }
-        let lower = id.to_lowercase();
-        let kind = if lower.contains("monitor") || lower == "default_output" {
-            "desktop"
-        } else {
-            "mic"
-        };
-        devices.push(AudioDevice { id, description: desc, kind: kind.to_string() });
-    }
-    Ok(devices)
+    devices::list_audio_devices(&bin).await
 }
 
 /// Extract one audio track (1 or 2) to a single temp preview file for listening.

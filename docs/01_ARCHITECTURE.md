@@ -17,6 +17,10 @@
 4. **Relative Paths Only in DB.** Never store absolute paths. Resolve at runtime as `base_dir.join(file_name)`.
 5. **Lazy Editor.** The editor (Wavesurfer + `<video>`) is `React.lazy`-loaded and fully destroyed on close (`ws.destroy()` + temp purge + optional window destroy).
 6. **Platform Abstraction.** Rust `CaptureEngine` trait decouples Windows (native APIs) from Linux (sidecar subprocess).
+   OS layout is OBS-style: ALL platform code lives under `src-tauri/src/os/`
+   (`api.rs` traits + `linux/` + `windows/` backends, selection only in `os/mod.rs`).
+   RULE: no `cfg(target_os)` and no OS APIs outside `os/`. Enforced by:
+   `grep -rn 'cfg(target_os' src-tauri/src/commands.rs src-tauri/src/editor src-tauri/src/storage src-tauri/src/cue.rs src-tauri/src/sidecar.rs src-tauri/src/state.rs src-tauri/src/lib.rs` (must print nothing; runs in CI).
 
 ## 3. Stack
 

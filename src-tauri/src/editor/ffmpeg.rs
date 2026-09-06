@@ -35,6 +35,25 @@ pub fn resolve_ffmpeg(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(PathBuf::from("ffmpeg"))
 }
 
+/// Measure real duration in ms via `ffmpeg -i` stderr (no ffprobe needed —
+/// the static sidecar does not ship ffprobe). Returns None on parse failure.
+pub async fn probe_duration_ms(ffmpeg: &Path, input: &Path) -> Option<i64> {
+    let out = tokio::process::Command::new(ffmpeg)
+        .args(["-hide_banner", "-i", &input.to_string_lossy()])
+        .output()
+        .await
+        .ok()?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Line looks like: Duration: 00:01:20.65, start: 0.000000, bitrate: ...
+    let line = stderr.lines().find(|l| l.trim_start().starts_with("Duration:"))?;
+    let time = line.split(',').next()?.split("Duration:").nth(1)?.trim();
+    let mut parts = time.split(':');
+    let h: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    let s: f64 = parts.next()?.parse().ok()?;
+    Some(((h * 3600 + m * 60) as f64 * 1000.0 + s * 1000.0) as i64)
+}
+
 /// Extract one JPEG thumbnail at 1 s. Fast (no re-encode of the clip).
 pub async fn make_thumbnail(
     ffmpeg: &Path,

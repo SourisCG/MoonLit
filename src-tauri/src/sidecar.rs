@@ -1,6 +1,7 @@
-//! Sidecar resolution (Phase 3): bundled binaries first, system fallback.
+//! Sidecar path resolution (OS-free): bundled binaries first, system fallback.
 //! Layout: <res|exe>/binaries/<triple>/gpu-screen-recorder (+ gsr-kms-server, ffmpeg).
 //! Dev layout: src-tauri/binaries/<triple>/ (walked up from target/debug/<bin>).
+//! OS-specific bits (caps, device lists) live under os/, never here.
 
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
@@ -71,32 +72,4 @@ pub fn gsr_binary(app: &AppHandle) -> Result<(PathBuf, &'static str), String> {
         }
     }
     Err("gpu-screen-recorder not bundled and not installed. Rebuild with build-aux/build-gsr.sh.".into())
-}
-
-/// Does the bundled GSR binary carry cap_sys_admin (KMS without portal)?
-pub fn gsr_caps_ok(path: &std::path::Path) -> bool {
-    let Ok(out) = std::process::Command::new("getcap").arg(path).output() else {
-        return false;
-    };
-    String::from_utf8_lossy(&out.stdout).contains("cap_sys_admin")
-}
-
-/// One-click fix: pkexec setcap on OUR bundled binary (polkit dialog, once).
-pub async fn fix_gsr_caps(path: &std::path::Path) -> Result<(), String> {
-    let status = tokio::process::Command::new("pkexec")
-        .args([
-            "setcap",
-            "cap_sys_admin+ep",
-            &path.to_string_lossy(),
-        ])
-        .status()
-        .await
-        .map_err(|e| format!("pkexec failed: {e}"))?;
-    if !status.success() {
-        return Err("setcap rejected or failed".into());
-    }
-    if !gsr_caps_ok(path) {
-        return Err("capability still missing after setcap".into());
-    }
-    Ok(())
 }
