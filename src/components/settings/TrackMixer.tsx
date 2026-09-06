@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Volume2, VolumeX } from "lucide-react";
@@ -12,41 +12,30 @@ interface Gains {
 
 type Track = "game" | "mic";
 
-/** Live capture gain: PipeWire per-stream volume (Linux). Never touches monitoring. */
+/**
+ * Live capture gain: PipeWire per-stream volume (Linux). Never touches monitoring.
+ * Slider moves local state only (instant); commits once on release.
+ */
 export function TrackMixer() {
   const { t } = useTranslation();
   const [gains, setGains] = useState<Gains>({ game: 100, mic: 100, mute_game: false, mute_mic: false });
-  const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     invoke<Gains>("audio_levels").then(setGains).catch(console.error);
-    return () => window.clearTimeout(timer.current);
   }, []);
 
-  const gainsRef = useRef(gains);
-  gainsRef.current = gains;
-
-  const commit = (track: Track, patch: Partial<Gains>) => {
-    const next = { ...gainsRef.current, ...patch };
-    gainsRef.current = next;
-    setGains(next);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => {
-      if ("game" in patch || "mic" in patch) {
-        const pct = track === "game" ? next.game : next.mic;
-        invoke("set_track_gain", { track, percent: pct }).catch(console.error);
-      } else {
-        const muted = track === "game" ? next.mute_game : next.mute_mic;
-        invoke("set_track_mute", { track, muted }).catch(console.error);
-      }
-    }, 250);
+  const commitGain = (track: Track, pct: number) => {
+    invoke("set_track_gain", { track, percent: pct }).catch(console.error);
   };
+  const commitMute = (track: Track, muted: boolean) => {
+    setGains((g) => (track === "game" ? { ...g, mute_game: muted } : { ...g, mute_mic: muted }));
+    invoke("set_track_mute", { track, muted }).catch(console.error);
+  };
+
   const row = (track: Track, value: number, muted: boolean) => (
     <div className="flex items-center gap-2">
       <button
-        onClick={() =>
-          commit(track, track === "game" ? { mute_game: !muted } : { mute_mic: !muted })
-        }
+        onClick={() => commitMute(track, !muted)}
         className={`rounded-md p-1 transition ${muted ? "text-red-400" : "text-slate-400 hover:text-slate-200"}`}
         title={track === "game" ? t("rec.game") : t("rec.mic")}
       >
@@ -61,9 +50,13 @@ export function TrackMixer() {
         max={150}
         value={value}
         disabled={muted}
-        onChange={(e) =>
-          commit(track, track === "game" ? { game: Number(e.target.value) } : { mic: Number(e.target.value) })
-        }
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          setGains((g) => (track === "game" ? { ...g, game: v } : { ...g, mic: v }));
+        }}
+        onPointerUp={(e) => commitGain(track, Number((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => commitGain(track, Number((e.target as HTMLInputElement).value))}
+        onBlur={(e) => commitGain(track, Number((e.target as HTMLInputElement).value))}
         className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-cyan-400 disabled:opacity-40"
       />
       <span className="w-9 text-right font-mono text-[11px] text-slate-300">{value}%</span>

@@ -152,7 +152,7 @@ export default function App() {
                     </p>
                     <p className="text-[11px] text-slate-500">
                       {status.running
-                        ? status.backend
+                        ? `${status.backend} · ${t("rec.tracks", { n: status.tracks_linked })}`
                         : t("status.shortcut", { hotkey })}
                     </p>
                   </div>
