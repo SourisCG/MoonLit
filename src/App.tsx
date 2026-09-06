@@ -76,7 +76,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-moonlit-void font-sans text-slate-100 selection:bg-cyan-500/30">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-moonlit-void font-sans text-slate-100 selection:bg-cyan-500/30">
       <Topbar />
       <div className="relative flex min-h-0 flex-1">
         <MoonlitStarfield />

@@ -496,7 +496,9 @@ pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, Stri
     devices::list_audio_devices(&bin).await
 }
 
-/// Extract one audio track (1 or 2) to a single temp preview file for listening.
+/// Extract one audio track (1=mix, 2=game, 3=mic) to a temp preview file.
+/// NOTE: Tauri camelCases Rust params on the wire: frontend sends `clipId`,
+/// never `clip_id` (see docs/01_ARCHITECTURE.md IPC rule).
 #[tauri::command]
 pub async fn preview_track(app: AppHandle, clip_id: String, track: u32) -> Result<String, String> {
     if track < 1 || track > 3 {
