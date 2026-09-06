@@ -69,6 +69,12 @@ function fmtDuration(ms: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+function fmtSize(bytes: number) {
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1000))} KB`;
+}
+
 function timeNow() {
   return new Date().toLocaleTimeString();
 }
@@ -116,12 +122,15 @@ function ClipRow({ clip, actions }: { clip: ClipMetadata; actions: RowActions })
       <div className="flex items-center gap-3">
         <Thumb clip={clip} onOpen={() => void openVideo()} onError={actions.onError} />
         <div className="min-w-0 flex-1 text-sm">
-          <p className="truncate font-medium text-slate-200">
-            {clip.game_title}{" "}
-            <span className="font-mono text-xs text-cyan-300">{fmtDuration(clip.duration_ms)}</span>{" "}
+          <p className="truncate font-medium text-slate-200" title={clip.file_name}>
+            {clip.file_name}
+          </p>
+          <p className="truncate font-mono text-xs text-slate-500">
+            {clip.game_title} ·{" "}
+            <span className="text-cyan-300/80">{fmtDuration(clip.duration_ms)}</span> ·{" "}
+            {fmtSize(clip.file_size_bytes)}{" "}
             {!clip.exists && <span className="text-xs text-amber-400">({t("gallery.missing")})</span>}
           </p>
-          <p className="truncate font-mono text-xs text-slate-500">{clip.file_name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button onClick={() => void reveal()} className={iconBtn} title={t("gallery.reveal")}>

@@ -68,21 +68,6 @@ fn classify(name: &str) -> Option<Track> {
 /// ["default_output", "default_input", "device:x"]). Exact match wins.
 pub async fn gsr_streams(known_args: &[String]) -> Result<Vec<(u32, Track)>, String> {
     let outputs = all_outputs().await?;
-    // TEMP-DEBUG (silent gain failure investigation, remove after fix):
-    // log every recording stream the process can see + what we match against.
-    let seen: Vec<String> = outputs
-        .iter()
-        .map(|o| {
-            format!(
-                "#{} app={} media={}",
-                o.index,
-                o.properties.get("application.name").cloned().unwrap_or_default(),
-                o.properties.get("media.name").cloned().unwrap_or_default()
-            )
-        })
-        .collect();
-    eprintln!("[moonlit-dbg] pactl sees {} source-outputs: [{}]; known_args={:?}",
-        outputs.len(), seen.join(" | "), known_args);
     let ours: Vec<&Output> = outputs
         .iter()
         .filter(|o| looks_like_ours(&prop(o, "application.name")))
@@ -167,7 +152,9 @@ pub async fn apply_gains(
     mute_game: bool,
     mute_mic: bool,
 ) -> Result<usize, String> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    // Streams can take a while to appear after spawn (device negotiation),
+    // so retry in background instead of failing fast.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         let streams = gsr_streams(known_args).await?;
         if !streams.is_empty() {
@@ -193,7 +180,7 @@ pub async fn apply_gains(
             return Ok(streams.len());
         }
         if std::time::Instant::now() >= deadline {
-            return Err("no GSR audio streams appeared within 4s".into());
+            return Err("no GSR audio streams appeared within 30s".into());
         }
         sleep(Duration::from_millis(250)).await;
     }
