@@ -3,6 +3,7 @@
 pub mod audio;
 pub mod caps;
 pub mod devices;
+pub mod video;
 mod gsr;
 
 pub use gsr::LinuxGsrEngine as Engine;

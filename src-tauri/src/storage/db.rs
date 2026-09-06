@@ -9,10 +9,11 @@ use tauri::AppHandle;
 use super::models::{ClipRecord, CustomApp, RegisterAppInput};
 use super::paths;
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
 const MIGRATION_002: &str = include_str!("../../migrations/002_gains.sql");
 const MIGRATION_003: &str = include_str!("../../migrations/003_devices.sql");
+const MIGRATION_004: &str = include_str!("../../migrations/004_video.sql");
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -36,6 +37,10 @@ impl DbState {
             if version < 3 {
                 conn.execute_batch(MIGRATION_003)
                     .map_err(|e| format!("migration 003 failed: {e}"))?;
+            }
+            if version < 4 {
+                conn.execute_batch(MIGRATION_004)
+                    .map_err(|e| format!("migration 004 failed: {e}"))?;
             }
             conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
                 .map_err(|e| format!("cannot stamp schema version: {e}"))?;
@@ -273,6 +278,8 @@ impl DbState {
             "mute_mic",
             "mic_device",
             "desktop_device",
+            "video_codec",
+            "out_height",
         ];
         if !ALLOWED.contains(&key) {
             return Err(format!("unknown setting: {key}"));

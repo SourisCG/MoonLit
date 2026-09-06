@@ -1,0 +1,98 @@
+//! Linux video discovery from OUR bundled GSR binary.
+
+use std::path::Path;
+
+/// GPU vendor, lowercase (`nvidia`/`amd`/`intel`/…), from `--info`.
+pub async fn vendor(bin: &Path) -> String {
+    let Ok(out) = tokio::process::Command::new(bin)
+        .arg("--info")
+        .output()
+        .await
+    else {
+        return "unknown".into();
+    };
+    parse_vendor(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_vendor(info: &str) -> String {
+    let mut in_gpu = false;
+    for line in info.lines() {
+        let line = line.trim();
+        if line.starts_with("section=") {
+            in_gpu = line == "section=gpu_info";
+            continue;
+        }
+        if in_gpu && line.starts_with("vendor|") {
+            return line["vendor|".len()..].trim().to_lowercase();
+        }
+    }
+    "unknown".into()
+}
+
+/// Codec ids from `--info` (`section=video_codecs`). Raw list, unfiltered.
+pub async fn offered_codecs(bin: &Path) -> Vec<String> {
+    let Ok(out) = tokio::process::Command::new(bin)
+        .arg("--info")
+        .output()
+        .await
+    else {
+        return vec![];
+    };
+    if !out.status.success() {
+        return vec![];
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut in_codecs = false;
+    let mut ids = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("section=") {
+            in_codecs = line == "section=video_codecs";
+            continue;
+        }
+        if in_codecs && !line.is_empty() && !ids.contains(&line.to_string()) {
+            ids.push(line.to_string());
+        }
+    }
+    ids
+}
+
+/// Max monitor height from `--list-monitors` (`NAME|WxH` lines). 0 if unknown.
+pub async fn max_source_height(bin: &Path) -> u32 {
+    let Ok(out) = tokio::process::Command::new(bin)
+        .arg("--list-monitors")
+        .output()
+        .await
+    else {
+        return 0;
+    };
+    parse_max_height(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_max_height(out: &str) -> u32 {
+    out.lines()
+        .filter_map(|l| {
+            let dims = l.split('|').nth(1)?;
+            let h = dims.split('x').nth(1)?;
+            h.trim().parse::<u32>().ok()
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_max_height, parse_vendor};
+
+    #[test]
+    fn parses_vendor() {
+        let info = "section=system_info\ndisplay_server|wayland\nsection=gpu_info\nvendor|nvidia\n";
+        assert_eq!(parse_vendor(info), "nvidia");
+    }
+
+    #[test]
+    fn parses_monitors() {
+        let out = "DP-1|1920x1080\nDP-2|1280x720\n";
+        assert_eq!(parse_max_height(out), 1080);
+    }
+}

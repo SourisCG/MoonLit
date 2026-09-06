@@ -15,6 +15,7 @@ mod os;
 mod sidecar;
 mod state;
 mod storage;
+mod video_quality;
 
 /// Minimum gap between accepted hotkey presses (kills key auto-repeat doubles).
 const HOTKEY_DEBOUNCE_MS: u128 = 400;
@@ -172,6 +173,7 @@ pub fn run() {
             commands::fix_gsr_caps,
             commands::list_audio_devices,
             commands::preview_track,
+            commands::video_options,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

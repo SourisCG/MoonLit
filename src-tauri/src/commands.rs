@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::os::{
-    audio, backend_name, caps, devices, AudioDevice, CaptureConfig, CaptureEngine,
+    audio, backend_name, caps, devices, video, AudioDevice, CaptureConfig, CaptureEngine,
 };
+use crate::video_quality;
 use crate::state::{AppState, Engine};
 use crate::storage::models::{ClipRecord, CustomApp, RegisterAppInput};
 use crate::storage::{secrets, DbState};
@@ -48,6 +49,31 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     let desktop_device = setting_str(&db, "desktop_device", "default_output");
     let (gsr_bin, source) = crate::sidecar::gsr_binary(app)?;
     eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
+
+    // Video quality: Medal ladder + old-MoonLit NVENC HQ recipe.
+    let mut codec = setting_str(&db, "video_codec", "h264");
+    if !["h264", "hevc", "av1"].contains(&codec.as_str()) {
+        codec = "h264".to_string();
+    }
+    let out_height: u32 = setting_str(&db, "out_height", "0").parse().unwrap_or(0);
+    let vendor = video::vendor(&gsr_bin).await;
+    let max_height = video::max_source_height(&gsr_bin).await;
+    let ladder_height = if out_height == 0 {
+        if max_height > 0 { max_height } else { 1080 }
+    } else {
+        out_height
+    };
+    let bitrate = video_quality::bitrate_kbps(ladder_height, &codec);
+    // NVENC HQ opts only where valid (NVIDIA + h264/hevc); elsewhere backend defaults.
+    let nvenc_opts = if vendor == "nvidia" && (codec == "h264" || codec == "hevc") {
+        Some(video_quality::nvenc_hq_opts().to_string())
+    } else {
+        None
+    };
+    eprintln!("[moonlit] video: codec={codec} height={} vendor={vendor} cbr={bitrate}kbps nvenc_hq={}",
+        if out_height == 0 { "source".to_string() } else { out_height.to_string() },
+        nvenc_opts.is_some());
+
     let mut engine = Engine::new();
     engine
         .start_buffer(CaptureConfig {
@@ -57,6 +83,10 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             gsr_bin: Some(gsr_bin),
             desktop_device,
             mic_device,
+            codec,
+            out_height,
+            bitrate_kbps: bitrate,
+            nvenc_opts,
         })
         .await?;
     let tracks = audio::linked_count(&engine.audio_args()).await;
@@ -119,7 +149,13 @@ pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(
     }
     // Changing the buffer length or capture devices with the engine running
     // restarts it so length, devices and stored durations match the recorder.
-    const RESTART_KEYS: &[&str] = &["buffer_seconds", "mic_device", "desktop_device"];
+    const RESTART_KEYS: &[&str] = &[
+        "buffer_seconds",
+        "mic_device",
+        "desktop_device",
+        "video_codec",
+        "out_height",
+    ];
     if RESTART_KEYS.contains(&key.as_str()) {
         let running = {
             let st = app.state::<AppState>();
@@ -496,7 +532,101 @@ pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, Stri
     devices::list_audio_devices(&bin).await
 }
 
-/// Extract one audio track (1=mix, 2=game, 3=mic) to a temp preview file.
+/// Video options for the Settings UI: codecs from the backend, ladder
+/// heights, Medal bitrates and exact RAM estimates (CBR => exact, not ranges).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CodecOpt {
+    pub id: String,
+    pub label: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HeightOpt {
+    pub height: u32,
+    pub label: String,
+    /// CBR kbps per codec at this height, in codec order.
+    pub bitrates: Vec<u32>,
+    /// Exact 60 s ring megabytes per codec, in codec order.
+    pub ring_mb_60s: Vec<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VideoOptions {
+    pub codecs: Vec<CodecOpt>,
+    pub heights: Vec<HeightOpt>,
+    pub current_codec: String,
+    pub current_height: u32,
+    pub vendor: String,
+}
+
+#[tauri::command]
+pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
+    use crate::video_quality as q;
+    let (gsr_bin, _) = crate::sidecar::gsr_binary(&app)?;
+    let vendor = video::vendor(&gsr_bin).await;
+
+    // Codecs the backend reports, mapped to known-good entries.
+    let mut codecs = Vec::new();
+    for id in video::offered_codecs(&gsr_bin).await {
+        let opt = match id.as_str() {
+            "h264" => Some(CodecOpt {
+                id: id.clone(),
+                label: "H.264 (recomendado)".into(),
+                note: "Compatible con todo: Discord, Twitter, editores.".into(),
+            }),
+            "hevc" => Some(CodecOpt {
+                id: id.clone(),
+                label: "H.265 / HEVC".into(),
+                note: "~40% menos peso; Discord/Twitter pueden rechazarlo.".into(),
+            }),
+            "av1" => Some(CodecOpt {
+                id: id.clone(),
+                label: "AV1".into(),
+                note: "Máxima compresión; solo HW moderno.".into(),
+            }),
+            _ => None,
+        };
+        if let Some(o) = opt {
+            if !codecs.iter().any(|c: &CodecOpt| c.id == o.id) {
+                codecs.push(o);
+            }
+        }
+    }
+    if codecs.is_empty() {
+        // Fallback (Windows stub / unknown backend): H.264 always exists.
+        codecs.push(CodecOpt {
+            id: "h264".into(),
+            label: "H.264 (recomendado)".into(),
+            note: "Compatible con todo.".into(),
+        });
+    }
+
+    let db = app.state::<DbState>();
+    let current_codec = setting_str(&db, "video_codec", "h264");
+    let current_height: u32 = setting_str(&db, "out_height", "0").parse().unwrap_or(0);
+    let heights = q::HEIGHTS
+        .iter()
+        .map(|&h| {
+            let bitrates = codecs.iter().map(|c| q::bitrate_kbps(h, &c.id)).collect::<Vec<_>>();
+            let ring = bitrates.iter().map(|&b| q::ring_mb(b, 60)).collect::<Vec<_>>();
+            HeightOpt {
+                height: h,
+                label: format!("{h}p"),
+                bitrates,
+                ring_mb_60s: ring,
+            }
+        })
+        .collect();
+
+    Ok(VideoOptions {
+        codecs,
+        heights,
+        current_codec,
+        current_height,
+        vendor,
+    })
+}
 /// NOTE: Tauri camelCases Rust params on the wire: frontend sends `clipId`,
 /// never `clip_id` (see docs/01_ARCHITECTURE.md IPC rule).
 #[tauri::command]

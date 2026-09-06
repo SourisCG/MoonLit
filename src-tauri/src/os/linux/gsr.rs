@@ -91,14 +91,27 @@ impl CaptureEngine for LinuxGsrEngine {
             config.desktop_device.clone(),
             config.mic_device.clone(),
         ];
-        let child = Command::new(&bin)
-            .args([
-                "-w", "screen",
-                "-f", &config.fps.to_string(),
-                "-k", "h264",
-                "-c", "mp4",
-                "-r", &config.duration_seconds.to_string(),
-            ])
+        let mut cmd = Command::new(&bin);
+        cmd.args([
+            "-w", "screen",
+            "-f", &config.fps.to_string(),
+            "-k", &config.codec,
+            "-c", "mp4",
+            "-r", &config.duration_seconds.to_string(),
+        ]);
+        if let Some(scale) = crate::video_quality::scale_arg(config.out_height) {
+            cmd.args(["-s", &scale]);
+        }
+        cmd.args([
+            "-bm", "cbr",
+            "-q", &config.bitrate_kbps.to_string(),
+            "-tune", "quality",
+            "-keyint", "2",
+        ]);
+        if let Some(opts) = &config.nvenc_opts {
+            cmd.args(["-ffmpeg-video-opts", opts]);
+        }
+        let child = cmd
             .arg("-a")
             .arg(&audio_args[0])
             .arg("-a")

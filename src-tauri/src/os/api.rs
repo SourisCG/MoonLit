@@ -14,6 +14,14 @@ pub struct CaptureConfig {
     /// Audio sources for `-a` (game first, mic second).
     pub desktop_device: String,
     pub mic_device: String,
+    /// Video codec id for `-k` (h264/hevc/av1, as listed by the backend).
+    pub codec: String,
+    /// Output height for `-s` (0 = source resolution).
+    pub out_height: u32,
+    /// CBR bitrate in kbps for `-q`.
+    pub bitrate_kbps: u32,
+    /// Extra `-ffmpeg-video-opts` (NVENC HQ recipe, NVIDIA only). None = backend defaults.
+    pub nvenc_opts: Option<String>,
 }
 
 /// Unified engine interface. Methods are async to allow signal waits / IPC.
