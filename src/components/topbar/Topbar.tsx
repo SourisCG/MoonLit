@@ -43,9 +43,6 @@ export function Topbar() {
 
   const win = () => getCurrentWindow();
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const pendingTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => () => window.clearTimeout(pendingTimer.current), []);
 
   const onMinimize = (e: React.MouseEvent) => {
     stop(e);
@@ -64,22 +61,17 @@ export function Topbar() {
   };
 
   /**
-   * Double-click on the drag area also ends a native move-drag; maximizing
-   * while that drag is settling makes Mutter revert it ~0.5s later.
-   * Delaying lets the drag die first. Buttons toggle immediately.
+   * Buttons only. Double-click on the drag area is handled NATIVELY by
+   * Tauri (internal-toggle-maximize, see tauri#12006) — adding our own
+   * dblclick handler double-toggles (maximize then unmaximize flicker).
    */
-  const onToggleMax = (e: React.MouseEvent, delayMs = 0) => {
+  const onToggleMax = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     const now = Date.now();
     if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) return;
     lastToggle.current = now;
-    window.clearTimeout(pendingTimer.current);
-    if (delayMs <= 0) {
-      void doToggle();
-    } else {
-      pendingTimer.current = window.setTimeout(() => void doToggle(), delayMs);
-    }
+    void doToggle();
   };
   const onClose = (e: React.MouseEvent) => {
     stop(e);
@@ -92,7 +84,6 @@ export function Topbar() {
       <div
         data-tauri-drag-region
         className="flex h-full flex-1 items-center gap-2"
-        onDoubleClick={(e) => onToggleMax(e, 150)}
       >
         <MoonlitLogo size={18} />
         <span className="text-sm font-extrabold tracking-wide text-slate-100">
