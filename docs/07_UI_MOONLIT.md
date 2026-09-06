@@ -49,10 +49,18 @@ Already in `tailwind.config.js` as `colors.moonlit.{void,panel,card,lunar,astral
 - Frameless custom topbar (`Topbar.tsx`): drag region, minimize/maximize/
   close-to-tray and edge/cube resize grips use Tauri window APIs only —
   cross-platform by construction. Never use CSS `app-region` hacks.
-- Icons: window/taskbar set in `tauri.conf.json` (`icons/`); tray uses the
-  DEDICATED transparent `icons/tray-icon.png` loaded explicitly in `lib.rs`
-  (never the window icon — its opaque bg renders as a square in trays).
-  `tray-icon.png` is hand-maintained and NOT part of `tauri icon` output, so
-  regenerating the set is safe. Master artwork: `build-aux/moonlit-icon.svg`.
-  Linux taskbar association additionally needs the `.desktop` file (ships with
-  packaging, Phase 7).
+- Icons: window/taskbar set in `tauri.conf.json` (`icons/`, generated from
+  `build-aux/moonlit-icon.svg` as transparent artwork); tray uses
+  `icons/tray-icon.png` loaded explicitly in `lib.rs` (kept as a separate
+  asset so tray and taskbar can evolve independently).
+  Master artwork: `build-aux/moonlit-icon.svg`.
+- Linux taskbar association needs TWO entries, one per context:
+  - **Dev** (`tauri dev` / `target/debug`): `build-aux/dev.souriscg.moonlit.desktop.template`
+    + `build-aux/install-dev-desktop.sh` (exposed as `pnpm desktop:install`).
+    Wayland matches the window by `appId` (`dev.souriscg.moonlit` via
+    `app.enableGTKAppId`) against `StartupWMClass` + the `.desktop` filename —
+    without it the taskbar shows the generic Wayland icon while the tray
+    (explicit pixels) still renders. The installer also removes the stale
+    pre-Tauri `com.souriscg.MoonLit.desktop` entry.
+  - **Packaging** (deb/rpm/AppImage, Phase 7): the bundler ships the
+    production `.desktop` + icons — that part is still pending (see `08`).

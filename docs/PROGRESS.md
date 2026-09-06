@@ -51,6 +51,26 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
   (`git diff` old vs new tip: empty). Original history preserved in branch
   `main-backup-20260906` (local + remote, keep until told otherwise).
   Old `build <hash>` seals below resolve via the backup branch + map.
+- **Wayland taskbar association, dev flow (2026-09-06)** — Window showed the
+  generic Wayland icon in the taskbar while the tray icon rendered fine.
+  Root cause: on Wayland the taskbar matches by `appId ↔ .desktop`
+  (`dev.souriscg.moonlit` via `app.enableGTKAppId`), and no dev `.desktop`
+  existed in the repo; a stale `com.souriscg.MoonLit.desktop` (wrong
+  identifier/WMClass, `Exec=MoonLit` pointing nowhere) also conflicted.
+  Fix: `app.enableGTKAppId: true` in `tauri.conf.json`,
+  `build-aux/dev.souriscg.moonlit.desktop.template` +
+  `build-aux/install-dev-desktop.sh` (`pnpm desktop:install`) installing a
+  validated dev entry + removing the stale one. Tray is unaffected (explicit
+  `TrayIconBuilder` pixels). Verified by user on KDE Wayland.
+- **Transparent icon set (2026-09-06)** — `src-tauri/icons/` regenerated from
+  `build-aux/moonlit-icon.svg` as fully transparent (rounded artwork, no
+  opaque backdrop). `tray-icon.png` currently mirrors the set; the dedicated
+  tray asset separation is documented as future work in `07_UI_MOONLIT.md`.
+- **HEVC save fix (2026-09-06)** — h265 clips failed to save: NVENC HQ opts
+  are now per-codec (`nvenc_hq_opts`: `high` for h264, `main` for hevc) with
+  unit tests in `video_quality.rs`.
+- **Purge missing clips (2026-09-06)** — New `purge_missing_clips` command +
+  gallery button: drops DB rows whose files no longer exist on disk.
 
 ## Hash map (old → new, same order/messages/dates)
 
