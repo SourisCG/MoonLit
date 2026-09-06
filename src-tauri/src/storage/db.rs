@@ -122,8 +122,54 @@ impl DbState {
         Ok(clips)
     }
 
-    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {
+    /// Insert a freshly saved clip. Names are RELATIVE to the clips dir.
+    pub fn insert_clip(
+        &self,
+        file_name: &str,
+        thumbnail_name: &str,
+        game_title: &str,
+        duration_ms: i64,
+        file_size_bytes: i64,
+    ) -> Result<ClipRecord, String> {
+        if file_name.contains("..") || file_name.starts_with('/') {
+            return Err("invalid file name".into());
+        }
+        let id = uuid::Uuid::new_v4().to_string();
         let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO clips
+             (id, file_name, thumbnail_name, game_title, duration_ms, file_size_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, file_name, thumbnail_name, game_title, duration_ms, file_size_bytes],
+        )
+        .map_err(|e| format!("cannot insert clip: {e}"))?;
+        let clip: ClipRecord = conn
+            .query_row(
+                "SELECT id, file_name, thumbnail_name, game_title, duration_ms,
+                        file_size_bytes, created_at, is_favorite, drive_file_id, drive_web_url
+                 FROM clips WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok(ClipRecord {
+                        id: r.get(0)?,
+                        file_name: r.get(1)?,
+                        thumbnail_name: r.get(2)?,
+                        game_title: r.get(3)?,
+                        duration_ms: r.get(4)?,
+                        file_size_bytes: r.get(5)?,
+                        created_at: r.get(6)?,
+                        is_favorite: r.get::<_, i64>(7)? != 0,
+                        drive_file_id: r.get(8)?,
+                        drive_web_url: r.get(9)?,
+                        exists: true,
+                    })
+                },
+            )
+            .map_err(|e| format!("cannot read inserted clip: {e}"))?;
+        Ok(clip)
+    }
+
+    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {        let conn = self.lock()?;
         let changed = conn
             .execute(
                 "UPDATE clips SET is_favorite = 1 - is_favorite WHERE id = ?1",

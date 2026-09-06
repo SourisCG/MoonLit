@@ -82,7 +82,7 @@ pub trait CaptureEngine: Send + Sync {
     async fn start_buffer(&mut self, config: CaptureConfig) -> Result<(), String>;
     async fn save_clip(&mut self) -> Result<PathBuf, String>;
     async fn stop_buffer(&mut self) -> Result<(), String>;
-    fn is_running(&self) -> bool;
+    fn backend_name(&self) -> &'static str; // running state = Option<Engine> in AppState
 }
 ```
 

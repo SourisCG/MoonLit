@@ -41,6 +41,12 @@
     "picker_note": "Running-process picker and click-to-register arrive in Phase 4."
   },
   "common": { "loading": "Loading…", "delete": "Delete" },
+  "rec": {
+    "start": "Start buffer",
+    "stop": "Stop",
+    "save_now": "Save clip now",
+    "recording": "Recording replay buffer"
+  },
   "lang": { "label": "Language" },
   "window": {
     "minimize": "Minimize",
