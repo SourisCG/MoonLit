@@ -66,6 +66,21 @@ fn classify(name: &str) -> Option<Track> {
 /// ["default_output", "default_input", "device:x"]). Exact match wins.
 pub async fn gsr_streams(known_args: &[String]) -> Result<Vec<(u32, Track)>, String> {
     let outputs = all_outputs().await?;
+    // TEMP-DEBUG (silent gain failure investigation, remove after fix):
+    // log every recording stream the process can see + what we match against.
+    let seen: Vec<String> = outputs
+        .iter()
+        .map(|o| {
+            format!(
+                "#{} app={} media={}",
+                o.index,
+                o.properties.get("application.name").cloned().unwrap_or_default(),
+                o.properties.get("media.name").cloned().unwrap_or_default()
+            )
+        })
+        .collect();
+    eprintln!("[moonlit-dbg] pactl sees {} source-outputs: [{}]; known_args={:?}",
+        outputs.len(), seen.join(" | "), known_args);
     let ours: Vec<&Output> = outputs
         .iter()
         .filter(|o| looks_like_ours(&prop(o, "application.name")))

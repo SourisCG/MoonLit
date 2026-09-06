@@ -82,8 +82,8 @@ export default function App() {
         <MoonlitStarfield />
         <div className="pointer-events-none fixed left-1/2 top-10 h-[250px] w-[700px] -translate-x-1/2 bg-gradient-to-b from-cyan-500/10 via-indigo-500/5 to-transparent blur-3xl" />
 
-        <div className="relative z-10 flex min-h-0 flex-1 gap-4 p-4">
-          <aside className="flex w-64 flex-col justify-between rounded-2xl border border-white/5 bg-moonlit-panel/50 p-4 shadow-2xl backdrop-blur-xl">
+        <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-x-auto p-4">
+          <aside className="flex w-56 shrink-0 flex-col justify-between self-start overflow-y-auto rounded-2xl border border-white/5 bg-moonlit-panel/50 p-4 shadow-2xl backdrop-blur-xl lg:w-64" style={{ maxHeight: "calc(100vh - 5.5rem)" }}>
             <div>
               <div className="mb-6 flex items-center gap-2.5 px-2 py-3">
                 <MoonlitLogo size={30} />
@@ -192,7 +192,7 @@ export default function App() {
             </div>
           </aside>
 
-          <main className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-white/5 bg-moonlit-panel/30 p-6 shadow-2xl backdrop-blur-xl">
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-2xl border border-white/5 bg-moonlit-panel/30 p-4 shadow-2xl backdrop-blur-xl sm:p-6">
             {view === "settings" && (
               <>
                 <h2 className="text-xl font-bold text-slate-100">{t("nav.settings")}</h2>
