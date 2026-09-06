@@ -1,0 +1,57 @@
+/* MoonLit logo replica (moon crescent + play), ported from moonlit.souriscg.dev */
+.moonlit-logo {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.moonlit-logo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ef4444 10%, #3b82f6 90%);
+  -webkit-mask: radial-gradient(circle at 68% 50%, transparent 44%, #000 45%);
+  mask: radial-gradient(circle at 68% 50%, transparent 44%, #000 45%);
+}
+
+.moonlit-logo::after {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.45), rgba(59, 130, 246, 0.45));
+  filter: blur(10px);
+  z-index: -1;
+  animation: moonlit-logo-pulse 3.5s ease-in-out infinite;
+}
+
+.moonlit-logo-play {
+  position: absolute;
+  left: 68%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  border-left: 7px solid #fff;
+  transition: transform 0.2s ease;
+}
+
+a:hover .moonlit-logo-play,
+button:hover .moonlit-logo-play,
+.moonlit-logo-hover:hover .moonlit-logo-play {
+  transform: translate(-50%, -50%) translateX(2px);
+}
+
+@keyframes moonlit-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}

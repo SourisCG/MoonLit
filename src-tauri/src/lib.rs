@@ -1,11 +1,28 @@
 // MoonLit Phase 1 — tray + global F9 + close-to-hide.
 // No capture / DB / editor logic here (later phases).
 
+use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
+
+/// Minimum gap between accepted hotkey presses (kills key auto-repeat doubles).
+const HOTKEY_DEBOUNCE_MS: u128 = 400;
+
+#[derive(Default)]
+struct HotkeyState {
+    last_emit_ms: Option<u128>,
+}
+
+fn now_ms() -> u128 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -20,6 +37,7 @@ fn get_hotkey() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(Mutex::new(HotkeyState::default()))
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -29,12 +47,27 @@ pub fn run() {
                 .with_handler(|app, shortcut, event| {
                     use tauri_plugin_global_shortcut::ShortcutState;
                     if event.state == ShortcutState::Pressed {
-                        let pressed_at = chrono_like_now();
+                        let now = now_ms();
+                        let accept = {
+                            let state = app.state::<Mutex<HotkeyState>>();
+                            let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
+                            let ok = guard
+                                .last_emit_ms
+                                .map(|last| now.saturating_sub(last) >= HOTKEY_DEBOUNCE_MS)
+                                .unwrap_or(true);
+                            if ok {
+                                guard.last_emit_ms = Some(now);
+                            }
+                            ok
+                        };
+                        if !accept {
+                            return;
+                        }
                         let _ = app.emit(
                             "moonlit://clip-hotkey",
                             serde_json::json!({
                                 "shortcut": shortcut.to_string(),
-                                "pressed_at": pressed_at,
+                                "pressed_at": now.to_string(),
                             }),
                         );
                         use tauri_plugin_notification::NotificationExt;
@@ -107,13 +140,4 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![greet, get_hotkey])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-/// Millis since UNIX epoch as string (avoids adding chrono dep in Phase 1).
-fn chrono_like_now() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis().to_string())
-        .unwrap_or_else(|_| "0".to_string())
 }

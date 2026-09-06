@@ -5,8 +5,8 @@ interface Star {
   y: number;
   size: number;
   baseAlpha: number;
-  currentAlpha: number;
   speed: number;
+  phase: number;
 }
 
 const STAR_COUNT = 85;
@@ -23,7 +23,7 @@ export function MoonlitStarfield() {
 
     let animationId = 0;
     let isPaused = false;
-    let frame = 0;
+    let startTime = performance.now();
 
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
@@ -37,17 +37,17 @@ export function MoonlitStarfield() {
       y: Math.random() * window.innerHeight,
       size: Math.random() * 1.6 + 0.4,
       baseAlpha: Math.random() * 0.5 + 0.2,
-      currentAlpha: Math.random(),
-      speed: Math.random() * 0.02 + 0.008,
+      speed: Math.random() * 0.5 + 0.2, // rad/s — slow, independent per star
+      phase: Math.random() * Math.PI * 2,
     }));
 
     const render = () => {
       if (isPaused) return;
-      frame++;
+      const t = (performance.now() - startTime) / 1000;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (const star of stars) {
-        star.currentAlpha = star.baseAlpha + Math.sin(frame * star.speed) * 0.35;
-        const a = Math.max(0.05, Math.min(1, star.currentAlpha));
+        // Soft twinkle: small amplitude around base, desynced via phase.
+        const a = Math.max(0.05, Math.min(1, star.baseAlpha + Math.sin(t * star.speed + star.phase) * 0.12));
         ctx.fillStyle = `rgba(224, 231, 255, ${a})`;
         ctx.beginPath();
         ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);

@@ -19,5 +19,11 @@
     "empty": "No clips yet. Capture engine lands in Phase 3.",
     "coming": "Gallery arrives in Phase 2–3. This is the Phase 1 shell."
   },
-  "lang": { "label": "Language" }
+  "lang": { "label": "Language" },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Hide to tray"
+  }
 }
