@@ -1,13 +1,45 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { MoonlitLogo } from "../logo/MoonlitLogo";
 
+/** Ignore toggle requests closer than this (double-click fires click+click+dblclick). */
+const TOGGLE_DEBOUNCE_MS = 500;
+
 /** Frameless custom topbar: drag region + brand + window controls (close hides to tray). */
 export function Topbar() {
   const { t } = useTranslation();
+  // Mirrors the OS state (synced via resize events), never toggled blindly.
   const [maximized, setMaximized] = useState(false);
+  const lastToggle = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const isMax = await getCurrentWindow().isMaximized();
+        if (!cancelled) setMaximized(isMax);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    void sync();
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const fn = await getCurrentWindow().onResized(() => void sync());
+        if (cancelled) fn();
+        else unlisten = fn;
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const win = () => getCurrentWindow();
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
@@ -17,12 +49,19 @@ export function Topbar() {
     void win().minimize();
   };
   const onToggleMax = async (e: React.MouseEvent) => {
-    stop(e);
+    e.stopPropagation();
+    e.preventDefault();
+    const now = Date.now();
+    if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) return;
+    lastToggle.current = now;
     const w = win();
-    const isMax = await w.isMaximized();
-    if (isMax) await w.unmaximize();
-    else await w.maximize();
-    setMaximized(!isMax);
+    try {
+      if (await w.isMaximized()) await w.unmaximize();
+      else await w.maximize();
+      setMaximized(await w.isMaximized());
+    } catch (err) {
+      console.error(err);
+    }
   };
   const onClose = (e: React.MouseEvent) => {
     stop(e);
@@ -43,7 +82,7 @@ export function Topbar() {
         </span>
         <span className="hidden text-[11px] text-slate-500 sm:inline">{t("app.tagline")}</span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" onDoubleClick={stop}>
         <button
           aria-label={t("window.minimize")}
           title={t("window.minimize")}
