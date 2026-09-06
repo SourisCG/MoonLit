@@ -11,12 +11,13 @@ use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::time::sleep;
 
-use super::super::{CaptureConfig, CaptureEngine};
+use super::super::{CaptureConfig, CaptureEngine, SavePlan};
 
 pub struct LinuxGsrEngine {
     child: Option<Child>,
     output_dir: PathBuf,
     audio_args: Vec<String>,
+    save_plan: Option<SavePlan>,
 }
 
 impl LinuxGsrEngine {
@@ -25,6 +26,7 @@ impl LinuxGsrEngine {
             child: None,
             output_dir: PathBuf::new(),
             audio_args: Vec::new(),
+            save_plan: None,
         }
     }
 
@@ -92,8 +94,13 @@ impl CaptureEngine for LinuxGsrEngine {
             config.mic_device.clone(),
         ];
         let mut cmd = Command::new(&bin);
+        let source = if config.source.trim().is_empty() {
+            "screen"
+        } else {
+            config.source.trim()
+        };
         cmd.args([
-            "-w", "screen",
+            "-w", source,
             "-f", &config.fps.to_string(),
             "-k", &config.codec,
             "-c", "mp4",
@@ -131,6 +138,16 @@ impl CaptureEngine for LinuxGsrEngine {
             .map_err(|e| format!("cannot launch {}: {e}", bin.display()))?;
         self.output_dir = config.output_dir;
         self.audio_args = audio_args;
+        self.save_plan = if config.save_height > 0 {
+            Some(SavePlan {
+                height: config.save_height,
+                bitrate_kbps: config.save_bitrate_kbps,
+                codec: config.codec.clone(),
+                fps: config.fps,
+            })
+        } else {
+            None
+        };
         self.child = Some(child);
         Ok(())
     }
@@ -162,6 +179,10 @@ impl CaptureEngine for LinuxGsrEngine {
 
     fn audio_args(&self) -> Vec<String> {
         self.audio_args.clone()
+    }
+
+    fn save_plan(&self) -> Option<SavePlan> {
+        self.save_plan.clone()
     }
 }
 

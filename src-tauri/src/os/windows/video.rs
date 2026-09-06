@@ -8,9 +8,17 @@ pub async fn vendor(_bin: &Path) -> String {
     "unknown".into()
 }
 
-/// Mirrors os/linux/video::max_source_height signature.
-pub async fn max_source_height(_bin: &Path) -> u32 {
-    0
+/// Monitor descriptor (mirrors os/linux/video::Monitor).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Monitor {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Mirrors os/linux/video::list_monitors signature.
+pub async fn list_monitors(_bin: &Path) -> Vec<Monitor> {
+    vec![]
 }
 
 /// Mirrors os/linux/video::offered_codecs signature.

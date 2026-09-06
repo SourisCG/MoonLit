@@ -62,22 +62,46 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         _ => 60,
     };
     let vendor = video::vendor(&gsr_bin).await;
-    let max_height = video::max_source_height(&gsr_bin).await;
+    let monitors = video::list_monitors(&gsr_bin).await;
+    let monitor = setting_str(&db, "monitor", "");
+    // Source height: selected monitor, else tallest known monitor.
+    let source_height = if monitor.trim().is_empty() {
+        monitors.iter().map(|m| m.height).max().unwrap_or(0)
+    } else {
+        monitors
+            .iter()
+            .find(|m| m.name == monitor.trim())
+            .map(|m| m.height)
+            .unwrap_or(0)
+    };
     let ladder_height = if out_height == 0 {
-        if max_height > 0 { max_height } else { 1080 }
+        if source_height > 0 { source_height } else { 1080 }
     } else {
         out_height
     };
     let bitrate = video_quality::bitrate_kbps(ladder_height, &codec);
+    // Capture plan: the backend's live scaler proved soft on text at
+    // non-integer ratios (1080p->720p), so when the target sits below the
+    // source we buffer at source resolution and downscale with lanczos on
+    // save. Otherwise capture directly at the requested height.
+    let (capture_height, buffer_bitrate, save_height, save_bitrate) =
+        if out_height != 0 && source_height > 0 && out_height < source_height {
+            (0, video_quality::bitrate_kbps(source_height, &codec), out_height, bitrate)
+        } else {
+            (out_height, bitrate, 0, bitrate)
+        };
     // NVENC HQ opts only where valid (NVIDIA + h264/hevc); elsewhere backend defaults.
     let nvenc_opts = if vendor == "nvidia" && (codec == "h264" || codec == "hevc") {
         Some(video_quality::nvenc_hq_opts().to_string())
     } else {
         None
     };
-    eprintln!("[moonlit] video: codec={codec} height={} fps={fps} vendor={vendor} cbr={bitrate}kbps nvenc_hq={}",
+    eprintln!("[moonlit] video: codec={codec} height={} fps={fps} vendor={vendor} cbr={bitrate}kbps nvenc_hq={} monitor={} capture={} save={}",
         if out_height == 0 { "source".to_string() } else { out_height.to_string() },
-        nvenc_opts.is_some());
+        nvenc_opts.is_some(),
+        if monitor.trim().is_empty() { "auto".to_string() } else { monitor.clone() },
+        if capture_height == 0 { "source".to_string() } else { capture_height.to_string() },
+        if save_height == 0 { "-".to_string() } else { format!("lanczos->{save_height}p") });
 
     let mut engine = Engine::new();
     engine
@@ -86,11 +110,14 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             fps,
             output_dir: dir,
             gsr_bin: Some(gsr_bin),
+            source: monitor,
             desktop_device,
             mic_device,
             codec,
-            out_height,
-            bitrate_kbps: bitrate,
+            out_height: capture_height,
+            bitrate_kbps: buffer_bitrate,
+            save_height,
+            save_bitrate_kbps: save_bitrate,
             nvenc_opts,
         })
         .await?;
@@ -161,6 +188,7 @@ pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(
         "video_codec",
         "out_height",
         "fps",
+        "monitor",
     ];
     if RESTART_KEYS.contains(&key.as_str()) {
         let running = {
@@ -305,10 +333,6 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
             .ok_or_else(|| "buffer not running".to_string())?;
         eng.save_clip().await?
     };
-    let size = tokio::fs::metadata(&path)
-        .await
-        .map_err(|e| format!("cannot stat clip: {e}"))?
-        .len() as i64;
     let db = app.state::<DbState>();
     // Same-second double saves collide: GSR names files by timestamp, so the
     // second file overwrites the first on disk and the DB rejects the duplicate.
@@ -354,6 +378,38 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
     }
     let base = db.clips_dir()?;
     let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(app)?;
+    // Deliver the requested height: the buffer ran at source resolution, so
+    // downscale now with lanczos (NVENC). On any failure keep the source
+    // file — a source-res clip beats no clip.
+    {
+        let st = app.state::<AppState>();
+        let guard = st.recorder.lock().await;
+        let plan = guard.as_ref().and_then(|e| e.save_plan());
+        drop(guard);
+        if let Some(p) = plan {
+            let t0 = std::time::Instant::now();
+            let tmp = path.with_extension("scaled.mp4");
+            let ok = crate::editor::ffmpeg::scale_to_height(
+                &ffmpeg, &path, &tmp, p.height, p.bitrate_kbps, &p.codec, p.fps,
+            )
+            .await;
+            if ok {
+                if let Err(e) = tokio::fs::rename(&tmp, &path).await {
+                    eprintln!("[moonlit] scaled replace failed: {e}");
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                } else {
+                    eprintln!("[moonlit] lanczos save-scale to {}p in {:?}", p.height, t0.elapsed());
+                }
+            } else {
+                eprintln!("[moonlit] save-scale failed, keeping source resolution");
+                let _ = tokio::fs::remove_file(&tmp).await;
+            }
+        }
+    }
+    let size = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("cannot stat clip: {e}"))?
+        .len() as i64;
     // Real measured duration (the buffer is rarely full at save time).
     // Falls back to the configured length only if probing fails.
     let secs_ms = crate::editor::ffmpeg::probe_duration_ms(&ffmpeg, &path)
@@ -600,12 +656,24 @@ pub struct HeightOpt {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct MonitorOpt {
+    pub name: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct VideoOptions {
     pub codecs: Vec<CodecOpt>,
     pub heights: Vec<HeightOpt>,
+    pub monitors: Vec<MonitorOpt>,
     pub current_codec: String,
     pub current_height: u32,
     pub current_fps: u32,
+    pub current_monitor: String,
+    /// Height the ring buffer actually runs at (source when transcoding).
+    pub buffer_height: u32,
+    /// Whether saves downscale with lanczos (buffer at source).
+    pub transcoding: bool,
     pub max_source_height: u32,
     pub vendor: String,
 }
@@ -659,7 +727,29 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
         30 => 30,
         _ => 60,
     };
-    let max_source_height = video::max_source_height(&gsr_bin).await;
+    let listed = video::list_monitors(&gsr_bin).await;
+    let max_source_height = listed.iter().map(|m| m.height).max().unwrap_or(0);
+    let current_monitor = setting_str(&db, "monitor", "");
+    let monitors = listed
+        .iter()
+        .map(|m| MonitorOpt {
+            name: m.name.clone(),
+            label: format!("{} ({}×{})", m.name, m.width, m.height),
+        })
+        .collect::<Vec<_>>();
+    let source_height = if current_monitor.trim().is_empty() {
+        max_source_height
+    } else {
+        listed
+            .iter()
+            .find(|m| m.name == current_monitor.trim())
+            .map(|m| m.height)
+            .unwrap_or(max_source_height)
+    };
+    // Same capture plan as start_engine: buffer at source when downscaling.
+    let transcoding =
+        current_height != 0 && source_height > 0 && current_height < source_height;
+    let buffer_height = if transcoding { source_height } else { current_height };
     let heights = q::HEIGHTS
         .iter()
         .map(|&h| {
@@ -677,9 +767,13 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     Ok(VideoOptions {
         codecs,
         heights,
+        monitors,
         current_codec,
         current_height,
         current_fps,
+        current_monitor,
+        buffer_height,
+        transcoding,
         max_source_height,
         vendor,
     })

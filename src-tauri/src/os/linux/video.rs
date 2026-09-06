@@ -57,32 +57,43 @@ pub async fn offered_codecs(bin: &Path) -> Vec<String> {
     ids
 }
 
-/// Max monitor height from `--list-monitors` (`NAME|WxH` lines). 0 if unknown.
-pub async fn max_source_height(bin: &Path) -> u32 {
+/// One capture monitor (`--list-monitors`, `NAME|WxH` lines).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Monitor {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Full monitor list. Empty if the backend cannot enumerate.
+pub async fn list_monitors(bin: &Path) -> Vec<Monitor> {
     let Ok(out) = tokio::process::Command::new(bin)
         .arg("--list-monitors")
         .output()
         .await
     else {
-        return 0;
+        return vec![];
     };
-    parse_max_height(&String::from_utf8_lossy(&out.stdout))
+    parse_monitors(&String::from_utf8_lossy(&out.stdout))
 }
 
-fn parse_max_height(out: &str) -> u32 {
+fn parse_monitors(out: &str) -> Vec<Monitor> {
     out.lines()
         .filter_map(|l| {
-            let dims = l.split('|').nth(1)?;
-            let h = dims.split('x').nth(1)?;
-            h.trim().parse::<u32>().ok()
+            let (name, dims) = l.split_once('|')?;
+            let (w, h) = dims.split_once('x')?;
+            Some(Monitor {
+                name: name.trim().to_string(),
+                width: w.trim().parse().ok()?,
+                height: h.trim().parse().ok()?,
+            })
         })
-        .max()
-        .unwrap_or(0)
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_max_height, parse_vendor};
+    use super::{parse_monitors, parse_vendor};
 
     #[test]
     fn parses_vendor() {
@@ -93,6 +104,10 @@ mod tests {
     #[test]
     fn parses_monitors() {
         let out = "DP-1|1920x1080\nDP-2|1280x720\n";
-        assert_eq!(parse_max_height(out), 1080);
+        let ms = parse_monitors(out);
+        assert_eq!(ms.len(), 2);
+        assert_eq!(ms[0].name, "DP-1");
+        assert_eq!(ms[0].height, 1080);
+        assert_eq!(ms.iter().map(|m| m.height).max(), Some(1080));
     }
 }

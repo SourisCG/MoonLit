@@ -14,14 +14,32 @@ pub struct CaptureConfig {
     /// Audio sources for `-a` (game first, mic second).
     pub desktop_device: String,
     pub mic_device: String,
+    /// Capture source for `-w` ("screen", monitor name, …). Empty = backend default.
+    pub source: String,
     /// Video codec id for `-k` (h264/hevc/av1, as listed by the backend).
     pub codec: String,
-    /// Output height for `-s` (0 = source resolution).
+    /// Spawn `-s` height (0 = omit, capture at source). This is the BUFFER
+    /// resolution; the file the user asked for may differ (see save_height).
     pub out_height: u32,
-    /// CBR bitrate in kbps for `-q`.
+    /// CBR bitrate in kbps for `-q` (matches the BUFFER resolution).
     pub bitrate_kbps: u32,
+    /// Height to deliver at save time (0 = keep captured). When lower than
+    /// the buffer resolution, the saver downscales with lanczos instead of
+    /// trusting the backend's live scaler (proven soft on text, 1.5x ratios).
+    pub save_height: u32,
+    /// CBR bitrate for the delivered file (ladder row of save_height).
+    pub save_bitrate_kbps: u32,
     /// Extra `-ffmpeg-video-opts` (NVENC HQ recipe, NVIDIA only). None = backend defaults.
     pub nvenc_opts: Option<String>,
+}
+
+/// Background downscale applied at save time (lanczos, NVENC).
+#[derive(Debug, Clone, Default)]
+pub struct SavePlan {
+    pub height: u32,
+    pub bitrate_kbps: u32,
+    pub codec: String,
+    pub fps: u32,
 }
 
 /// Unified engine interface. Methods are async to allow signal waits / IPC.
@@ -34,6 +52,10 @@ pub trait CaptureEngine: Send + Sync {
     /// The exact `-a` audio args the running engine spawned with (for stream matching).
     fn audio_args(&self) -> Vec<String> {
         vec![]
+    }
+    /// Downscale to apply at save time (None = deliver as captured).
+    fn save_plan(&self) -> Option<SavePlan> {
+        None
     }
 }
 

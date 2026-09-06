@@ -54,6 +54,56 @@ pub async fn probe_duration_ms(ffmpeg: &Path, input: &Path) -> Option<i64> {
     Some(((h * 3600 + m * 60) as f64 * 1000.0 + s * 1000.0) as i64)
 }
 
+/// Downscale to `height` (aspect kept, width auto-even) with lanczos + NVENC.
+///
+/// Used at save time instead of the backend's live scaler, which proved soft
+/// on text at non-integer ratios (1080p→720p). Same CBR ladder bitrate as a
+/// direct capture would use. Returns false on any failure (caller keeps source).
+pub async fn scale_to_height(
+    ffmpeg: &Path,
+    input: &Path,
+    output: &Path,
+    height: u32,
+    bitrate_kbps: u32,
+    codec: &str,
+    fps: u32,
+) -> bool {
+    let encoder = match codec {
+        "hevc" => "hevc_nvenc",
+        "av1" => "av1_nvenc",
+        _ => "h264_nvenc",
+    };
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args([
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-i", &input.to_string_lossy(),
+        "-vf", &format!("scale=-2:{height}:flags=lanczos"),
+        "-c:v", encoder,
+        "-preset", "p7",
+        "-tune", "hq",
+    ]);
+    // `high` is an H.264 profile; HEVC uses `main`.
+    if codec == "hevc" {
+        cmd.args(["-profile:v", "main"]);
+    } else if codec == "h264" {
+        cmd.args(["-profile:v", "high"]);
+    }
+    let gop = (fps.max(1) * 2).to_string();
+    let out = cmd
+        .args([
+            "-bf", "2",
+            "-b:v", &format!("{bitrate_kbps}k"),
+            "-maxrate", &format!("{bitrate_kbps}k"),
+            "-bufsize", &format!("{bitrate_kbps}k"),
+            "-g", &gop,
+            "-c:a", "copy",
+        ])
+        .arg(output)
+        .output()
+        .await;
+    matches!(out, Ok(o) if o.status.success())
+}
+
 /// Extract one JPEG thumbnail at 1 s. Fast (no re-encode of the clip).
 pub async fn make_thumbnail(
     ffmpeg: &Path,

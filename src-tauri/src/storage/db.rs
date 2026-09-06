@@ -9,12 +9,13 @@ use tauri::AppHandle;
 use super::models::{ClipRecord, CustomApp, RegisterAppInput};
 use super::paths;
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
 const MIGRATION_002: &str = include_str!("../../migrations/002_gains.sql");
 const MIGRATION_003: &str = include_str!("../../migrations/003_devices.sql");
 const MIGRATION_004: &str = include_str!("../../migrations/004_video.sql");
 const MIGRATION_005: &str = include_str!("../../migrations/005_fps.sql");
+const MIGRATION_006: &str = include_str!("../../migrations/006_monitor.sql");
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -46,6 +47,10 @@ impl DbState {
             if version < 5 {
                 conn.execute_batch(MIGRATION_005)
                     .map_err(|e| format!("migration 005 failed: {e}"))?;
+            }
+            if version < 6 {
+                conn.execute_batch(MIGRATION_006)
+                    .map_err(|e| format!("migration 006 failed: {e}"))?;
             }
             conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
                 .map_err(|e| format!("cannot stamp schema version: {e}"))?;
@@ -286,6 +291,7 @@ impl DbState {
             "video_codec",
             "out_height",
             "fps",
+            "monitor",
         ];
         if !ALLOWED.contains(&key) {
             return Err(format!("unknown setting: {key}"));

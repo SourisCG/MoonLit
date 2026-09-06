@@ -15,12 +15,21 @@ interface HeightOpt {
   ring_mb_60s: number[];
 }
 
+interface MonitorOpt {
+  name: string;
+  label: string;
+}
+
 interface VideoOptions {
   codecs: CodecOpt[];
   heights: HeightOpt[];
+  monitors: MonitorOpt[];
   current_codec: string;
   current_height: number;
   current_fps: number;
+  current_monitor: string;
+  buffer_height: number;
+  transcoding: boolean;
   max_source_height: number;
   vendor: string;
 }
@@ -36,7 +45,7 @@ export function VideoSection() {
   };
   useEffect(load, []);
 
-  const change = async (key: "video_codec" | "out_height" | "fps", value: string) => {
+  const change = async (key: "video_codec" | "out_height" | "fps" | "monitor", value: string) => {
     setError(null);
     try {
       await invoke("set_setting", { key, value });
@@ -55,9 +64,12 @@ export function VideoSection() {
   );
   const heightRow =
     opts.heights.find((h) => h.height === opts.current_height) ?? opts.heights[2];
-  const bitrate = heightRow.bitrates[Math.min(codecIdx, heightRow.bitrates.length - 1)];
-  const ram = heightRow.ring_mb_60s[Math.min(codecIdx, heightRow.ring_mb_60s.length - 1)];
   const codecNote = opts.codecs[codecIdx]?.note ?? "";
+  // RAM hint follows the BUFFER resolution (source when transcoding).
+  const bufRow =
+    opts.heights.find((h) => h.height === opts.buffer_height) ?? heightRow;
+  const bufBitrate = bufRow.bitrates[Math.min(codecIdx, bufRow.bitrates.length - 1)];
+  const bufRam = bufRow.ring_mb_60s[Math.min(codecIdx, bufRow.ring_mb_60s.length - 1)];
   const upscale =
     opts.max_source_height > 0 &&
     opts.current_height > opts.max_source_height;
@@ -98,6 +110,21 @@ export function VideoSection() {
           </select>
         </label>
         <label className="block">
+          <span className="mb-1 block text-sm text-slate-300">{t("video.monitor")}</span>
+          <select
+            className={select}
+            value={opts.current_monitor}
+            onChange={(e) => void change("monitor", e.target.value)}
+          >
+            <option value="">{t("video.monitor_auto")}</option>
+            {opts.monitors.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
           <span className="mb-1 block text-sm text-slate-300">{t("video.fps")}</span>
           <select
             className={select}
@@ -113,8 +140,11 @@ export function VideoSection() {
       {upscale && (
         <p className="text-xs text-amber-400">{t("video.upscale_warn")}</p>
       )}
+      {opts.transcoding && (
+        <p className="text-xs text-cyan-300/80">{t("video.transcoding_note")}</p>
+      )}
       <p className="font-mono text-xs text-slate-400">
-        {t("video.estimate", { bitrate, ram })}
+        {t("video.estimate", { bitrate: bufBitrate, ram: bufRam })}
       </p>
       <p className="text-xs text-slate-600">{t("video.hq_note")}</p>
       <p className="text-xs text-slate-600">{t("video.judder_note")}</p>

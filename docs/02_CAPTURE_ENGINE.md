@@ -64,6 +64,18 @@ more judder from high-refresh sources). `-s` omitted at source resolution.
 Same-second double saves never collide: the saver renames to `stem_2.mp4`,
 `stem_3.mp4`… instead of overwriting + UNIQUE failure.
 
+### 2.3 Delivery strategy: source buffer + lanczos on save
+
+Verdict from live A/B (same NVENC recipe sharp at 1080p native, soft at
+720p on a 1:1 monitor): the backend's live scaler is soft on text at
+non-integer ratios. So when the target height sits below the source height,
+the ring buffer runs at **source** resolution (source-row CBR) and the saver
+downscales with `scale=-2:H:flags=lanczos` (NVENC, target-row CBR) before
+indexing. Direct capture otherwise. The Video UI shows the BUFFER cost and a
+"records at source, delivers with lanczos" note whenever transcoding applies.
+Monitor is explicit (`-w <name>`, default automatic); quality is a function of
+settings, never of whichever monitor the backend finds first.
+
 ### 2.2 Control from Rust
 
 - Spawn as `tokio::process::Child` on app start / game start.
