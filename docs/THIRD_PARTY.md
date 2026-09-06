@@ -10,13 +10,16 @@ component shipped inside MoonLit installers and what the GPL requires for each.
 - **Upstream:** https://git.dec05eba.com/gpu-screen-recorder/ by dec05eba.
 - **License:** `GPL-3.0-only` (per Arch, Alpine, Artix packaging). Compatible:
   MoonLit as a whole is GPL-3.0-only.
-- **Pinned source (Phase 7 CI builds from this):**
-  `https://dec05eba.com/snapshot/gpu-screen-recorder.git.<rev>.<hash>.tar.gz`
-  (same snapshot scheme as
-  `flathub/com.dec05eba.gpu_screen_recorder`). The exact URL + sha512 used
-  for each release is recorded in the GitHub Release notes.
-- **Source offer (GPL §6):** Corresponding Source = upstream snapshot above
-  plus our build flags (this file). No modifications are made to GSR itself.
+- **Pinned source (CI builds from this):**
+  GitHub mirror `https://github.com/antonlobanovskiy/gpu-screen-recorder`
+  (upstream git is bot-walled; mirror documents its upstream base commit)
+  at commit `a2cfc66419fd7c814ab46e330592c983404b059b` (base: upstream 5.15.1).
+  Built via `build-aux/build-gsr.sh` (meson release, `-Dcapabilities=false
+  -Dsystemd=false -Dnvidia_suspend_fix=false -Dstrip=true`), output tagged
+  with the rustc target triple under `src-tauri/binaries/<triple>/`.
+  Bump the pin by updating `GSR_COMMIT` in that script.
+- **Source offer (GPL §6):** Corresponding Source = pinned snapshot above
+  plus our build flags (this file + the script). No modifications to GSR itself.
 - **Ship model per format:**
   - `.rpm` / `.deb` / `.AppImage`: prebuilt sidecar under
     `<app>/moonlit-gsr/`; system deps (`libdrm`, `libva`, pipewire, pulse)

@@ -45,7 +45,9 @@
     "start": "Start buffer",
     "stop": "Stop",
     "save_now": "Save clip now",
-    "recording": "Recording replay buffer"
+    "recording": "Recording replay buffer",
+    "game": "Game",
+    "mic": "Mic"
   },
   "lang": { "label": "Language" },
   "window": {

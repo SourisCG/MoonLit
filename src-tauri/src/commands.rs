@@ -128,12 +128,15 @@ pub async fn start_buffer(app: AppHandle) -> Result<EngineStatus, String> {
     let db = app.state::<DbState>();
     let dir = db.clips_dir()?;
     let secs = buffer_seconds(&db) as u32;
+    let (gsr_bin, source) = crate::sidecar::gsr_binary(&app)?;
+    eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
     let mut engine = Engine::new();
     engine
         .start_buffer(CaptureConfig {
             duration_seconds: secs,
             fps: 60,
             output_dir: dir,
+            gsr_bin: Some(gsr_bin),
         })
         .await?;
     let status = EngineStatus {
@@ -144,6 +147,13 @@ pub async fn start_buffer(app: AppHandle) -> Result<EngineStatus, String> {
         let st = app.state::<AppState>();
         *st.recorder.lock().await = Some(engine);
     }
+    // Apply persisted per-track gains to the fresh GSR streams (best effort).
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = apply_saved_gains(&app2).await {
+            eprintln!("[moonlit] initial gain apply failed: {e}");
+        }
+    });
     Ok(status)
 }
 
@@ -232,4 +242,146 @@ pub(crate) async fn handle_hotkey(app: AppHandle, shortcut: String, pressed_at: 
         ),
         Err(e) => notify(&app, &format!("Error al guardar: {e}"), &format!("Save failed: {e}")),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Live capture gain + backend info (Phase 3)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TrackGains {
+    pub game: u32,
+    pub mic: u32,
+    pub mute_game: bool,
+    pub mute_mic: bool,
+}
+
+fn read_gains(app: &AppHandle) -> TrackGains {
+    let map = app
+        .try_state::<DbState>()
+        .and_then(|db| db.get_settings().ok())
+        .unwrap_or_default();
+    let num = |k: &str, d: u32| {
+        map.get(k)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+            .clamp(0, 150)
+    };
+    let flag = |k: &str| map.get(k).map(|v| v == "1" || v == "true").unwrap_or(false);
+    TrackGains {
+        game: num("gain_game", 100),
+        mic: num("gain_mic", 100),
+        mute_game: flag("mute_game"),
+        mute_mic: flag("mute_mic"),
+    }
+}
+
+async fn apply_saved_gains(app: &AppHandle) -> Result<(), String> {
+    let g = read_gains(app);
+    #[cfg(target_os = "linux")]
+    {
+        crate::capture::audio::apply_gains(g.game, g.mic, g.mute_game, g.mute_mic).await
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = g;
+        Err("per-stream gain lands on the Windows trip".into())
+    }
+}
+
+#[tauri::command]
+pub async fn audio_levels(app: AppHandle) -> Result<TrackGains, String> {
+    Ok(read_gains(&app))
+}
+
+fn check_track(track: &str) -> Result<(), String> {
+    if track == "game" || track == "mic" {
+        Ok(())
+    } else {
+        Err("track must be 'game' or 'mic'".into())
+    }
+}
+
+#[tauri::command]
+pub async fn set_track_gain(app: AppHandle, track: String, percent: u32) -> Result<TrackGains, String> {
+    check_track(&track)?;
+    let pct = percent.clamp(0, 150);
+    {
+        let db = app.state::<DbState>();
+        db.set_setting(if track == "game" { "gain_game" } else { "gain_mic" }, &pct.to_string())?;
+    }
+    // Live-apply if the buffer is running; persisting alone is fine otherwise.
+    let running = {
+        let st = app.state::<AppState>();
+        let guard = st.recorder.lock().await;
+        let r = guard.is_some();
+        drop(guard);
+        r
+    };
+    if running {
+        apply_saved_gains(&app).await?;
+    }
+    Ok(read_gains(&app))
+}
+
+#[tauri::command]
+pub async fn set_track_mute(app: AppHandle, track: String, muted: bool) -> Result<TrackGains, String> {
+    check_track(&track)?;
+    {
+        let db = app.state::<DbState>();
+        db.set_setting(
+            if track == "game" { "mute_game" } else { "mute_mic" },
+            if muted { "1" } else { "0" },
+        )?;
+    }
+    let running = {
+        let st = app.state::<AppState>();
+        let guard = st.recorder.lock().await;
+        let r = guard.is_some();
+        drop(guard);
+        r
+    };
+    if running {
+        apply_saved_gains(&app).await?;
+    }
+    Ok(read_gains(&app))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GsrInfo {
+    pub path: String,
+    pub source: String,
+    pub caps_ok: bool,
+    pub present: bool,
+}
+
+#[tauri::command]
+pub async fn gsr_info(app: AppHandle) -> Result<GsrInfo, String> {
+    match crate::sidecar::gsr_binary(&app) {
+        Ok((path, source)) => {
+            let caps_ok = crate::sidecar::gsr_caps_ok(&path);
+            Ok(GsrInfo {
+                path: path.to_string_lossy().to_string(),
+                source: source.to_string(),
+                caps_ok,
+                present: true,
+            })
+        }
+        Err(_) => Ok(GsrInfo {
+            path: String::new(),
+            source: "missing".to_string(),
+            caps_ok: false,
+            present: false,
+        }),
+    }
+}
+
+/// One-click KMS permission fix (polkit dialog) for OUR bundled binary.
+#[tauri::command]
+pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
+    let (path, source) = crate::sidecar::gsr_binary(&app)?;
+    if source != "bundled" {
+        return Err("one-click fix applies to the bundled binary only".into());
+    }
+    crate::sidecar::fix_gsr_caps(&path).await
 }

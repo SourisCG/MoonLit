@@ -74,9 +74,14 @@ impl CaptureEngine for LinuxGsrEngine {
         if self.child.is_some() {
             return Err("recorder already running".into());
         }
-        let bin = Self::resolve_binary()?;
+        let bin = match &config.gsr_bin {
+            Some(p) => p.clone(),
+            None => Self::resolve_binary()?,
+        };
         std::fs::create_dir_all(&config.output_dir)
             .map_err(|e| format!("cannot create clips dir: {e}"))?;
+        // NOTE: separate -a flags = separate audio tracks. A single
+        // -a "out|in" would MERGE both sources into one track.
         let child = Command::new(&bin)
             .args([
                 "-w", "screen",
@@ -84,7 +89,8 @@ impl CaptureEngine for LinuxGsrEngine {
                 "-k", "h264",
                 "-c", "mp4",
                 "-r", &config.duration_seconds.to_string(),
-                "-a", "default_output|default_input",
+                "-a", "default_output",
+                "-a", "default_input",
                 "-o", config.output_dir.to_str().ok_or("bad clips dir")?,
             ])
             .stdin(Stdio::null())

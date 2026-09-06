@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub mod audio;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
@@ -13,6 +15,8 @@ pub struct CaptureConfig {
     pub duration_seconds: u32,
     pub fps: u32,
     pub output_dir: PathBuf,
+    /// Resolved GSR binary (bundled sidecar). None = resolve from env/PATH.
+    pub gsr_bin: Option<PathBuf>,
 }
 
 /// Unified engine interface. Methods are async to allow signal waits / IPC.

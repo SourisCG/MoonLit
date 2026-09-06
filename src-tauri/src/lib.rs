@@ -12,6 +12,7 @@ mod capture;
 mod commands;
 mod cue;
 mod editor;
+mod sidecar;
 mod state;
 mod storage;
 
@@ -159,6 +160,11 @@ pub fn run() {
             commands::stop_buffer,
             commands::engine_status,
             commands::save_clip_now,
+            commands::audio_levels,
+            commands::set_track_gain,
+            commands::set_track_mute,
+            commands::gsr_info,
+            commands::fix_gsr_caps,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
