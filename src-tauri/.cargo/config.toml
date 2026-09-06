@@ -1,0 +1,9 @@
+# MoonLit cargo config.
+# WEBKIT_DISABLE_DMABUF_RENDERER: mandatory on Wayland (Fedora/GNOME).
+# Without it WebKitGTK crashes at first paint with:
+#   Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display.
+# Cargo injects [env] into everything it runs (incl. `cargo run` via `tauri dev`),
+# so plain `pnpm tauri:dev` works with no manual exports.
+# Fallback if Error 71 returns: GDK_BACKEND = "x11" (forces XWayland).
+[env]
+WEBKIT_DISABLE_DMABUF_RENDERER = "1"
