@@ -13,6 +13,8 @@ use tokio::time::sleep;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Track {
+    /// Merged game+mic (track 1). Always full-fidelity safety copy.
+    Mix,
     Game,
     Mic,
 }
@@ -92,13 +94,23 @@ pub async fn gsr_streams(known_args: &[String]) -> Result<Vec<(u32, Track)>, Str
     let mut untagged: Vec<u32> = Vec::new();
     for o in &ours {
         let app = prop(o, "application.name");
+        // Merged track: GSR names it gsr-combined-<random> (proven in source).
+        if app.starts_with("gsr-combined") {
+            tagged.push((o.index, Track::Mix));
+            continue;
+        }
         let suffix = app.strip_prefix("gsr-").unwrap_or(&app);
-        // 1. Exact match against our -a args (game = first arg, mic = second).
+        // 1. Exact match against our -a args (mix = first arg, game = second, mic = third).
         if let Some(pos) = known_args.iter().position(|a| {
             let a = a.to_lowercase();
             suffix == a || suffix == format!("device:{a}") || suffix == format!("app:{a}")
         }) {
-            tagged.push((o.index, if pos == 0 { Track::Game } else { Track::Mic }));
+            let track = match pos {
+                0 => Track::Mix,
+                1 => Track::Game,
+                _ => Track::Mic,
+            };
+            tagged.push((o.index, track));
             continue;
         }
         // 2. Heuristic fallback on media/node names.
@@ -161,6 +173,13 @@ pub async fn apply_gains(
         if !streams.is_empty() {
             for (idx, track) in &streams {
                 match track {
+                    // Mix tap stays a full-fidelity safety copy: gains and
+                    // mutes shape the solo tracks only (a muted tap would
+                    // kill both sources in the mix, which is never wanted).
+                    Track::Mix => {
+                        set_volume(*idx, 100).await?;
+                        set_mute(*idx, false).await?;
+                    }
                     Track::Game => {
                         set_volume(*idx, game_pct).await?;
                         set_mute(*idx, mute_game).await?;

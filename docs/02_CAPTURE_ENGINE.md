@@ -10,7 +10,7 @@ A clip app does NOT record continuously to disk. It keeps already-encoded packet
 
 GSR is the fastest path on Linux (X11 + Wayland, KMS/DRM direct, no portal dialog).
 
-### 2.1 CLI (replay + dual audio)
+### 2.1 CLI (replay + triple audio)
 
 ```bash
 gpu-screen-recorder \
@@ -20,12 +20,22 @@ gpu-screen-recorder \
   -c mp4 \
   -r 30 \
   -a "default_output|default_input" \
+  -a "default_output" \
+  -a "default_input" \
   -o /home/user/Videos/MoonLit
 ```
 
+Track layout (order = track number):
+- **Track 1 = MIX** (`-a "desktop|mic"` merged): game + mic together, plays in any player / social embed. This is what gets shared.
+- **Track 2 = game only**, **Track 3 = mic only**: solo stems for the Phase 5 editor.
+- Merged `-a "x|y"` in any other position would merge there instead — keep the mix first.
+
+The mix recording stream is named `gsr-combined-<random>` by GSR (proven in
+source); solos are `gsr-<arg>`. Matching is exact against our `-a` args.
+
 - `-w screen`: primary/focused monitor via KMS/NVFBC (no screencast dialog).
 - `-r 30`: N-second RAM ring. `-o` is a **directory** in replay mode; GSR names files `replay_YYYY-MM-DD_HH-MM-SS.mp4`.
-- `-a "default_output|default_input"`: Track 1 = desktop/game, Track 2 = mic (AAC stereo each).
+- `-a` (repeatable): Track 1 = MIX (`"desktop|mic"`), Track 2 = desktop/game, Track 3 = mic (AAC stereo each).
 
 ### 2.2 Control from Rust
 
