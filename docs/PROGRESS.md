@@ -71,6 +71,12 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
   unit tests in `video_quality.rs`.
 - **Purge missing clips (2026-09-06)** — New `purge_missing_clips` command +
   gallery button: drops DB rows whose files no longer exist on disk.
+- **Gain range 0–200% (2026-09-06)** — Track sliders extended from 150 to 200
+  (clamps in `os/linux/audio.rs::set_volume`, `read_gains`, `set_track_gain` +
+  `TrackMixer` slider). Defaults stay 100/100; 200% is a boost tool for quiet
+  sources — safe ceilings documented in `02_CAPTURE_ENGINE.md` (game ≈100, it
+  already peaks near 0 dB at unity; mic ≈120–150). PipeWire acceptance of 200%
+  verified live; user-verified on a real clip.
 
 ## Hash map (old → new, same order/messages/dates)
 

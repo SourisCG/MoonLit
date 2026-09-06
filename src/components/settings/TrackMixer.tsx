@@ -47,7 +47,7 @@ export function TrackMixer() {
       <input
         type="range"
         min={0}
-        max={150}
+        max={200}
         value={value}
         disabled={muted}
         onChange={(e) => {

@@ -115,7 +115,9 @@ pavucontrol's Recording tab, which upstream itself recommends.
   with index-order fallback. Re-polled after spawn (streams appear async).
 - Gains (`gain_game/gain_mic`, `mute_game/mute_mic`) persist in `settings`,
   apply live through `set_track_gain`/`set_track_mute`, and re-apply on every
-  `start_buffer`. Range 0–150%.
+  `start_buffer`. Range 0–200% (safe ceilings: game ≈100 — it already peaks
+  near 0 dB at unity; mic ≈120–150 depending on the source; 200% is a boost
+  tool for quiet sources, not a recommended level).
 - Windows: gains persist identically; software multiplication lands on the
   Windows trip (we own the cpal path there).
 

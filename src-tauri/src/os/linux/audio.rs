@@ -115,7 +115,7 @@ pub async fn gsr_streams(known_args: &[String]) -> Result<Vec<(u32, Track)>, Str
 }
 
 async fn set_volume(index: u32, percent: u32) -> Result<(), String> {
-    let pct = percent.clamp(0, 150);
+    let pct = percent.clamp(0, 200);
     let status = Command::new("pactl")
         .args(["set-source-output-volume", &index.to_string(), &format!("{pct}%")])
         .status()

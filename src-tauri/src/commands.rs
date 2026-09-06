@@ -541,7 +541,7 @@ fn read_gains(app: &AppHandle) -> TrackGains {
         map.get(k)
             .and_then(|v| v.parse().ok())
             .unwrap_or(d)
-            .clamp(0, 150)
+            .clamp(0, 200)
     };
     let flag = |k: &str| map.get(k).map(|v| v == "1" || v == "true").unwrap_or(false);
     TrackGains {
@@ -582,7 +582,7 @@ fn check_track(track: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_track_gain(app: AppHandle, track: String, percent: u32) -> Result<TrackGains, String> {
     check_track(&track)?;
-    let pct = percent.clamp(0, 150);
+    let pct = percent.clamp(0, 200);
     {
         let db = app.state::<DbState>();
         db.set_setting(if track == "game" { "gain_game" } else { "gain_mic" }, &pct.to_string())?;

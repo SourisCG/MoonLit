@@ -30,7 +30,7 @@ implement the Windows side without breaking Linux.
   360p@3M, 720p@10M, 1080p@20M, 1440p@25M (h264; hevc/av1 rows in
   `video_quality.rs::bitrate_kbps`). Changing codec/height/fps/monitor/device
   with the engine running auto-restarts it (`RESTART_KEYS` in `commands.rs`).
-- Per-track live gain/mute (0–150%) persisted in `settings`, applied live,
+- Per-track live gain/mute (0–200%, defaults 100) persisted in `settings`, applied live,
   re-applied on start, surfaced via `engine_status.tracks_linked` +
   `audio_error` (never fail silently).
 - Save pipeline: flush ring → dedupe name (`stem_2.mp4`) → optional lanczos
