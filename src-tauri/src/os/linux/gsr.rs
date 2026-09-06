@@ -144,6 +144,7 @@ impl CaptureEngine for LinuxGsrEngine {
                 bitrate_kbps: config.save_bitrate_kbps,
                 codec: config.codec.clone(),
                 fps: config.fps,
+                encoder: config.save_encoder,
             })
         } else {
             None

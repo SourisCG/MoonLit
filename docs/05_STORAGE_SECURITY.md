@@ -4,7 +4,7 @@
 
 | Type | Where | Tool | Security |
 |---|---|---|---|
-| Metadata (titles, dates, favorites) | Local disk DB | SQLite (`rusqlite` or `tauri-plugin-sql`) | Plaintext, fast SQL |
+| Metadata (titles, dates, favorites) | Local disk DB | SQLite (`rusqlite`, backend-only) | Plaintext, fast SQL |
 | Secrets (OAuth refresh tokens, webhook URLs, API keys) | OS vault | `keyring` crate | DPAPI/TPM (Win), Secret Service/KWallet (Linux) |
 
 SQLite is ~1 MB embedded, ~0 RAM idle. Do NOT use SQLCipher with hardcoded key (decompilable in OSS). Do NOT ask master password on every clip (ruins UX).
@@ -41,8 +41,13 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- settings: clips_directory, buffer_seconds, hotkey, max_storage_gb, locale
+-- settings: clips_directory, buffer_seconds, hotkey, max_storage_gb, locale,
+-- gain_game, gain_mic, mute_game, mute_mic, mic_device, desktop_device,
+-- video_codec, out_height, fps, monitor
 ```
+Migrations live in `src-tauri/migrations/` (`PRAGMA user_version` stamped).
+Default clips dir = OS videos folder + `MoonLit` (`dirs::video_dir`, works on
+Windows too); DB at OS app-data dir. Changing `clips_directory` (C:→D:) needs zero row migration.
 
 10k clips ≈ <5 MB.
 
@@ -80,7 +85,8 @@ pub fn get_drive_token() -> Result<String, keyring::Error> {
 - Linux: freedesktop Secret Service (GNOME Keyring / KWallet / KeePassXC).
 - Minimal WMs (i3/Hyprland/Sway) may lack daemon → catch `NoStorage` DBus error, prompt "install/start gnome-keyring or kwallet". Optional fallback: AES-GCM (`aes-gcm` + Argon2 over `/etc/machine-id` + username) — document, implement only if needed.
 
-## 6. Rust choice
+## 6. Rust choice (decided Phase 2)
 
-- `rusqlite` (backend-only, expose `get_recent_clips/delete_clip` via `invoke`) = cleanest.
-- `tauri-plugin-sql` (already added) allows `db.select()` from React + auto-migrations. Either is fine; do not use both for same table. Decide in Phase 2 and document.
+- `rusqlite` (backend-only, `tauri-plugin-sql` removed): expose
+  `list_clips`/`toggle_favorite`/`delete_clip`/settings via `invoke()`.
+  Never SQL from the frontend.

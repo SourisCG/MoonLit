@@ -1,5 +1,9 @@
 # 06 — Social Integrations (Zero-Backend)
 
+> Platform-neutral by design: loopback OAuth, system browser, OS keyring and
+> clipboard/notification plugins behave the same on Linux and Windows.
+> No per-OS code expected here (Windows trip: none).
+
 All uploads are client-to-service. No MoonLit server.
 
 ## 1. Google Drive (primary share)

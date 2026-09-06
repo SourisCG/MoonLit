@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::os::{
-    audio, backend_name, caps, devices, video, AudioDevice, CaptureConfig, CaptureEngine,
+    audio, backend_name, binary, caps, devices, open, video, AudioDevice, CaptureConfig,
+    CaptureEngine,
 };
 use crate::video_quality;
 use crate::state::{AppState, Engine};
@@ -47,7 +48,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     let secs = buffer_seconds(&db) as u32;
     let mic_device = setting_str(&db, "mic_device", "default_input");
     let desktop_device = setting_str(&db, "desktop_device", "default_output");
-    let (gsr_bin, source) = crate::sidecar::gsr_binary(app)?;
+    let (gsr_bin, source) = binary::backend_binary(app)?;
     eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
 
     // Video quality: Medal ladder + old-MoonLit NVENC HQ recipe.
@@ -96,12 +97,15 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     } else {
         None
     };
-    eprintln!("[moonlit] video: codec={codec} height={} fps={fps} vendor={vendor} cbr={bitrate}kbps nvenc_hq={} monitor={} capture={} save={}",
+    // Save-time encoder per GPU vendor (None = keep source file on save).
+    let save_encoder = video::transcode_encoder(&vendor, &codec);
+    eprintln!("[moonlit] video: codec={codec} height={} fps={fps} vendor={vendor} cbr={bitrate}kbps nvenc_hq={} monitor={} capture={} save={} save_enc={:?}",
         if out_height == 0 { "source".to_string() } else { out_height.to_string() },
         nvenc_opts.is_some(),
         if monitor.trim().is_empty() { "auto".to_string() } else { monitor.clone() },
         if capture_height == 0 { "source".to_string() } else { capture_height.to_string() },
-        if save_height == 0 { "-".to_string() } else { format!("lanczos->{save_height}p") });
+        if save_height == 0 { "-".to_string() } else { format!("lanczos->{save_height}p") },
+        save_encoder);
 
     let mut engine = Engine::new();
     engine
@@ -118,6 +122,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             bitrate_kbps: buffer_bitrate,
             save_height,
             save_bitrate_kbps: save_bitrate,
+            save_encoder,
             nvenc_opts,
         })
         .await?;
@@ -389,10 +394,20 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
         if let Some(p) = plan {
             let t0 = std::time::Instant::now();
             let tmp = path.with_extension("scaled.mp4");
-            let ok = crate::editor::ffmpeg::scale_to_height(
-                &ffmpeg, &path, &tmp, p.height, p.bitrate_kbps, &p.codec, p.fps,
-            )
-            .await;
+            let ok = match p.encoder {
+                Some(enc) => {
+                    crate::editor::ffmpeg::scale_to_height(
+                        &ffmpeg, &path, &tmp, p.height, p.bitrate_kbps, enc, &p.codec, p.fps,
+                    )
+                    .await
+                }
+                // No save-time encoder on this GPU (e.g. AMD/VAAPI without
+                // validated render-node plumbing): keep the source file.
+                None => {
+                    eprintln!("[moonlit] no save encoder for this GPU, keeping source resolution");
+                    false
+                }
+            };
             if ok {
                 if let Err(e) = tokio::fs::rename(&tmp, &path).await {
                     eprintln!("[moonlit] scaled replace failed: {e}");
@@ -600,7 +615,7 @@ pub struct GsrInfo {
 
 #[tauri::command]
 pub async fn gsr_info(app: AppHandle) -> Result<GsrInfo, String> {
-    match crate::sidecar::gsr_binary(&app) {
+    match binary::backend_binary(&app) {
         Ok((path, source)) => {
             let caps_ok = caps::caps_ok(&path);
             Ok(GsrInfo {
@@ -622,7 +637,7 @@ pub async fn gsr_info(app: AppHandle) -> Result<GsrInfo, String> {
 /// One-click KMS permission fix (polkit dialog) for OUR bundled binary.
 #[tauri::command]
 pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
-    let (path, source) = crate::sidecar::gsr_binary(&app)?;
+    let (path, source) = binary::backend_binary(&app)?;
     if source != "bundled" {
         return Err("one-click fix applies to the bundled binary only".into());
     }
@@ -632,7 +647,7 @@ pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
 /// Capture devices from OUR bundled GSR (`--list-audio-devices`, name|desc).
 #[tauri::command]
 pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
-    let (bin, _) = crate::sidecar::gsr_binary(&app)?;
+    let (bin, _) = binary::backend_binary(&app)?;
     devices::list_audio_devices(&bin).await
 }
 
@@ -680,7 +695,7 @@ pub struct VideoOptions {
 #[tauri::command]
 pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     use crate::video_quality as q;
-    let (gsr_bin, _) = crate::sidecar::gsr_binary(&app)?;
+    let (gsr_bin, _) = binary::backend_binary(&app)?;
     let vendor = video::vendor(&gsr_bin).await;
 
     // Codec ids the backend reports, filtered to known-good entries.
@@ -787,19 +802,8 @@ pub async fn open_clip_external(app: AppHandle, clip_id: String) -> Result<(), S
         }
         Err(e) => eprintln!("[moonlit] open_clip_external: opener failed ({e}), trying OS launcher"),
     }
-    #[cfg(target_os = "windows")]
-    let launched = std::process::Command::new("cmd")
-        .args(["/C", "start", "", &abs.to_string_lossy()])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("OS launcher failed: {e}"));
-    #[cfg(not(target_os = "windows"))]
-    let launched = std::process::Command::new("xdg-open")
-        .arg(&abs)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("OS launcher failed: {e}"));
-    match launched {
+    // OS launcher lives in os::open — no cfg here (zero-cfg rule).
+    match open::open_external(&abs) {
         Ok(()) => {
             eprintln!("[moonlit] open_clip_external: OS launcher ok");
             Ok(())

@@ -29,17 +29,21 @@ pub struct CaptureConfig {
     pub save_height: u32,
     /// CBR bitrate for the delivered file (ladder row of save_height).
     pub save_bitrate_kbps: u32,
+    /// Save-time encoder (None = no valid encoder on this GPU, keep source).
+    pub save_encoder: Option<TranscodeEncoder>,
     /// Extra `-ffmpeg-video-opts` (NVENC HQ recipe, NVIDIA only). None = backend defaults.
     pub nvenc_opts: Option<String>,
 }
 
-/// Background downscale applied at save time (lanczos, NVENC).
+/// Background downscale applied at save time (lanczos, per-vendor encoder).
 #[derive(Debug, Clone, Default)]
 pub struct SavePlan {
     pub height: u32,
     pub bitrate_kbps: u32,
     pub codec: String,
     pub fps: u32,
+    /// None = no valid save-time encoder on this GPU (keep source file).
+    pub encoder: Option<TranscodeEncoder>,
 }
 
 /// Unified engine interface. Methods are async to allow signal waits / IPC.
@@ -66,4 +70,27 @@ pub struct AudioDevice {
     pub description: String,
     /// "mic" or "desktop"
     pub kind: String,
+}
+
+/// Video encoder id for save-time transcoding, chosen per GPU vendor.
+/// Unknown vendors fall back to `None` (caller keeps the source file).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TranscodeEncoder {    Nvenc,
+    Amf,
+    Qsv,
+}
+
+impl TranscodeEncoder {
+    /// FFmpeg encoder name for `codec` (`h264`/`hevc`/`av1`).
+    pub fn ffmpeg_name(self, codec: &str) -> Option<&'static str> {
+        match (self, codec) {
+            (Self::Nvenc, "hevc") => Some("hevc_nvenc"),
+            (Self::Nvenc, "av1") => Some("av1_nvenc"),
+            (Self::Nvenc, _) => Some("h264_nvenc"),
+            (Self::Amf, "hevc") => Some("hevc_amf"),
+            (Self::Amf, _) => Some("h264_amf"),
+            (Self::Qsv, "hevc") => Some("hevc_qsv"),
+            (Self::Qsv, _) => Some("h264_qsv"),
+        }
+    }
 }

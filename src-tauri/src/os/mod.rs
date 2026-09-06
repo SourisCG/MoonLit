@@ -14,11 +14,11 @@ pub mod windows;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub mod linux;
 
-pub use api::{AudioDevice, CaptureConfig, CaptureEngine, SavePlan};
+pub use api::{AudioDevice, CaptureConfig, CaptureEngine, SavePlan, TranscodeEncoder};
 
 #[cfg(target_os = "linux")]
-pub use linux::{audio, backend_name, caps, devices, video, Engine};
+pub use linux::{audio, backend_name, binary, caps, devices, open, video, Engine};
 #[cfg(target_os = "windows")]
-pub use windows::{audio, backend_name, caps, devices, video, Engine};
+pub use windows::{audio, backend_name, binary, caps, devices, open, video, Engine};
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub use linux::{audio, backend_name, caps, devices, video, Engine};
+pub use linux::{audio, backend_name, binary, caps, devices, open, video, Engine};

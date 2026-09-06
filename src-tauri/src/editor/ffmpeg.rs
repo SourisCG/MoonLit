@@ -54,35 +54,43 @@ pub async fn probe_duration_ms(ffmpeg: &Path, input: &Path) -> Option<i64> {
     Some(((h * 3600 + m * 60) as f64 * 1000.0 + s * 1000.0) as i64)
 }
 
-/// Downscale to `height` (aspect kept, width auto-even) with lanczos + NVENC.
+/// Downscale to `height` (aspect kept, width auto-even) with lanczos.
 ///
-/// Used at save time instead of the backend's live scaler, which proved soft
-/// on text at non-integer ratios (1080p→720p). Same CBR ladder bitrate as a
-/// direct capture would use. Returns false on any failure (caller keeps source).
+/// Encoder comes from `os::video::transcode_encoder(vendor, codec)` — NVENC /
+/// QSV / AMF per GPU. Used at save time instead of the backend's live scaler,
+/// which proved soft on text at non-integer ratios (1080p→720p). Same CBR
+/// ladder bitrate as a direct capture would use. Returns false on any failure
+/// (caller keeps source).
 pub async fn scale_to_height(
     ffmpeg: &Path,
     input: &Path,
     output: &Path,
     height: u32,
     bitrate_kbps: u32,
+    encoder: crate::os::TranscodeEncoder,
     codec: &str,
     fps: u32,
 ) -> bool {
-    let encoder = match codec {
-        "hevc" => "hevc_nvenc",
-        "av1" => "av1_nvenc",
-        _ => "h264_nvenc",
+    let Some(enc_name) = encoder.ffmpeg_name(codec) else {
+        return false;
     };
     let mut cmd = tokio::process::Command::new(ffmpeg);
     cmd.args([
         "-y", "-hide_banner", "-loglevel", "error",
         "-i", &input.to_string_lossy(),
         "-vf", &format!("scale=-2:{height}:flags=lanczos"),
-        "-c:v", encoder,
-        "-preset", "p7",
-        "-tune", "hq",
+        "-c:v", enc_name,
     ]);
-    // `high` is an H.264 profile; HEVC uses `main`.
+    // Preset/tune knobs only exist on NVENC; QSV/AMF use their own quality
+    // flags so the command stays valid on every vendor.
+    if matches!(encoder, crate::os::TranscodeEncoder::Nvenc) {
+        cmd.args(["-preset", "p7", "-tune", "hq"]);
+    } else if matches!(encoder, crate::os::TranscodeEncoder::Amf) {
+        cmd.args(["-quality", "quality"]);
+    } else {
+        cmd.args(["-preset", "veryslow"]);
+    }
+    // `high` is an H.264 profile; HEVC uses `main`. AV1 skips profile flags.
     if codec == "hevc" {
         cmd.args(["-profile:v", "main"]);
     } else if codec == "h264" {

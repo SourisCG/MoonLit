@@ -25,6 +25,9 @@ Sidecars in `src-tauri/binaries/`: `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffmpeg-
 Plus `moonlit-gsr/gpu-screen-recorder` (+ `gsr-kms-server`) for Linux targets,
 built in CI from the pinned snapshot in `docs/THIRD_PARTY.md`. Full ship matrix
 (user installs nothing extra) is defined there.
+Windows agent: MSVC toolchain + `pnpm install` (pnpm via corepack/npm);
+`host_triple()` in `sidecar.rs` already emits `x86_64-pc-windows-msvc`.
+No GSR build needed on Windows (native WGC backend).
 
 ## 2. GitHub Actions (`/.github/workflows/release.yml`, Phase 7)
 

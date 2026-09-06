@@ -38,5 +38,21 @@ Already in `tailwind.config.js` as `colors.moonlit.{void,panel,card,lunar,astral
 ## 5. React perf note (why it won't lag games)
 
 - While gaming, window is tray-hidden → WebView2/WebKitGTK pauses render, CSS, rAF. Capture lives in GSR/Rust VRAM, zero JS.
-- React never processes pixels; `<video>` is HW-decoded. Editor is lazy-unmounted (see `04_EDITOR_PIPELINE.md`).
+- React never processes pixels; `<video>`/`<audio>` are HW-decoded. Editor is lazy-unmounted (see `04_EDITOR_PIPELINE.md`).
 - Tauri (~30–60 MB) vs Electron/Medal (300–800 MB): no bundled Chromium, Rust binary not Node.
+
+## 6. Windows notes (WebView2) + tray/taskbar icons
+
+- Renderer is WebView2 (Chromium) on Windows vs WebKitGTK on Linux: `<video>`
+  H.264/AAC playback works in both; asset protocol scope
+  (`$HOME/$RESOURCE/$TEMP`) resolves on both (see `tauri.conf.json`).
+- Frameless custom topbar (`Topbar.tsx`): drag region, minimize/maximize/
+  close-to-tray and edge/cube resize grips use Tauri window APIs only —
+  cross-platform by construction. Never use CSS `app-region` hacks.
+- Icons: window/taskbar set in `tauri.conf.json` (`icons/`); tray uses the
+  DEDICATED transparent `icons/tray-icon.png` loaded explicitly in `lib.rs`
+  (never the window icon — its opaque bg renders as a square in trays).
+  `tray-icon.png` is hand-maintained and NOT part of `tauri icon` output, so
+  regenerating the set is safe. Master artwork: `build-aux/moonlit-icon.svg`.
+  Linux taskbar association additionally needs the `.desktop` file (ships with
+  packaging, Phase 7).

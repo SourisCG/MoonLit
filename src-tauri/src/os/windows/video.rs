@@ -1,6 +1,7 @@
 //! Windows video discovery stub. Real WGC capability queries land on the
 //! Windows test trip. Same signatures as os/linux/video.
 
+use super::super::TranscodeEncoder;
 use std::path::Path;
 
 /// Mirrors os/linux/video::vendor signature.
@@ -19,6 +20,18 @@ pub struct Monitor {
 /// Mirrors os/linux/video::list_monitors signature.
 pub async fn list_monitors(_bin: &Path) -> Vec<Monitor> {
     vec![]
+}
+
+/// Save-time transcode encoder for (`vendor`, `codec`) — mirrors
+/// os/linux/video. Real DXGI adapter detection lands on the Windows trip;
+/// the mapping itself is pure data. AMD→Amf, Intel→Qsv, NVIDIA→Nvenc.
+pub fn transcode_encoder(vendor: &str, _codec: &str) -> Option<TranscodeEncoder> {
+    match vendor {
+        "nvidia" => Some(TranscodeEncoder::Nvenc),
+        "amd" => Some(TranscodeEncoder::Amf),
+        "intel" => Some(TranscodeEncoder::Qsv),
+        _ => None,
+    }
 }
 
 /// Mirrors os/linux/video::offered_codecs signature.

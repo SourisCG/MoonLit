@@ -31,6 +31,9 @@ component shipped inside MoonLit installers and what the GPL requires for each.
 - **Runtime resolution order:** `MOONLIT_GSR_BIN` override → bundled sidecar
   → system `PATH` → clear error. Dev machines use a native install
   (Terra/COPR rpm on Fedora); end users never install anything extra.
+- **Windows ships NO GSR.** Capture there is native (WGC/DXGI + WASAPI, see
+  `09_WINDOWS_HANDOFF.md`); `os::backend_binary` reports that by design.
+  The only Windows sidecar is static FFmpeg (BtbN).
 
 ## FFmpeg (editor pipeline)
 

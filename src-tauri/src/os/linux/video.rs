@@ -1,5 +1,6 @@
 //! Linux video discovery from OUR bundled GSR binary.
 
+use super::super::TranscodeEncoder;
 use std::path::Path;
 
 /// GPU vendor, lowercase (`nvidia`/`amd`/`intel`/…), from `--info`.
@@ -91,6 +92,18 @@ fn parse_monitors(out: &str) -> Vec<Monitor> {
         .collect()
 }
 
+/// Save-time transcode encoder for (`vendor`, `codec`).
+/// Intel/AMD capture works through backend defaults (VAAPI); this only picks
+/// the re-encode path. AMD/VAAPI transcode needs render-node plumbing that is
+/// only validated on real HW, so it returns None (caller keeps source file).
+pub fn transcode_encoder(vendor: &str, _codec: &str) -> Option<TranscodeEncoder> {
+    match vendor {
+        "nvidia" => Some(TranscodeEncoder::Nvenc),
+        "intel" => Some(TranscodeEncoder::Qsv),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_monitors, parse_vendor};
@@ -99,6 +112,17 @@ mod tests {
     fn parses_vendor() {
         let info = "section=system_info\ndisplay_server|wayland\nsection=gpu_info\nvendor|nvidia\n";
         assert_eq!(parse_vendor(info), "nvidia");
+    }
+
+    #[test]
+    fn transcode_mapping() {
+        use super::super::super::TranscodeEncoder;
+        use super::transcode_encoder;
+        assert_eq!(transcode_encoder("nvidia", "h264"), Some(TranscodeEncoder::Nvenc));
+        assert_eq!(transcode_encoder("nvidia", "hevc"), Some(TranscodeEncoder::Nvenc));
+        assert_eq!(transcode_encoder("intel", "h264"), Some(TranscodeEncoder::Qsv));
+        assert_eq!(transcode_encoder("amd", "h264"), None);
+        assert_eq!(transcode_encoder("unknown", "h264"), None);
     }
 
     #[test]

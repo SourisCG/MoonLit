@@ -3,8 +3,10 @@
 //! Same surface as os/linux so shared code never branches on OS.
 
 pub mod audio;
+pub mod binary;
 pub mod caps;
 pub mod devices;
+pub mod open;
 pub mod video;
 mod wgc;
 

@@ -87,10 +87,32 @@ pub fn run() {
             let show = MenuItem::with_id(app, "show", "Show MoonLit", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
+            // Dedicated tray asset: transparent moon mark. The window icon
+            // carries an opaque rounded background which renders as an ugly
+            // square in system trays — never use it here.
+            fn load_tray_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
+                let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
+                let (w, h) = (rgba.width(), rgba.height());
+                Some(tauri::image::Image::new_owned(rgba.into_raw(), w, h))
+            }
+            // Bundled path first, dev-layout file second, window icon last.
             let icon = app
-                .default_window_icon()
-                .cloned()
-                .expect("missing default window icon");
+                .path()
+                .resolve(
+                    "icons/tray-icon.png",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .ok()
+                .and_then(|p| std::fs::read(p).ok())
+                .and_then(|b| load_tray_icon(&b))
+                // Dev layout fallback (`cargo run` cwd is src-tauri/).
+                .or_else(|| {
+                    std::fs::read("icons/tray-icon.png")
+                        .ok()
+                        .and_then(|b| load_tray_icon(&b))
+                })
+                .or_else(|| app.default_window_icon().cloned())
+                .expect("missing tray icon");
             TrayIconBuilder::with_id("main-tray")
                 .icon(icon)
                 .tooltip("MoonLit — replay buffer standby")

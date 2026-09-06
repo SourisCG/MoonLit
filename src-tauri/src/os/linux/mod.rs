@@ -1,8 +1,10 @@
 //! Linux backend assembly. Everything Linux-only is reachable via this module.
 
 pub mod audio;
+pub mod binary;
 pub mod caps;
 pub mod devices;
+pub mod open;
 pub mod video;
 mod gsr;
 

@@ -45,6 +45,13 @@ on NVIDIA + h264/hevc only: `preset=p7;tune=hq;profile=high;bf=2;spatial-aq=1;mu
 (all keys validated live against our bundled GSR: accepted, saves clean,
 bitrate on target).
 
+> **Windows trip:** same ladder + same bitrates via native WGC + NVENC/AMF/
+> QuickSync (no GSR on Windows — see `09_WINDOWS_HANDOFF.md`). Per-vendor
+> save-transcode mapping lives in `os::video::transcode_encoder`
+> (Nvenc/Amf/Qsv); VAAPI save-transcode on AMD/Linux is intentionally
+> unmapped (render-node plumbing needs real-HW validation) → saver keeps the
+> source file with a visible log, never silently.
+
 | Height | H264 | H265 | AV1 | 60 s RAM (h264) |
 |---|---|---|---|---|
 | source | row of real height | … | … | … |

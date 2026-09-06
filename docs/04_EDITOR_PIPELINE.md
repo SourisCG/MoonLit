@@ -37,17 +37,18 @@ Commands:
 ```bash
 # Thumbnail
 ffmpeg -ss 00:00:01 -i input.mp4 -vframes 1 -q:v 2 thumb.jpg
-# Temp audio extract (fast, no video touch)
-ffmpeg -i clip.mp4 -map 0:1 /tmp/audio_game.aac -map 0:2 /tmp/audio_mic.aac
+# Temp audio extract (track layout is 1=mix, 2=game, 3=mic — NOT game/mic)
+ffmpeg -i clip.mp4 -map 0:1 /tmp/audio_mix.aac -map 0:2 /tmp/audio_game.aac -map 0:3 /tmp/audio_mic.aac
 # Lossless trim (default landscape)
 ffmpeg -ss {IN} -to {OUT} -accurate_seek -i input.mp4 -c copy output.mp4
 # Keep only game track
 ffmpeg -i clip.mp4 -map 0:v -map 0:1 -c copy export.mp4
-# Remix volumes for social (single stereo)
-ffmpeg -i clip.mp4 -filter_complex "[0:1]volume=0.7[a1];[0:2]volume=1.5[a2];[a1][a2]amix=inputs=2:duration=longest[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac export_social.mp4
-# Vertical 9:16 blurred (TikTok/Shorts, HW encode)
+# Remix volumes for social (single stereo, from game+mic stems 0:2/0:3)
+ffmpeg -i clip.mp4 -filter_complex "[0:2]volume=0.7[a1];[0:3]volume=1.5[a2];[a1][a2]amix=inputs=2:duration=longest[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac export_social.mp4
+# Vertical 9:16 blurred (TikTok/Shorts, HW encode per vendor: nvenc/qsv/amf —
+# see os::transcode_encoder; never assume nvenc on user machines)
 ffmpeg -ss {IN} -to {OUT} -i input.mp4 -lavfi "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[0:v]scale=1080:-1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2" -c:v h264_nvenc -preset p4 output_tiktok.mp4
-# Use h264_vaapi / h264_amf / h264_qsv depending on probe; fallback libx264 only if no HW.
+# Use h264_nvenc / h264_qsv / h264_amf (or hevc variants) depending on probe; fallback libx264 only if no HW.
 ```
 
 ## 4. Keyframe (I-frame) gotcha
