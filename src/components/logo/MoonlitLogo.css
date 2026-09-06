@@ -4,12 +4,15 @@
   display: inline-block;
   flex-shrink: 0;
   border-radius: 50%;
+  /* Contain the glow: no negative z-index leaking into the page. */
+  isolation: isolate;
 }
 
 .moonlit-logo::before {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   border-radius: 50%;
   background: linear-gradient(135deg, #ef4444 10%, #3b82f6 90%);
   -webkit-mask: radial-gradient(circle at 68% 50%, transparent 44%, #000 45%);
@@ -23,12 +26,15 @@
   border-radius: 50%;
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.45), rgba(59, 130, 246, 0.45));
   filter: blur(10px);
-  z-index: -1;
+  /* Was z-index:-1 (painted behind ancestors -> corner artifacts). Keep inside. */
+  z-index: 0;
+  pointer-events: none;
   animation: moonlit-logo-pulse 3.5s ease-in-out infinite;
 }
 
 .moonlit-logo-play {
   position: absolute;
+  z-index: 2;
   left: 68%;
   top: 50%;
   transform: translate(-50%, -50%);

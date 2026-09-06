@@ -10,6 +10,7 @@ import { Topbar } from "./components/topbar/Topbar";
 import { SettingsModal } from "./components/settings/SettingsModal";
 import { AppManager } from "./components/settings/AppManager";
 import { useClips } from "./hooks/useClips";
+import { useLocale } from "./hooks/useLocale";
 import type { HotkeyEvent } from "./types";
 
 /** Ignore repeats of the same press closer than this (extra guard over Rust debounce). */
@@ -18,7 +19,8 @@ const FRONTEND_DEDUPE_MS = 300;
 type View = "clips" | "games" | "settings";
 
 export default function App() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { locale, setLocale } = useLocale();
   const [view, setView] = useState<View>("clips");
   const { clips, toggleFavorite, deleteClip } = useClips();
   const [hotkey, setHotkey] = useState("F9");
@@ -137,14 +139,14 @@ export default function App() {
                 <span className="text-slate-400">{t("lang.label")}</span>
                 <div className="flex gap-1">
                   <button
-                    onClick={() => void i18n.changeLanguage("es")}
-                    className={`rounded-md px-2 py-1 font-mono ${i18n.language === "es" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
+                    onClick={() => void setLocale("es")}
+                    className={`rounded-md px-2 py-1 font-mono ${locale.startsWith("es") ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
                   >
                     ES
                   </button>
                   <button
-                    onClick={() => void i18n.changeLanguage("en")}
-                    className={`rounded-md px-2 py-1 font-mono ${i18n.language === "en" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
+                    onClick={() => void setLocale("en")}
+                    className={`rounded-md px-2 py-1 font-mono ${locale.startsWith("en") ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
                   >
                     EN
                   </button>

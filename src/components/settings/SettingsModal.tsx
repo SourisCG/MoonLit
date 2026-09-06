@@ -4,20 +4,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, KeyRound } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
+import { useLocale } from "../../hooks/useLocale";
 
 const SECRET_TEST_ALIAS = "phase2_selftest";
 
 export function SettingsModal() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { locale, setLocale } = useLocale();
   const { settings, loading, error, setSetting } = useSettings();
   const [saving, setSaving] = useState<string | null>(null);
   const [secretStatus, setSecretStatus] = useState<string | null>(null);
 
   const save = async (key: string, value: string) => {
     setSaving(key);
+    setSecretStatus(null);
     try {
       await setSetting(key, value);
-      if (key === "locale") void i18n.changeLanguage(value);
     } catch (e) {
       setSecretStatus(String(e));
     } finally {
@@ -26,8 +28,20 @@ export function SettingsModal() {
   };
 
   const browseDir = async () => {
-    const dir = await open({ directory: true, multiple: false });
-    if (typeof dir === "string") await save("clips_directory", dir);
+    setSaving("clips_directory");
+    setSecretStatus(null);
+    try {
+      const dir = await open({
+        directory: true,
+        multiple: false,
+        title: t("settings.browse"),
+      });
+      if (typeof dir === "string") await setSetting("clips_directory", dir);
+    } catch (e) {
+      setSecretStatus(String(e));
+    } finally {
+      setSaving(null);
+    }
   };
 
   const secretRoundTrip = async () => {
@@ -100,8 +114,8 @@ export function SettingsModal() {
         <span className={label}>{t("lang.label")}</span>
         <select
           className={input}
-          value={settings.locale || i18n.language}
-          onChange={(e) => void save("locale", e.target.value)}
+          value={locale.startsWith("en") ? "en" : "es"}
+          onChange={(e) => void setLocale(e.target.value)}
         >
           <option value="es">Español</option>
           <option value="en">English</option>
