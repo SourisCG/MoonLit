@@ -39,8 +39,29 @@ pub fn scale_arg(height: u32) -> Option<String> {
 /// Exact NVENC HQ `-ffmpeg-video-opts` (old-MoonLit table). Dashes verified
 /// live: GSR accepts every key, saves clean, bitrate lands on target.
 /// Apply ONLY on NVIDIA + h264/hevc (meaningless/invalid elsewhere).
-pub fn nvenc_hq_opts() -> &'static str {
-    "preset=p7;tune=hq;profile=high;bf=2;spatial-aq=1;multipass=disabled"
+/// Profile is per-codec: `high` exists only in H.264 — HEVC uses `main`
+/// (passing `high` to hevc_nvenc kills encoder init: no clip at all).
+pub fn nvenc_hq_opts(codec: &str) -> String {
+    let profile = if codec == "hevc" { "main" } else { "high" };
+    format!("preset=p7;tune=hq;profile={profile};bf=2;spatial-aq=1;multipass=disabled")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nvenc_hq_opts;
+
+    #[test]
+    fn hevc_gets_main_profile() {
+        let o = nvenc_hq_opts("hevc");
+        assert!(o.contains("profile=main"), "{o}");
+        assert!(!o.contains("profile=high"), "{o}");
+    }
+
+    #[test]
+    fn h264_keeps_high_profile() {
+        let o = nvenc_hq_opts("h264");
+        assert!(o.contains("profile=high"), "{o}");
+    }
 }
 
 /// Exact RAM/VRAM-ring megabytes for N seconds at a CBR bitrate.
