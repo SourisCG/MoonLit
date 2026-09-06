@@ -145,6 +145,20 @@ export function SettingsModal({ engineStatus }: { engineStatus: EngineStatus }) 
 
       <h3 className="pt-2 text-sm font-semibold text-slate-200">{t("audio.title")}</h3>
       <AudioSection status={engineStatus} />
+
+      <p className="pt-2 font-mono text-[11px] text-slate-600">
+        build {buildId()}
+      </p>
     </div>
   );
+}
+
+declare const __MOONLIT_BUILD__: string | undefined;
+
+function buildId(): string {
+  try {
+    return typeof __MOONLIT_BUILD__ !== "undefined" ? __MOONLIT_BUILD__ : "dev";
+  } catch {
+    return "dev";
+  }
 }
