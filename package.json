@@ -10,7 +10,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "desktop:install": "bash build-aux/install-dev-desktop.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
