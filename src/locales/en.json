@@ -35,6 +35,9 @@
     "codec": "Codec",
     "resolution": "Resolution",
     "source": "Source (no rescale)",
+    "fps": "Frame rate",
+    "upscale_warn": "Above your monitor: heavier file, zero extra detail.",
+    "judder_note": "30 fps saves GPU but judders more on high-refresh monitors; 60 fps is smoother for action.",
     "estimate": "CBR {{bitrate}} kbps · ~{{ram}} MB per 60 s in RAM",
     "hq_note": "Fixed HQ: CBR + P7 + high quality + AQ (verified NVENC recipe, no knobs to turn)."
   },

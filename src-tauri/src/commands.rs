@@ -56,6 +56,11 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         codec = "h264".to_string();
     }
     let out_height: u32 = setting_str(&db, "out_height", "0").parse().unwrap_or(0);
+    // Capture framerate: 30 or 60 only (MVP). Anything else falls back to 60.
+    let fps: u32 = match setting_str(&db, "fps", "60").parse().unwrap_or(60) {
+        30 => 30,
+        _ => 60,
+    };
     let vendor = video::vendor(&gsr_bin).await;
     let max_height = video::max_source_height(&gsr_bin).await;
     let ladder_height = if out_height == 0 {
@@ -70,7 +75,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     } else {
         None
     };
-    eprintln!("[moonlit] video: codec={codec} height={} vendor={vendor} cbr={bitrate}kbps nvenc_hq={}",
+    eprintln!("[moonlit] video: codec={codec} height={} fps={fps} vendor={vendor} cbr={bitrate}kbps nvenc_hq={}",
         if out_height == 0 { "source".to_string() } else { out_height.to_string() },
         nvenc_opts.is_some());
 
@@ -78,7 +83,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     engine
         .start_buffer(CaptureConfig {
             duration_seconds: secs,
-            fps: 60,
+            fps,
             output_dir: dir,
             gsr_bin: Some(gsr_bin),
             desktop_device,
@@ -155,6 +160,7 @@ pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(
         "desktop_device",
         "video_codec",
         "out_height",
+        "fps",
     ];
     if RESTART_KEYS.contains(&key.as_str()) {
         let running = {
@@ -304,6 +310,48 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
         .map_err(|e| format!("cannot stat clip: {e}"))?
         .len() as i64;
     let db = app.state::<DbState>();
+    // Same-second double saves collide: GSR names files by timestamp, so the
+    // second file overwrites the first on disk and the DB rejects the duplicate.
+    // Rename to stem_2.mp4, stem_3.mp4… instead of failing and losing the clip.
+    let mut path = path;
+    {
+        let taken: std::collections::HashSet<String> = db
+            .list_clips()
+            .map(|clips| clips.into_iter().map(|c| c.file_name).collect())
+            .unwrap_or_default();
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            if taken.contains(name) {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or("bad clip file name")?
+                    .to_string();
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("mp4");
+                let mut n = 2u32;
+                loop {
+                    let cand = path.with_file_name(format!("{stem}_{n}.{ext}"));
+                    let cand_name = cand
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .ok_or("bad clip file name")?;
+                    if !taken.contains(cand_name) && !cand.exists() {
+                        tokio::fs::rename(&path, &cand)
+                            .await
+                            .map_err(|e| format!("cannot dedupe clip name: {e}"))?;
+                        path = cand;
+                        break;
+                    }
+                    n += 1;
+                    if n > 999 {
+                        return Err("cannot find a free clip name".into());
+                    }
+                }
+            }
+        }
+    }
     let base = db.clips_dir()?;
     let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(app)?;
     // Real measured duration (the buffer is rarely full at save time).
@@ -557,6 +605,8 @@ pub struct VideoOptions {
     pub heights: Vec<HeightOpt>,
     pub current_codec: String,
     pub current_height: u32,
+    pub current_fps: u32,
+    pub max_source_height: u32,
     pub vendor: String,
 }
 
@@ -605,6 +655,11 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     let db = app.state::<DbState>();
     let current_codec = setting_str(&db, "video_codec", "h264");
     let current_height: u32 = setting_str(&db, "out_height", "0").parse().unwrap_or(0);
+    let current_fps: u32 = match setting_str(&db, "fps", "60").parse().unwrap_or(60) {
+        30 => 30,
+        _ => 60,
+    };
+    let max_source_height = video::max_source_height(&gsr_bin).await;
     let heights = q::HEIGHTS
         .iter()
         .map(|&h| {
@@ -624,6 +679,8 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
         heights,
         current_codec,
         current_height,
+        current_fps,
+        max_source_height,
         vendor,
     })
 }

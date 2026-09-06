@@ -58,7 +58,11 @@ Notes: 1080p@20M matches the old-MoonLit advanced table 1:1 (CBR/P7/HQ/AQ/BF2/ke
 set above (alone they starve keyframes in tiny test buffers — an artifact of
 short `-r`, not production buffers; the full set saves clean).
 VAAPI/QSV/AMD keep GSR defaults (`very_high`, no passthrough opts).
-FPS stays 60; `-s` omitted at source resolution.
+FPS selector: 30 or 60 (default 60), same bitrate ladder for both — at 30fps
+each frame gets ~2x the bits (same RAM per second, half the encoder load,
+more judder from high-refresh sources). `-s` omitted at source resolution.
+Same-second double saves never collide: the saver renames to `stem_2.mp4`,
+`stem_3.mp4`… instead of overwriting + UNIQUE failure.
 
 ### 2.2 Control from Rust
 

@@ -20,6 +20,8 @@ interface VideoOptions {
   heights: HeightOpt[];
   current_codec: string;
   current_height: number;
+  current_fps: number;
+  max_source_height: number;
   vendor: string;
 }
 
@@ -34,7 +36,7 @@ export function VideoSection() {
   };
   useEffect(load, []);
 
-  const change = async (key: "video_codec" | "out_height", value: string) => {
+  const change = async (key: "video_codec" | "out_height" | "fps", value: string) => {
     setError(null);
     try {
       await invoke("set_setting", { key, value });
@@ -56,6 +58,9 @@ export function VideoSection() {
   const bitrate = heightRow.bitrates[Math.min(codecIdx, heightRow.bitrates.length - 1)];
   const ram = heightRow.ring_mb_60s[Math.min(codecIdx, heightRow.ring_mb_60s.length - 1)];
   const codecNote = opts.codecs[codecIdx]?.note ?? "";
+  const upscale =
+    opts.max_source_height > 0 &&
+    opts.current_height > opts.max_source_height;
 
   const select =
     "w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-cyan-500/50";
@@ -92,12 +97,27 @@ export function VideoSection() {
             ))}
           </select>
         </label>
+        <label className="block">
+          <span className="mb-1 block text-sm text-slate-300">{t("video.fps")}</span>
+          <select
+            className={select}
+            value={String(opts.current_fps)}
+            onChange={(e) => void change("fps", e.target.value)}
+          >
+            <option value="60">60 fps</option>
+            <option value="30">30 fps</option>
+          </select>
+        </label>
       </div>
       <p className="text-xs text-slate-400">{codecNote}</p>
+      {upscale && (
+        <p className="text-xs text-amber-400">{t("video.upscale_warn")}</p>
+      )}
       <p className="font-mono text-xs text-slate-400">
         {t("video.estimate", { bitrate, ram })}
       </p>
       <p className="text-xs text-slate-600">{t("video.hq_note")}</p>
+      <p className="text-xs text-slate-600">{t("video.judder_note")}</p>
     </div>
   );
 }
