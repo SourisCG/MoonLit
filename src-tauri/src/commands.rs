@@ -636,13 +636,12 @@ pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, Stri
     devices::list_audio_devices(&bin).await
 }
 
-/// Video options for the Settings UI: codecs from the backend, ladder
+/// Video options for the Settings UI: codec ids from the backend, ladder
 /// heights, Medal bitrates and exact RAM estimates (CBR => exact, not ranges).
+/// NOTE: no human text crosses IPC — labels/notes live in frontend locales.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CodecOpt {
     pub id: String,
-    pub label: String,
-    pub note: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -684,40 +683,19 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     let (gsr_bin, _) = crate::sidecar::gsr_binary(&app)?;
     let vendor = video::vendor(&gsr_bin).await;
 
-    // Codecs the backend reports, mapped to known-good entries.
-    let mut codecs = Vec::new();
+    // Codec ids the backend reports, filtered to known-good entries.
+    // Labels/notes are frontend-owned (locales) — never hardcode UI text here.
+    let mut codecs: Vec<CodecOpt> = Vec::new();
     for id in video::offered_codecs(&gsr_bin).await {
-        let opt = match id.as_str() {
-            "h264" => Some(CodecOpt {
-                id: id.clone(),
-                label: "H.264 (recomendado)".into(),
-                note: "Compatible con todo: Discord, Twitter, editores.".into(),
-            }),
-            "hevc" => Some(CodecOpt {
-                id: id.clone(),
-                label: "H.265 / HEVC".into(),
-                note: "~40% menos peso; Discord/Twitter pueden rechazarlo.".into(),
-            }),
-            "av1" => Some(CodecOpt {
-                id: id.clone(),
-                label: "AV1".into(),
-                note: "Máxima compresión; solo HW moderno.".into(),
-            }),
-            _ => None,
-        };
-        if let Some(o) = opt {
-            if !codecs.iter().any(|c: &CodecOpt| c.id == o.id) {
-                codecs.push(o);
-            }
+        if matches!(id.as_str(), "h264" | "hevc" | "av1")
+            && !codecs.iter().any(|c: &CodecOpt| c.id == id)
+        {
+            codecs.push(CodecOpt { id });
         }
     }
     if codecs.is_empty() {
         // Fallback (Windows stub / unknown backend): H.264 always exists.
-        codecs.push(CodecOpt {
-            id: "h264".into(),
-            label: "H.264 (recomendado)".into(),
-            note: "Compatible con todo.".into(),
-        });
+        codecs.push(CodecOpt { id: "h264".into() });
     }
 
     let db = app.state::<DbState>();

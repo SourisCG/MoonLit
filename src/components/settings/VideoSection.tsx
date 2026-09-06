@@ -4,8 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 interface CodecOpt {
   id: string;
-  label: string;
-  note: string;
 }
 
 interface HeightOpt {
@@ -64,7 +62,17 @@ export function VideoSection() {
   );
   const heightRow =
     opts.heights.find((h) => h.height === opts.current_height) ?? opts.heights[2];
-  const codecNote = opts.codecs[codecIdx]?.note ?? "";
+  const codecLabel = (id: string): string => {
+    const key = `video.codec_${id}_label`;
+    const s = t(key);
+    return s === key ? id : s;
+  };
+  const codecNote = (id: string): string => {
+    const key = `video.codec_${id}_note`;
+    const s = t(key);
+    return s === key ? "" : s;
+  };
+  const currentNote = codecNote(opts.current_codec);
   // RAM hint follows the BUFFER resolution (source when transcoding).
   const bufRow =
     opts.heights.find((h) => h.height === opts.buffer_height) ?? heightRow;
@@ -89,7 +97,7 @@ export function VideoSection() {
           >
             {opts.codecs.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.label}
+                {codecLabel(c.id)}
               </option>
             ))}
           </select>
@@ -136,7 +144,7 @@ export function VideoSection() {
           </select>
         </label>
       </div>
-      <p className="text-xs text-slate-400">{codecNote}</p>
+      <p className="text-xs text-slate-400">{currentNote}</p>
       {upscale && (
         <p className="text-xs text-amber-400">{t("video.upscale_warn")}</p>
       )}

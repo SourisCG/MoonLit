@@ -33,6 +33,12 @@
   "video": {
     "title": "Recording video",
     "codec": "Codec",
+    "codec_h264_label": "H.264 (recommended)",
+    "codec_h264_note": "Works everywhere: Discord, Twitter, editors.",
+    "codec_hevc_label": "H.265 / HEVC",
+    "codec_hevc_note": "~40% lighter; Discord/Twitter may reject it.",
+    "codec_av1_label": "AV1",
+    "codec_av1_note": "Best compression; modern hardware only.",
     "resolution": "Resolution",
     "source": "Source (no rescale)",
     "fps": "Frame rate",

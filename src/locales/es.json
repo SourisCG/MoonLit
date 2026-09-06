@@ -33,6 +33,12 @@
   "video": {
     "title": "Video de grabación",
     "codec": "Códec",
+    "codec_h264_label": "H.264 (recomendado)",
+    "codec_h264_note": "Compatible con todo: Discord, Twitter, editores.",
+    "codec_hevc_label": "H.265 / HEVC",
+    "codec_hevc_note": "~40% menos peso; Discord/Twitter pueden rechazarlo.",
+    "codec_av1_label": "AV1",
+    "codec_av1_note": "Máxima compresión; solo HW moderno.",
     "resolution": "Resolución",
     "source": "Origen (sin reescalar)",
     "fps": "Fotogramas",
