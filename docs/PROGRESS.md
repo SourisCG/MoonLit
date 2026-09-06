@@ -32,3 +32,41 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
 - **Phase 2-fixes** — Single-source locale (`useLocale`: DB + i18next in sync, both directions), added missing `dialog:allow-open` capability (folder picker was silently rejected), visible errors on browse/save, logo glow contained (was `z-index:-1` leaking → corner artifact).
 - **Maximize flicker (root-caused)** — Tauri natively toggles maximize on double-click over `data-tauri-drag-region` (internal-toggle-maximize, tauri#12006); our own JS dblclick handler double-toggled (flicker). Fix: removed JS dblclick, native owns the gesture; buttons keep atomic `toggleMaximize` + debounce + OS-synced state. Capability `allow-internal-toggle-maximize` added explicitly.
 - **Dev env** — `src-tauri/.cargo/config.toml` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for all cargo runs (fixes Wayland `Error 71` crash at first paint on Fedora/GNOME); `pnpm tauri:dev` is the official launch command.
+- **Authorship rewrite (2026-09-06)** — All 26 commits re-signed from
+  `SourisCG <souris@souriscg.dev>` (assumed by the agent at `git init`, never
+  confirmed) to `Sebastián García <sebastian.garciab2004@gmail.com>` (user's
+  global identity). Content, messages and dates byte-identical
+  (`git diff` old vs new tip: empty). Original history preserved in branch
+  `main-backup-20260906` (local + remote, keep until told otherwise).
+  Old `build <hash>` seals below resolve via the backup branch + map.
+
+## Hash map (old → new, same order/messages/dates)
+
+| Old | New | Subject |
+|---|---|---|
+| `6965fac` | `ccf9451` | feat(phase1): tray minimize-to-tray + F9 global hotkey + MoonLit glass UI + pausable starfield + i18n es/en |
+| `8e4b5c1` | `9a81b9a` | fix(phase1): custom frameless topbar + MoonLit CSS logo + smooth starfield + F9 dedupe |
+| `2b99add` | `2f1234e` | chore(license): adopt GPL-3.0-only (required by gpu-screen-recorder sidecar) |
+| `c72edba` | `b8f218e` | feat(phase2): rusqlite persistence with relative paths + keyring secrets + settings UI |
+| `f8884c6` | `94536d3` | docs: mark phase 2 done in PROGRESS |
+| `982890a` | `9f3cc75` | fix(phase2): synced locale source, dialog permission, logo glow containment |
+| `1d14c82` | `943d024` | fix(dev): permanent Wayland workaround via .cargo/config env |
+| `259dcdb` | `a885c28` | docs: log wayland dev fix in PROGRESS |
+| `69fdd4a` | `f051f0c` | fix(phase2): stateless locale from i18n + hardened maximize toggle |
+| `3c93467` | `4b14c1e` | debug(phase2): temp maximize flicker logging (to be removed with fix) |
+| `4a9d44d` | `75052f0` | fix(phase2): atomic maximize toggle + delayed drag-area maximize |
+| `2b2c5e2` | `71848fc` | fix(phase2): let Tauri own drag-area dblclick maximize |
+| `502601e` | `bbddf69` | docs: log maximize root cause in PROGRESS |
+| `00a70b3` | `ff9e586` | feat(phase3): GSR replay engine + dual audio + record UI (Linux) |
+| `d0fec68` | `a44eb46` | feat(phase3): embedded GSR build script + live per-track volumes |
+| `94d6d8a` | `f371bba` | feat(phase3): embedded GSR binary + aac tracks |
+| `cbb29bd` | `a60d51a` | fix(phase3): stream matching, thumbs, duration restart, slider UX |
+| `b0ab0a5` | `4ae01b3` | fix(phase3): exact stream match, thumbs, restart keys, devices, quick-open |
+| `efec83a` | `ce54586` | refactor+fix(phase3): OBS-style os/ layout, asset protocol, real durations |
+| `2e06904` | `2f075da` | fix(phase3): gallery state+errors, stream debug log, responsive pass |
+| `0c6dd61` | `949eaae` | fix(phase3): icon-only gallery, self-clearing errors, build stamp |
+| `a9e5377` | `7a2ca1b` | feat(phase3): 3-track layout, mix first (plays everywhere) |
+| `e95189c` | `3229e91` | fix(phase3): reveal fallback to openPath(parent) |
+| `4f30c08` | `1981222` | fix(phase3): camelCase revert, scroll, title, resize grips |
+| `328e911` | `eae081d` | fix(phase3): clip filename as row title, probe cleanup |
+| `f290be2` | `a098988` | feat(phase3): Medal bitrate ladder + NVENC HQ recipe + video settings |
