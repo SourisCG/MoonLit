@@ -91,6 +91,8 @@ impl CaptureEngine for LinuxGsrEngine {
                 "-r", &config.duration_seconds.to_string(),
                 "-a", "default_output",
                 "-a", "default_input",
+                "-ac", "aac",
+                "-ab", "160",
                 "-o", config.output_dir.to_str().ok_or("bad clips dir")?,
             ])
             .stdin(Stdio::null())
