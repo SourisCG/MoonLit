@@ -19,5 +19,11 @@
     "empty": "Sin clips todavía. El motor de captura llega en la Fase 3.",
     "coming": "La galería llega en Fases 2–3. Esto es el cascarón de Fase 1."
   },
-  "lang": { "label": "Idioma" }
+  "lang": { "label": "Idioma" },
+  "window": {
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Ocultar a la bandeja"
+  }
 }
