@@ -499,8 +499,8 @@ pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, Stri
 /// Extract one audio track (1 or 2) to a single temp preview file for listening.
 #[tauri::command]
 pub async fn preview_track(app: AppHandle, clip_id: String, track: u32) -> Result<String, String> {
-    if track != 1 && track != 2 {
-        return Err("track must be 1 (game) or 2 (mic)".into());
+    if track < 1 || track > 3 {
+        return Err("track must be 1 (mix), 2 (game) or 3 (mic)".into());
     }
     let db = app.state::<DbState>();
     let clips = db.list_clips()?;

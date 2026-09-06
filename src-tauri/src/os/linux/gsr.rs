@@ -82,9 +82,12 @@ impl CaptureEngine for LinuxGsrEngine {
         };
         std::fs::create_dir_all(&config.output_dir)
             .map_err(|e| format!("cannot create clips dir: {e}"))?;
-        // NOTE: separate -a flags = separate audio tracks. A single
-        // -a "out|in" would MERGE both sources into one track.
+        // Track layout (order = track number):
+        //   -a "<desktop>|<mic>" = track 1, MIX (plays everywhere)
+        //   -a "<desktop>"       = track 2, game only
+        //   -a "<mic>"           = track 3, mic only
         let audio_args = vec![
+            format!("{}|{}", config.desktop_device, config.mic_device),
             config.desktop_device.clone(),
             config.mic_device.clone(),
         ];
@@ -100,6 +103,8 @@ impl CaptureEngine for LinuxGsrEngine {
             .arg(&audio_args[0])
             .arg("-a")
             .arg(&audio_args[1])
+            .arg("-a")
+            .arg(&audio_args[2])
             .args([
                 "-ac", "aac",
                 "-ab", "160",
