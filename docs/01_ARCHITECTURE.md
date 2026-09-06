@@ -7,7 +7,7 @@
 - Clip the last N seconds (replay buffer) with a global hotkey (default `F9`) while gaming.
 - Idle footprint: **< 80 MB RAM, ~0% CPU** while playing.
 - No proprietary cloud. Local-first + user-owned storage (Google Drive).
-- MIT/Apache-2.0 core where possible. GPL-3.0 accepted because `gpu-screen-recorder` (Linux) is GPL-3.0. See `05_STORAGE_SECURITY.md` and `08_CI_CD_DISTRIBUTION.md` for FFmpeg sidecar isolation.
+- MIT/Apache-2.0 core where possible. **GPL-3.0-only** for the project as a whole, required because `gpu-screen-recorder` (Linux) is GPL-3.0-only. See `05_STORAGE_SECURITY.md` and `08_CI_CD_DISTRIBUTION.md` for FFmpeg sidecar isolation.
 
 ## 2. Non-negotiable rules
 
