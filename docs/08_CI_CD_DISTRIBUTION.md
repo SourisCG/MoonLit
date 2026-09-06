@@ -22,6 +22,9 @@ Developer OS: Fedora. Targets: WinGet/MS Store (later), Flathub (later), direct 
 Add `"msix"` only when Partner Center flow starts. Current `tauri.conf.json` has `targets: "all"` (scaffold default) — narrow it in Phase 7.
 
 Sidecars in `src-tauri/binaries/`: `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffmpeg-x86_64-unknown-linux-gnu` (static: BtbN / johnvansickle musl). Declare in `tauri.conf.json > bundle.externalBin`.
+Plus `moonlit-gsr/gpu-screen-recorder` (+ `gsr-kms-server`) for Linux targets,
+built in CI from the pinned snapshot in `docs/THIRD_PARTY.md`. Full ship matrix
+(user installs nothing extra) is defined there.
 
 ## 2. GitHub Actions (`/.github/workflows/release.yml`, Phase 7)
 

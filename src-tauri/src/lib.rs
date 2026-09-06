@@ -1,14 +1,18 @@
-// MoonLit Phase 2 — tray + global F9 + close-to-hide + persistence.
-// Capture / detection / editor logic lands in later phases.
+// MoonLit Phase 3 — tray + F9 + persistence + replay capture.
+// Detection / editor logic lands in later phases.
 
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WindowEvent,
+    Manager, WindowEvent,
 };
 
+mod capture;
 mod commands;
+mod cue;
+mod editor;
+mod state;
 mod storage;
 
 /// Minimum gap between accepted hotkey presses (kills key auto-repeat doubles).
@@ -65,20 +69,12 @@ pub fn run() {
                         if !accept {
                             return;
                         }
-                        let _ = app.emit(
-                            "moonlit://clip-hotkey",
-                            serde_json::json!({
-                                "shortcut": shortcut.to_string(),
-                                "pressed_at": now.to_string(),
-                            }),
-                        );
-                        use tauri_plugin_notification::NotificationExt;
-                        let _ = app
-                            .notification()
-                            .builder()
-                            .title("MoonLit")
-                            .body(format!("Hotkey {} pressed (Phase 1 test)", shortcut))
-                            .show();
+                        // Phase 3: counter event + real save pipeline (async).
+                        let handle = app.clone();
+                        let shortcut_str = shortcut.to_string();
+                        tauri::async_runtime::spawn(async move {
+                            commands::handle_hotkey(handle, shortcut_str, now.to_string()).await;
+                        });
                     }
                 })
                 .build(),
@@ -134,6 +130,7 @@ pub fn run() {
             // --- Persistence (Phase 2) ---
             let db = storage::DbState::open(app.handle()).map_err(std::io::Error::other)?;
             app.manage(db);
+            app.manage(state::AppState::default());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -158,6 +155,10 @@ pub fn run() {
             commands::secret_store,
             commands::secret_get,
             commands::secret_delete,
+            commands::start_buffer,
+            commands::stop_buffer,
+            commands::engine_status,
+            commands::save_clip_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -41,6 +41,12 @@
     "picker_note": "El selector de procesos en ejecución llega en la Fase 4."
   },
   "common": { "loading": "Cargando…", "delete": "Eliminar" },
+  "rec": {
+    "start": "Iniciar búfer",
+    "stop": "Detener",
+    "save_now": "Guardar clip ahora",
+    "recording": "Grabando búfer de repetición"
+  },
   "lang": { "label": "Idioma" },
   "window": {
     "minimize": "Minimizar",

@@ -9,7 +9,15 @@ Details per phase live in `ROADMAP_PHASES.md`; technical specs in `01_*`–`08_*
 | 1 | Tray + F9 hotkey + glass UI + starfield + i18n ES/EN | ✅ done | `6965fac` | F9 fires globally, tray hide/show works |
 | 1-fixes | Frameless custom topbar + MoonLit CSS logo + smooth starfield + F9 dedupe | ✅ done | `8e4b5c1` | Single-count verified by user, no tray glitch |
 | license | GPL-3.0-only (required by gpu-screen-recorder) | ✅ done | `2b99add` | Verbatim LICENSE + metadata + README |
-| 2 | rusqlite persistence (relative paths) + keyring secrets + settings UI | ✅ done | `c72edba` | Awaiting user manual test |
+| 2 | rusqlite persistence (relative paths) + keyring secrets + settings UI | ✅ done | `c72edba` | CRUD, vault OK, folder picker fixed |
+| 3 | Capture engine (GSR Linux + WGC stub, dual audio) | 🚧 in progress | — | F9 → `.mp4` <1s, 2 tracks, then Windows trip |
+
+## Cross-platform gate (project rule)
+
+Any phase with per-OS code is implemented and tested on Linux first, then
+**tested on Windows immediately before the phase is closed** — and likewise
+in reverse whenever needed. No phase closes with an untested platform stub.
+Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
 | 3 | Capture engine (GSR Linux + WGC Windows, dual audio) | ⬜ pending | — | F9 → `.mp4` <1s, 2 audio tracks |
 | 4 | Game detection + launchers + custom apps | ⬜ pending | — | Native + Wine/Proton + Minecraft detected |
 | 5 | Lazy editor + FFmpeg pipeline | ⬜ pending | — | Lossless <1s, vertical HW, no leak |
