@@ -19,8 +19,6 @@ export function Topbar() {
     const sync = async () => {
       try {
         const isMax = await getCurrentWindow().isMaximized();
-        // TEMP-DEBUG (maximize flicker investigation, remove after fix)
-        console.debug(`[moonlit-dbg] onResized fired, isMaximized=${isMax} t=${Date.now()}`);
         if (!cancelled) setMaximized(isMax);
       } catch (err) {
         console.error(err);
@@ -45,29 +43,42 @@ export function Topbar() {
 
   const win = () => getCurrentWindow();
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const pendingTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(pendingTimer.current), []);
 
   const onMinimize = (e: React.MouseEvent) => {
     stop(e);
     void win().minimize();
   };
-  const onToggleMax = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const now = Date.now();
-    // TEMP-DEBUG (maximize flicker investigation, remove after fix)
-    console.debug(`[moonlit-dbg] onToggleMax called t=${now} type=${e.type}`);
-    if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) {
-      console.debug(`[moonlit-dbg] onToggleMax DEBOUNCED t=${now}`);
-      return;
-    }
-    lastToggle.current = now;
+
+  const doToggle = async () => {
     const w = win();
     try {
-      if (await w.isMaximized()) await w.unmaximize();
-      else await w.maximize();
+      // Atomic toggle: no check-then-act race between rapid invocations.
+      await w.toggleMaximize();
       setMaximized(await w.isMaximized());
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  /**
+   * Double-click on the drag area also ends a native move-drag; maximizing
+   * while that drag is settling makes Mutter revert it ~0.5s later.
+   * Delaying lets the drag die first. Buttons toggle immediately.
+   */
+  const onToggleMax = (e: React.MouseEvent, delayMs = 0) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const now = Date.now();
+    if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) return;
+    lastToggle.current = now;
+    window.clearTimeout(pendingTimer.current);
+    if (delayMs <= 0) {
+      void doToggle();
+    } else {
+      pendingTimer.current = window.setTimeout(() => void doToggle(), delayMs);
     }
   };
   const onClose = (e: React.MouseEvent) => {
@@ -81,7 +92,7 @@ export function Topbar() {
       <div
         data-tauri-drag-region
         className="flex h-full flex-1 items-center gap-2"
-        onDoubleClick={(e) => void onToggleMax(e)}
+        onDoubleClick={(e) => onToggleMax(e, 150)}
       >
         <MoonlitLogo size={18} />
         <span className="text-sm font-extrabold tracking-wide text-slate-100">
@@ -103,7 +114,7 @@ export function Topbar() {
           aria-label={maximized ? t("window.restore") : t("window.maximize")}
           title={maximized ? t("window.restore") : t("window.maximize")}
           onPointerDown={stop}
-          onClick={(e) => void onToggleMax(e)}
+          onClick={(e) => onToggleMax(e)}
           className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-slate-100"
         >
           <Square size={13} />
