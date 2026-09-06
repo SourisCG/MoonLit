@@ -19,6 +19,8 @@ export function Topbar() {
     const sync = async () => {
       try {
         const isMax = await getCurrentWindow().isMaximized();
+        // TEMP-DEBUG (maximize flicker investigation, remove after fix)
+        console.debug(`[moonlit-dbg] onResized fired, isMaximized=${isMax} t=${Date.now()}`);
         if (!cancelled) setMaximized(isMax);
       } catch (err) {
         console.error(err);
@@ -52,7 +54,12 @@ export function Topbar() {
     e.stopPropagation();
     e.preventDefault();
     const now = Date.now();
-    if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) return;
+    // TEMP-DEBUG (maximize flicker investigation, remove after fix)
+    console.debug(`[moonlit-dbg] onToggleMax called t=${now} type=${e.type}`);
+    if (now - lastToggle.current < TOGGLE_DEBOUNCE_MS) {
+      console.debug(`[moonlit-dbg] onToggleMax DEBOUNCED t=${now}`);
+      return;
+    }
     lastToggle.current = now;
     const w = win();
     try {
