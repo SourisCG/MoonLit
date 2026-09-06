@@ -17,8 +17,30 @@
   "gallery": {
     "title": "Clips",
     "empty": "No clips yet. Capture engine lands in Phase 3.",
-    "coming": "Gallery arrives in Phase 2–3. This is the Phase 1 shell."
+    "coming": "Gallery arrives in Phase 2–3. This is the Phase 1 shell.",
+    "missing": "file missing",
+    "favorite": "Toggle favorite"
   },
+  "settings": {
+    "clips_dir": "Clips folder",
+    "browse": "Browse",
+    "buffer": "Replay buffer (seconds)",
+    "max_gb": "Max storage (GB)",
+    "secret": {
+      "title": "Secret vault (OS keyring)",
+      "test": "Test round-trip",
+      "testing": "Testing vault…",
+      "ok": "Vault OK: store → read → delete succeeded."
+    }
+  },
+  "games": {
+    "name_ph": "Display name (e.g. Minecraft)",
+    "exe_ph": "Target exe (e.g. javaw.exe)",
+    "add": "Register",
+    "empty": "No custom apps yet.",
+    "picker_note": "Running-process picker and click-to-register arrive in Phase 4."
+  },
+  "common": { "loading": "Loading…", "delete": "Delete" },
   "lang": { "label": "Language" },
   "window": {
     "minimize": "Minimize",

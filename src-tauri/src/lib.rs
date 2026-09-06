@@ -1,5 +1,5 @@
-// MoonLit Phase 1 — tray + global F9 + close-to-hide.
-// No capture / DB / editor logic here (later phases).
+// MoonLit Phase 2 — tray + global F9 + close-to-hide + persistence.
+// Capture / detection / editor logic lands in later phases.
 
 use std::sync::Mutex;
 use tauri::{
@@ -7,6 +7,9 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
+
+mod commands;
+mod storage;
 
 /// Minimum gap between accepted hotkey presses (kills key auto-repeat doubles).
 const HOTKEY_DEBOUNCE_MS: u128 = 400;
@@ -38,7 +41,6 @@ fn get_hotkey() -> String {
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(HotkeyState::default()))
-        .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -128,6 +130,10 @@ pub fn run() {
                 Ok(_) => eprintln!("[moonlit] global shortcut F9 registered"),
                 Err(e) => eprintln!("[moonlit] could not register F9: {}", e),
             }
+
+            // --- Persistence (Phase 2) ---
+            let db = storage::DbState::open(app.handle()).map_err(std::io::Error::other)?;
+            app.manage(db);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -137,7 +143,22 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![greet, get_hotkey])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            get_hotkey,
+            commands::list_clips,
+            commands::toggle_favorite,
+            commands::delete_clip,
+            commands::resolve_clip_src,
+            commands::get_settings,
+            commands::set_setting,
+            commands::list_custom_apps,
+            commands::register_app,
+            commands::delete_app,
+            commands::secret_store,
+            commands::secret_get,
+            commands::secret_delete,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

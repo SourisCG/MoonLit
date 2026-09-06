@@ -1,0 +1,291 @@
+//! SQLite access (rusqlite, bundled). All queries run behind a Mutex.
+
+use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::AppHandle;
+
+use super::models::{ClipRecord, CustomApp, RegisterAppInput};
+use super::paths;
+
+const SCHEMA_VERSION: i64 = 1;
+const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
+
+pub struct DbState(pub Mutex<Connection>);
+
+impl DbState {
+    pub fn open(app: &AppHandle) -> Result<Self, String> {
+        let db_path = paths::db_file_path(app)?;
+        let conn =
+            Connection::open(&db_path).map_err(|e| format!("cannot open database: {e}"))?;
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(|e| format!("cannot read schema version: {e}"))?;
+        if version < SCHEMA_VERSION {
+            conn.execute_batch(MIGRATION_001)
+                .map_err(|e| format!("migration failed: {e}"))?;
+            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+                .map_err(|e| format!("cannot stamp schema version: {e}"))?;
+        }
+        let state = Self(Mutex::new(conn));
+        state.ensure_clips_dir()?;
+        Ok(state)
+    }
+
+    /// Fill empty `clips_directory` setting with the platform default and create it.
+    fn ensure_clips_dir(&self) -> Result<(), String> {
+        let conn = self.lock()?;
+        let current: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'clips_directory'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("cannot read clips_directory: {e}"))?
+            .unwrap_or_default();
+        if current.trim().is_empty() {
+            let dir = paths::default_clips_dir();
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("cannot create clips dir: {e}"))?;
+            conn.execute(
+                "UPDATE settings SET value = ?1 WHERE key = 'clips_directory'",
+                params![dir.to_string_lossy()],
+            )
+            .map_err(|e| format!("cannot save clips_directory: {e}"))?;
+        } else {
+            std::fs::create_dir_all(&current)
+                .map_err(|e| format!("cannot create clips dir: {e}"))?;
+        }
+        Ok(())
+    }
+
+    fn lock(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.0.lock().map_err(|e| format!("database lock poisoned: {e}"))
+    }
+
+    pub fn clips_dir(&self) -> Result<PathBuf, String> {
+        let conn = self.lock()?;
+        let dir: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'clips_directory'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("clips_directory not set: {e}"))?;
+        Ok(PathBuf::from(dir))
+    }
+
+    pub fn list_clips(&self) -> Result<Vec<ClipRecord>, String> {
+        let conn = self.lock()?;
+        let base = PathBuf::from(
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'clips_directory'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .map_err(|e| format!("clips_directory not set: {e}"))?,
+        );
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, file_name, thumbnail_name, game_title, duration_ms,
+                        file_size_bytes, created_at, is_favorite, drive_file_id, drive_web_url
+                 FROM clips ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("cannot prepare clips query: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(ClipRecord {
+                    id: r.get(0)?,
+                    file_name: r.get(1)?,
+                    thumbnail_name: r.get(2)?,
+                    game_title: r.get(3)?,
+                    duration_ms: r.get(4)?,
+                    file_size_bytes: r.get(5)?,
+                    created_at: r.get(6)?,
+                    is_favorite: r.get::<_, i64>(7)? != 0,
+                    drive_file_id: r.get(8)?,
+                    drive_web_url: r.get(9)?,
+                    exists: false, // filled below
+                })
+            })
+            .map_err(|e| format!("cannot list clips: {e}"))?;
+        let mut clips = Vec::new();
+        for row in rows {
+            let mut clip = row.map_err(|e| format!("cannot read clip row: {e}"))?;
+            clip.exists = paths::resolve_clip_path(&base, &clip.file_name).exists();
+            clips.push(clip);
+        }
+        Ok(clips)
+    }
+
+    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {
+        let conn = self.lock()?;
+        let changed = conn
+            .execute(
+                "UPDATE clips SET is_favorite = 1 - is_favorite WHERE id = ?1",
+                params![id],
+            )
+            .map_err(|e| format!("cannot toggle favorite: {e}"))?;
+        if changed == 0 {
+            return Err("clip not found".into());
+        }
+        conn.query_row(
+            "SELECT is_favorite FROM clips WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .map_err(|e| format!("cannot read favorite state: {e}"))
+    }
+
+    /// Delete the DB row and its files (clip + thumbnail) when present.
+    pub fn delete_clip(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock()?;
+        let (file_name, thumb_name): (String, String) = conn
+            .query_row(
+                "SELECT file_name, thumbnail_name FROM clips WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("cannot find clip: {e}"))?
+            .ok_or_else(|| "clip not found".to_string())?;
+        let base: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'clips_directory'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("clips_directory not set: {e}"))?;
+        let base = PathBuf::from(base);
+        for name in [&file_name, &thumb_name] {
+            let p = paths::resolve_clip_path(&base, name);
+            if p.exists() {
+                std::fs::remove_file(&p)
+                    .map_err(|e| format!("cannot delete file {}: {e}", p.display()))?;
+            }
+        }
+        conn.execute("DELETE FROM clips WHERE id = ?1", params![id])
+            .map_err(|e| format!("cannot delete clip row: {e}"))?;
+        Ok(())
+    }
+
+    pub fn get_settings(&self) -> Result<HashMap<String, String>, String> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM settings")
+            .map_err(|e| format!("cannot read settings: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| format!("cannot read settings: {e}"))?;
+        let mut map = HashMap::new();
+        for row in rows {
+            let (k, v) = row.map_err(|e| format!("cannot read setting row: {e}"))?;
+            map.insert(k, v);
+        }
+        Ok(map)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), String> {
+        const ALLOWED: &[&str] = &[
+            "clips_directory",
+            "buffer_seconds",
+            "hotkey",
+            "max_storage_gb",
+            "locale",
+        ];
+        if !ALLOWED.contains(&key) {
+            return Err(format!("unknown setting: {key}"));
+        }
+        if key == "clips_directory" {
+            let dir = PathBuf::from(value);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("cannot create clips dir: {e}"))?;
+        }
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )
+        .map_err(|e| format!("cannot save setting: {e}"))?;
+        Ok(())
+    }
+
+    pub fn list_custom_apps(&self) -> Result<Vec<CustomApp>, String> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, display_name, target_exe, match_strategy,
+                        clip_duration_seconds, icon_path, is_wine_proton
+                 FROM custom_apps ORDER BY display_name",
+            )
+            .map_err(|e| format!("cannot list custom apps: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(CustomApp {
+                    id: r.get(0)?,
+                    display_name: r.get(1)?,
+                    target_exe: r.get(2)?,
+                    match_strategy: r.get(3)?,
+                    clip_duration_seconds: r.get(4)?,
+                    icon_path: r.get(5)?,
+                    is_wine_proton: r.get::<_, i64>(6)? != 0,
+                })
+            })
+            .map_err(|e| format!("cannot list custom apps: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("cannot read custom app row: {e}"))
+    }
+
+    pub fn register_app(&self, input: RegisterAppInput) -> Result<CustomApp, String> {
+        const STRATEGIES: &[&str] = &["exact_exe", "cmdline_contains", "window_title", "wine_target"];
+        if input.display_name.trim().is_empty() || input.target_exe.trim().is_empty() {
+            return Err("display_name and target_exe are required".into());
+        }
+        if !STRATEGIES.contains(&input.match_strategy.as_str()) {
+            return Err(format!("unknown match_strategy: {}", input.match_strategy));
+        }
+        let app = CustomApp {
+            id: uuid::Uuid::new_v4().to_string(),
+            display_name: input.display_name,
+            target_exe: input.target_exe,
+            match_strategy: input.match_strategy,
+            clip_duration_seconds: input.clip_duration_seconds,
+            icon_path: None,
+            is_wine_proton: input.is_wine_proton.unwrap_or(false),
+        };
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO custom_apps
+             (id, display_name, target_exe, match_strategy, clip_duration_seconds, icon_path, is_wine_proton)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                app.id,
+                app.display_name,
+                app.target_exe,
+                app.match_strategy,
+                app.clip_duration_seconds,
+                app.icon_path,
+                if app.is_wine_proton { 1 } else { 0 },
+            ],
+        )
+        .map_err(|e| format!("cannot register app: {e}"))?;
+        Ok(app)
+    }
+
+    pub fn delete_app(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock()?;
+        let changed = conn
+            .execute("DELETE FROM custom_apps WHERE id = ?1", params![id])
+            .map_err(|e| format!("cannot delete app: {e}"))?;
+        if changed == 0 {
+            return Err("app not found".into());
+        }
+        Ok(())
+    }
+}
