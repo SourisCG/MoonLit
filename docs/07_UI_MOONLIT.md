@@ -1,0 +1,42 @@
+# 07 — MoonLit UI (Nocturnal + Zero-Cost While Gaming)
+
+Inspired by https://moonlit.souriscg.dev / https://github.com/SourisCG/MoonLit (C starfield). Web re-implementation must cost 0 GPU/CPU while gaming.
+
+## 1. Palette (Tailwind v3, see `tailwind.config.js`)
+
+- Base void: `#050608` (app bg), panels `#0b0f19/50` + `backdrop-blur-xl border-white/5`.
+- Cards: `#0d1220/60`.
+- Accents: lunar `#38bdf8` → astral `#818cf8`, starlight `#e0e7ff`.
+- Glow: `shadow-[0_0_15px_rgba(56,189,248,0.3)]`, hover borders `hover:border-cyan-500/40`.
+- Top aura: `w-[700px] h-[250px] bg-gradient-to-b from-cyan-500/10 via-indigo-500/5 to-transparent blur-3xl`.
+
+Already in `tailwind.config.js` as `colors.moonlit.{void,panel,card,lunar,astral,starlight}`.
+
+## 2. Starfield: `src/components/starfield/MoonlitStarfield.tsx`
+
+- `<canvas fixed inset-0 pointer-events-none z-0 opacity-70>`, 70–100 stars (spec: 85), size 0.4–2px, `sin(frame*speed)*0.35` twinkle, glow on `size>1.4`.
+- **Critical:** pause on hidden:
+  ```tsx
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { isPaused=true; cancelAnimationFrame(id); }
+    else if (isPaused) { isPaused=false; render(); }
+  });
+  // + window blur/focus, + unmount cleanup
+  ```
+- No CSS-div stars, no uncontrolled rAF. Implement in Phase 1.
+
+## 3. Layout (Phase 1 target)
+
+- Sidebar `w-64 rounded-2xl bg-[#0b0f19]/50 backdrop-blur-xl border-white/5`: logo (🌙 gradient), nav (My Clips, Games, Settings), live status (pulsing dot "Replay Buffer Active / F9").
+- Main `flex-1 rounded-2xl bg-[#0b0f19]/30 border-white/5`: gallery or editor outlet.
+- Clip cards: `group rounded-xl overflow-hidden border-white/5 hover:border-cyan-500/40 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]`, `aspect-video` thumb + bottom gradient + `gameTitle` + `duration`.
+
+## 4. i18n (bilingual ES/EN)
+
+- `react-i18next` already installed. `src/locales/{en,es}.json`, detector = `settings.locale` (not browser-only). All strings via `t()` from Phase 1. Docs/README stay in English.
+
+## 5. React perf note (why it won't lag games)
+
+- While gaming, window is tray-hidden → WebView2/WebKitGTK pauses render, CSS, rAF. Capture lives in GSR/Rust VRAM, zero JS.
+- React never processes pixels; `<video>` is HW-decoded. Editor is lazy-unmounted (see `04_EDITOR_PIPELINE.md`).
+- Tauri (~30–60 MB) vs Electron/Medal (300–800 MB): no bundled Chromium, Rust binary not Node.

@@ -1,0 +1,23 @@
+{
+  "app": { "name": "MOONLIT", "tagline": "Búfer de repetición en espera" },
+  "nav": { "clips": "Mis Clips", "games": "Juegos", "settings": "Ajustes" },
+  "status": {
+    "active": "Replay Buffer Activo",
+    "standby": "En espera (Fase 1 — aún sin captura)",
+    "shortcut": "Atajo: {{hotkey}}",
+    "presses": "{{count}} pulsaciones"
+  },
+  "hotkey": {
+    "title": "Prueba de atajo global",
+    "hint": "Pulsa {{hotkey}} en cualquier parte — incluso con esta ventana desenfocada — y el contador debe aumentar.",
+    "last": "Última pulsación: {{when}}",
+    "never": "Aún sin pulsar",
+    "test_button": "Enviar notificación de prueba"
+  },
+  "gallery": {
+    "title": "Clips",
+    "empty": "Sin clips todavía. El motor de captura llega en la Fase 3.",
+    "coming": "La galería llega en Fases 2–3. Esto es el cascarón de Fase 1."
+  },
+  "lang": { "label": "Idioma" }
+}
