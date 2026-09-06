@@ -6,8 +6,11 @@ import { Clapperboard, FolderOpen, Star, Trash2 } from "lucide-react";
 import { useClips } from "../../hooks/useClips";
 import type { ClipMetadata } from "../../types";
 
+// NOTE (Tauri v2 convention, do NOT "fix"): #[tauri::command] auto-converts
+// Rust snake_case params to camelCase wire keys. Rust `file_name` arrives as
+// `fileName` — the frontend must send camelCase, never mirror the Rust name.
 async function absOf(fileName: string): Promise<string> {
-  return invoke<string>("resolve_clip_src", { file_name: fileName });
+  return invoke<string>("resolve_clip_src", { fileName });
 }
 
 function Thumb({

@@ -90,6 +90,12 @@ export interface TrimRequest {
 // invoke('get_running_applications') -> ActiveApp[]
 ```
 
+> **IPC naming rule (Tauri v2, learned the hard way):** `#[tauri::command]`
+> auto-converts Rust `snake_case` params to **camelCase wire keys**
+> (`file_name` → `fileName`, `clip_id` → `clipId`). The frontend ALWAYS sends
+> camelCase; NEVER rename frontend keys to mirror Rust — that breaks the call
+> with `missing required key <camelName>`.
+
 ## 6. Resource strategy
 
 - While gaming: main window hidden to tray, WebView paused, capture in VRAM + encoded packets in RAM ring (`~100-150 MB` for 60s 1080p 15 Mbps).
