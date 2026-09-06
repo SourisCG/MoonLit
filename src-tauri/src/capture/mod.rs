@@ -17,6 +17,9 @@ pub struct CaptureConfig {
     pub output_dir: PathBuf,
     /// Resolved GSR binary (bundled sidecar). None = resolve from env/PATH.
     pub gsr_bin: Option<PathBuf>,
+    /// Audio sources for `-a` (game first, mic second).
+    pub desktop_device: String,
+    pub mic_device: String,
 }
 
 /// Unified engine interface. Methods are async to allow signal waits / IPC.
@@ -26,4 +29,8 @@ pub trait CaptureEngine: Send + Sync {
     async fn save_clip(&mut self) -> Result<PathBuf, String>;
     async fn stop_buffer(&mut self) -> Result<(), String>;
     fn backend_name(&self) -> &'static str;
+    /// The exact `-a` audio args the running engine spawned with (for stream matching).
+    fn audio_args(&self) -> Vec<String> {
+        vec![]
+    }
 }

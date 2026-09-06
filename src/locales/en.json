@@ -19,7 +19,16 @@
     "empty": "No clips yet. Capture engine lands in Phase 3.",
     "coming": "Gallery arrives in Phase 2–3. This is the Phase 1 shell.",
     "missing": "file missing",
-    "favorite": "Toggle favorite"
+    "favorite": "Toggle favorite",
+    "hear_mic": "Hear microphone track",
+    "reveal": "Show in folder"
+  },
+  "audio": {
+    "title": "Capture audio",
+    "mic_src": "Microphone",
+    "desktop_src": "Game / desktop source",
+    "linked": "{{n}} tracks linked",
+    "stopped_hint": "Start the buffer to link audio tracks."
   },
   "settings": {
     "clips_dir": "Clips folder",

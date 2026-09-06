@@ -42,6 +42,8 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     let db = app.state::<DbState>();
     let dir = db.clips_dir()?;
     let secs = buffer_seconds(&db) as u32;
+    let mic_device = setting_str(&db, "mic_device", "default_input");
+    let desktop_device = setting_str(&db, "desktop_device", "default_output");
     let (gsr_bin, source) = crate::sidecar::gsr_binary(app)?;
     eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
     let mut engine = Engine::new();
@@ -51,16 +53,16 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             fps: 60,
             output_dir: dir,
             gsr_bin: Some(gsr_bin),
+            desktop_device,
+            mic_device,
         })
         .await?;
-    #[cfg(target_os = "linux")]
-    let tracks = crate::capture::audio::linked_count().await;
-    #[cfg(not(target_os = "linux"))]
-    let tracks = 0;
+    let tracks = engine_audio_linked(&engine).await;
     let status = EngineStatus {
         running: true,
         backend: engine.backend_name().to_string(),
         tracks_linked: tracks,
+        audio_error: read_audio_error(app).await,
     };
     {
         let st = app.state::<AppState>();
@@ -69,11 +71,35 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     // Apply persisted per-track gains to the fresh GSR streams (best effort).
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = apply_saved_gains(&app2).await {
-            eprintln!("[moonlit] initial gain apply failed: {e}");
+        match apply_saved_gains(&app2).await {
+            Ok(n) => {
+                eprintln!("[moonlit] gains applied to {n} tracks");
+                set_audio_error(&app2, None).await;
+            }
+            Err(e) => {
+                eprintln!("[moonlit] gain apply failed: {e}");
+                set_audio_error(&app2, Some(e)).await;
+            }
         }
     });
     Ok(status)
+}
+
+#[cfg(target_os = "linux")]
+async fn engine_audio_linked(engine: &Engine) -> usize {
+    crate::capture::audio::linked_count(&engine.audio_args()).await
+}
+#[cfg(not(target_os = "linux"))]
+async fn engine_audio_linked(_engine: &Engine) -> usize {
+    0
+}
+
+fn setting_str(db: &DbState, key: &str, default: &str) -> String {
+    db.get_settings()
+        .ok()
+        .and_then(|s| s.get(key).cloned())
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| default.to_string())
 }
 
 async fn stop_engine(app: &AppHandle) -> Result<EngineStatus, String> {
@@ -83,10 +109,12 @@ async fn stop_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         engine.stop_buffer().await?;
     }
     drop(guard);
+    set_audio_error(app, None).await;
     Ok(EngineStatus {
         running: false,
         backend: backend_name().to_string(),
         tracks_linked: 0,
+        audio_error: None,
     })
 }
 
@@ -96,9 +124,10 @@ pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(
         let db = app.state::<DbState>();
         db.set_setting(&key, &value)?;
     }
-    // Changing the buffer length with the engine running restarts it so the
-    // new length (and the stored clip durations) always match the recorder.
-    if key == "buffer_seconds" {
+    // Changing the buffer length or capture devices with the engine running
+    // restarts it so length, devices and stored durations match the recorder.
+    const RESTART_KEYS: &[&str] = &["buffer_seconds", "mic_device", "desktop_device"];
+    if RESTART_KEYS.contains(&key.as_str()) {
         let running = {
             let st = app.state::<AppState>();
             let guard = st.recorder.lock().await;
@@ -109,7 +138,7 @@ pub async fn set_setting(app: AppHandle, key: String, value: String) -> Result<(
         if running {
             stop_engine(&app).await?;
             start_engine(&app).await?;
-            notify(&app, "Búfer reiniciado con la nueva duración", "Buffer restarted with new length");
+            notify(&app, "Búfer reiniciado con la nueva configuración", "Buffer restarted with new configuration");
         }
     }
     Ok(())
@@ -158,6 +187,20 @@ pub struct EngineStatus {
     pub backend: String,
     /// GSR audio tracks currently linked (0, 1 or 2). UI-visible, no silent fails.
     pub tracks_linked: usize,
+    /// Last audio-gain apply error, if any.
+    pub audio_error: Option<String>,
+}
+
+async fn read_audio_error(app: &AppHandle) -> Option<String> {
+    let st = app.try_state::<AppState>()?;
+    let guard = st.audio_error.lock().await;
+    guard.clone()
+}
+
+async fn set_audio_error(app: &AppHandle, err: Option<String>) {
+    if let Some(st) = app.try_state::<AppState>() {
+        *st.audio_error.lock().await = err;
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -211,11 +254,11 @@ pub async fn stop_buffer(app: AppHandle) -> Result<EngineStatus, String> {
 pub async fn engine_status(app: AppHandle) -> Result<EngineStatus, String> {
     let st = app.state::<AppState>();
     let guard = st.recorder.lock().await;
-    let running = guard.is_some();
+    let (running, args) = (guard.is_some(), guard.as_ref().map(|e| e.audio_args()).unwrap_or_default());
     drop(guard);
     #[cfg(target_os = "linux")]
     let tracks = if running {
-        crate::capture::audio::linked_count().await
+        crate::capture::audio::linked_count(&args).await
     } else {
         0
     };
@@ -225,6 +268,7 @@ pub async fn engine_status(app: AppHandle) -> Result<EngineStatus, String> {
         running,
         backend: backend_name().to_string(),
         tracks_linked: tracks,
+        audio_error: read_audio_error(&app).await,
     })
 }
 
@@ -324,11 +368,20 @@ fn read_gains(app: &AppHandle) -> TrackGains {
     }
 }
 
-async fn apply_saved_gains(app: &AppHandle) -> Result<(), String> {
+async fn engine_audio_args(app: &AppHandle) -> Vec<String> {
+    let st = app.state::<AppState>();
+    let guard = st.recorder.lock().await;
+    let args = guard.as_ref().map(|e| e.audio_args()).unwrap_or_default();
+    drop(guard);
+    args
+}
+
+async fn apply_saved_gains(app: &AppHandle) -> Result<usize, String> {
     let g = read_gains(app);
     #[cfg(target_os = "linux")]
     {
-        crate::capture::audio::apply_gains(g.game, g.mic, g.mute_game, g.mute_mic).await
+        let args = engine_audio_args(app).await;
+        crate::capture::audio::apply_gains(&args, g.game, g.mic, g.mute_game, g.mute_mic).await
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -432,4 +485,81 @@ pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
         return Err("one-click fix applies to the bundled binary only".into());
     }
     crate::sidecar::fix_gsr_caps(&path).await
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AudioDevice {
+    pub id: String,
+    pub description: String,
+    /// "mic" or "desktop"
+    pub kind: String,
+}
+
+/// Capture devices from OUR bundled GSR (`--list-audio-devices`, name|desc).
+#[tauri::command]
+pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
+    let (bin, _) = crate::sidecar::gsr_binary(&app)?;
+    let out = tokio::process::Command::new(&bin)
+        .arg("--list-audio-devices")
+        .output()
+        .await
+        .map_err(|e| format!("cannot list audio devices: {e}"))?;
+    if !out.status.success() {
+        return Err("GSR device list failed".into());
+    }
+    let mut devices = Vec::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (id, desc) = match line.split_once('|') {
+            Some((a, b)) => (a.trim().to_string(), b.trim().to_string()),
+            None => (line.to_string(), line.to_string()),
+        };
+        if id.is_empty() {
+            continue;
+        }
+        let lower = id.to_lowercase();
+        let kind = if lower.contains("monitor") || lower == "default_output" {
+            "desktop"
+        } else {
+            "mic"
+        };
+        devices.push(AudioDevice { id, description: desc, kind: kind.to_string() });
+    }
+    Ok(devices)
+}
+
+/// Extract one audio track (1 or 2) to a single temp preview file for listening.
+#[tauri::command]
+pub async fn preview_track(app: AppHandle, clip_id: String, track: u32) -> Result<String, String> {
+    if track != 1 && track != 2 {
+        return Err("track must be 1 (game) or 2 (mic)".into());
+    }
+    let db = app.state::<DbState>();
+    let clips = db.list_clips()?;
+    let clip = clips
+        .into_iter()
+        .find(|c| c.id == clip_id)
+        .ok_or("clip not found")?;
+    let base = db.clips_dir()?;
+    let input = base.join(&clip.file_name);
+    let preview = std::env::temp_dir().join("moonlit-track-preview.m4a");
+    let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(&app)?;
+    let status = tokio::process::Command::new(&ffmpeg)
+        .args([
+            "-y", "-hide_banner", "-loglevel", "error",
+            "-i", &input.to_string_lossy(),
+            "-map", &format!("0:{track}"),
+            "-c:a", "aac",
+        ])
+        .arg(&preview)
+        .status()
+        .await
+        .map_err(|e| format!("preview extract failed: {e}"))?;
+    if !status.success() {
+        return Err("preview extract failed".into());
+    }
+    Ok(preview.to_string_lossy().to_string())
 }

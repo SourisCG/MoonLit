@@ -165,6 +165,8 @@ pub fn run() {
             commands::set_track_mute,
             commands::gsr_info,
             commands::fix_gsr_caps,
+            commands::list_audio_devices,
+            commands::preview_track,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
