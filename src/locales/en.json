@@ -1,0 +1,23 @@
+{
+  "app": { "name": "MOONLIT", "tagline": "Replay buffer standby" },
+  "nav": { "clips": "My Clips", "games": "Games", "settings": "Settings" },
+  "status": {
+    "active": "Replay Buffer Active",
+    "standby": "Standby (Phase 1 — no capture yet)",
+    "shortcut": "Shortcut: {{hotkey}}",
+    "presses": "{{count}} presses"
+  },
+  "hotkey": {
+    "title": "Global hotkey test",
+    "hint": "Press {{hotkey}} anywhere — even with this window unfocused — and the counter must increase.",
+    "last": "Last press: {{when}}",
+    "never": "Not pressed yet",
+    "test_button": "Send test notification"
+  },
+  "gallery": {
+    "title": "Clips",
+    "empty": "No clips yet. Capture engine lands in Phase 3.",
+    "coming": "Gallery arrives in Phase 2–3. This is the Phase 1 shell."
+  },
+  "lang": { "label": "Language" }
+}

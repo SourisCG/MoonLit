@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #050608;
+  color: #e2e8f0;
+  font-family: Inter, system-ui, sans-serif;
+  margin: 0;
+  overflow: hidden;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.3);
+}
