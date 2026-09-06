@@ -32,6 +32,17 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
 - **Phase 2-fixes** — Single-source locale (`useLocale`: DB + i18next in sync, both directions), added missing `dialog:allow-open` capability (folder picker was silently rejected), visible errors on browse/save, logo glow contained (was `z-index:-1` leaking → corner artifact).
 - **Maximize flicker (root-caused)** — Tauri natively toggles maximize on double-click over `data-tauri-drag-region` (internal-toggle-maximize, tauri#12006); our own JS dblclick handler double-toggled (flicker). Fix: removed JS dblclick, native owns the gesture; buttons keep atomic `toggleMaximize` + debounce + OS-synced state. Capability `allow-internal-toggle-maximize` added explicitly.
 - **Dev env** — `src-tauri/.cargo/config.toml` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for all cargo runs (fixes Wayland `Error 71` crash at first paint on Fedora/GNOME); `pnpm tauri:dev` is the official launch command.
+- **UI batch** — MoonLit icon set regenerated from `build-aux/moonlit-icon.svg`
+  (taskbar + tray via `default_window_icon`); `lang.es/lang.en` translated in
+  sidebar + select (last hardcoded Spanish gone); `opener:allow-open-path` +
+  `opener:allow-reveal-item-in-dir` added (`opener:default` does not include
+  those commands — root cause of the open-video error); disk-space note under
+  the resolution selector (ES/EN).
+- **Native scaler patch (scheduled, not implemented)** — After Flatpak + MS
+  Store ship, before signing `.exe`/`.msi`: raise GSR's downscale filter from
+  hardcoded `GL_LINEAR` (bilinear, no mipmaps — proven in pinned source
+  `src/window_texture.c`) to Bicubic (Lanczos under test). Same RAM/bitrate/
+  latency/save path. Acceptance: stock vs patched 720p on a 1:1 monitor.
 - **Authorship rewrite (2026-09-06)** — All 26 commits re-signed from
   `SourisCG <souris@souriscg.dev>` (assumed by the agent at `git init`, never
   confirmed) to `Sebastián García <sebastian.garciab2004@gmail.com>` (user's

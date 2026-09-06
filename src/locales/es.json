@@ -40,6 +40,7 @@
     "monitor_auto": "Automático",
     "transcoding_note": "Graba en origen y entrega con lanczos al guardar (texto nítido).",
     "upscale_warn": "Por encima de tu monitor: más peso, cero detalle extra.",
+    "disk_note": "Las resoluciones bajas solo ahorran espacio en disco. Para máxima calidad usa Origen.",
     "judder_note": "30 fps ahorra GPU pero se entrecorta más en monitores de alto refresco; 60 fps es más fluido en acción.",
     "estimate": "CBR {{bitrate}} kbps · ~{{ram}} MB por 60 s en RAM",
     "hq_note": "HQ fijo: CBR + P7 + alta calidad + AQ (receta NVENC verificada, sin perillas)."
@@ -73,7 +74,7 @@
     "mic": "Mic",
     "tracks": "{{n}} pistas enlazadas"
   },
-  "lang": { "label": "Idioma" },
+  "lang": { "label": "Idioma", "es": "Español", "en": "Inglés" },
   "window": {
     "minimize": "Minimizar",
     "maximize": "Maximizar",

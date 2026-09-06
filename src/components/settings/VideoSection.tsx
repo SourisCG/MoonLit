@@ -143,6 +143,7 @@ export function VideoSection() {
       {opts.transcoding && (
         <p className="text-xs text-cyan-300/80">{t("video.transcoding_note")}</p>
       )}
+      <p className="text-xs text-slate-600">{t("video.disk_note")}</p>
       <p className="font-mono text-xs text-slate-400">
         {t("video.estimate", { bitrate: bufBitrate, ram: bufRam })}
       </p>

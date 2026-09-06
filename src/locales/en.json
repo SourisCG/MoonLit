@@ -40,6 +40,7 @@
     "monitor_auto": "Automatic",
     "transcoding_note": "Records at source, delivers with lanczos on save (sharp text).",
     "upscale_warn": "Above your monitor: heavier file, zero extra detail.",
+    "disk_note": "Lower resolutions only save disk space. For maximum quality use Source.",
     "judder_note": "30 fps saves GPU but judders more on high-refresh monitors; 60 fps is smoother for action.",
     "estimate": "CBR {{bitrate}} kbps · ~{{ram}} MB per 60 s in RAM",
     "hq_note": "Fixed HQ: CBR + P7 + high quality + AQ (verified NVENC recipe, no knobs to turn)."
@@ -73,7 +74,7 @@
     "mic": "Mic",
     "tracks": "{{n}} tracks linked"
   },
-  "lang": { "label": "Language" },
+  "lang": { "label": "Language", "es": "Spanish", "en": "English" },
   "window": {
     "minimize": "Minimize",
     "maximize": "Maximize",

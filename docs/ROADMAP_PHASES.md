@@ -40,6 +40,19 @@ Execute strictly in order. Do not start phase N+1 until phase N acceptance passe
 - Narrow `tauri.conf.json` targets, `release.yml` matrix, SmartScreen README note, versioned Release assets.
 - **Accept:** `v*` tag produces `.exe/.msi/.AppImage/.rpm/.deb` downloadables.
 
+## Post-7 milestone — native GSR scaler patch (BEFORE Windows signing)
+
+- After the Flatpak + MS Store versions ship, before signing `.exe`/`.msi`:
+  patch the downscale filter in our pinned GSR build (Bicubic default,
+  Lanczos under test) in `build-aux/patches/`, applied by `build-gsr.sh`,
+  registered in `docs/THIRD_PARTY.md` (GPL: patch published in-repo).
+- Rationale: GSR samples with hardcoded `GL_LINEAR` (bilinear, no mipmaps);
+  1080p→720p (1.5x) softens text. Industry fix (OBS): Bicubic default,
+  Lanczos 36-sample for detail. Same RAM/bitrate/latency/save behavior.
+- **Accept:** same VSCode text, 720p stock vs patched on a 1:1 720p monitor,
+  200% crops + SSIM/blur clearly better, no encoder overload. If not
+  clearly better, the patch is NOT merged.
+
 ---
 
 ## Agent prompt pattern (per phase)

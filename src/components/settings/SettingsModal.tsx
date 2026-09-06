@@ -120,8 +120,8 @@ export function SettingsModal({ engineStatus }: { engineStatus: EngineStatus }) 
           value={locale.startsWith("en") ? "en" : "es"}
           onChange={(e) => void setLocale(e.target.value)}
         >
-          <option value="es">Español</option>
-          <option value="en">English</option>
+          <option value="es">{t("lang.es")}</option>
+          <option value="en">{t("lang.en")}</option>
         </select>
       </div>
 

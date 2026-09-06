@@ -179,13 +179,13 @@ export default function App() {
                     onClick={() => void setLocale("es")}
                     className={`rounded-md px-2 py-1 font-mono ${locale.startsWith("es") ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
                   >
-                    ES
+                    {t("lang.es")}
                   </button>
                   <button
                     onClick={() => void setLocale("en")}
                     className={`rounded-md px-2 py-1 font-mono ${locale.startsWith("en") ? "bg-cyan-500/20 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}
                   >
-                    EN
+                    {t("lang.en")}
                   </button>
                 </div>
               </div>
