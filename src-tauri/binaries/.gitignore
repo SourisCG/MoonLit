@@ -1,0 +1,5 @@
+# Built sidecars live here (never commit binaries).
+# Regenerate with: ./build-aux/build-gsr.sh  (pinned source, see docs/THIRD_PARTY.md)
+# CI builds them per release; end-user packages ship them inside.
+*/
+!.gitkeep
