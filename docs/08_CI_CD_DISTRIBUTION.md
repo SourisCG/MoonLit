@@ -26,7 +26,11 @@ Minimum supported Windows version: **Windows 10 version 1903 (build 18362)+**
 this floor so the installer refuses older builds instead of installing a
 build whose capture backend cannot initialize.
 
-Sidecars in `src-tauri/binaries/`: `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffmpeg-x86_64-unknown-linux-gnu` (static: BtbN / johnvansickle musl). Declare in `tauri.conf.json > bundle.externalBin`.
+Sidecars in `src-tauri/binaries/`: `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffmpeg-x86_64-unknown-linux-gnu` (static: BtbN / johnvansickle musl). The
+Windows ffmpeg ships via `bundle.resources` (raw binary pipes — the
+shell-plugin sidecar API is line-events only and cannot carry them), added
+through a **per-OS CI config overlay** (`tauri build --config ...`), never
+in the base `tauri.conf.json`, so Linux bundles never carry the `.exe`.
 Plus `moonlit-gsr/gpu-screen-recorder` (+ `gsr-kms-server`) for Linux targets,
 built in CI from the pinned snapshot in `docs/THIRD_PARTY.md`. Full ship matrix
 (user installs nothing extra) is defined there.

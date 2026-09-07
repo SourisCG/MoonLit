@@ -220,6 +220,9 @@ pub struct WindowsCaptureEngine {
     duration_secs: u32,
     bitrate_kbps: u32,
     fps: u32,
+    /// ffmpeg for encode/mux/probe (bundled sidecar first, passed in by
+    /// shared startup code which owns the AppHandle).
+    ffmpeg: PathBuf,
 }
 
 impl WindowsCaptureEngine {
@@ -237,6 +240,7 @@ impl WindowsCaptureEngine {
             duration_secs: 0,
             bitrate_kbps: 0,
             fps: 60,
+            ffmpeg: PathBuf::new(),
         }
     }
 
@@ -449,7 +453,10 @@ impl CaptureEngine for WindowsCaptureEngine {
         self.video_dead.store(false, Ordering::Relaxed);
         self.video_ring.lock().map(|mut r| r.clear()).ok();
 
-        let ffmpeg = video::capture_ffmpeg();
+        let ffmpeg = config
+            .ffmpeg_bin
+            .clone()
+            .unwrap_or_else(super::video::capture_ffmpeg);
         let nvenc_hq = config.nvenc_opts.is_some();
         let (child, tx) = self.spawn_video_encoder(
             &ffmpeg,
@@ -551,6 +558,7 @@ impl CaptureEngine for WindowsCaptureEngine {
         self.duration_secs = config.duration_seconds;
         self.bitrate_kbps = config.bitrate_kbps;
         self.fps = fps;
+        self.ffmpeg = ffmpeg.clone();
         eprintln!(
             "[moonlit] WGC buffer: {}x{}@{} {} ({}), audio {}/2",
             mw,
@@ -573,7 +581,7 @@ impl CaptureEngine for WindowsCaptureEngine {
                 return Err("video encoder died and no footage is buffered".into());
             }
         }
-        let ffmpeg = video::capture_ffmpeg();
+        let ffmpeg = self.ffmpeg.clone();
         // Video window: last (duration + 2 s) of TS, resynced.
         let keep = ((self.bitrate_kbps as usize * (self.duration_secs as usize + 2)) / 8) * 1024;
         let cut = {
@@ -735,6 +743,7 @@ mod tests {
             save_bitrate_kbps: 20000,
             save_encoder: Some(TranscodeEncoder::Nvenc),
             nvenc_opts: Some(crate::video_quality::nvenc_hq_opts("h264")),
+            ffmpeg_bin: None,
         })
         .await
         .expect("start_buffer");

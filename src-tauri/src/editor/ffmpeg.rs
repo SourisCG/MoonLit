@@ -1,8 +1,20 @@
 //! FFmpeg helpers (Phase 3: thumbnails only; trim presets land in Phase 5).
-//! Binary resolution: MOONLIT_FFMPEG override -> app-bundled sidecar -> PATH.
+//! Binary resolution: MOONLIT_FFMPEG override -> app-bundled sidecar
+//! (BtbN static, see docs/THIRD_PARTY.md) -> PATH fallback (dev only).
 
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
+
+/// Triple-aware sidecar file name, e.g.
+/// `ffmpeg-x86_64-pc-windows-msvc.exe` / `ffmpeg-x86_64-unknown-linux-gnu`.
+pub fn sidecar_name() -> String {
+    let ext = std::env::consts::EXE_EXTENSION;
+    if ext.is_empty() {
+        format!("ffmpeg-{}", crate::sidecar::host_triple())
+    } else {
+        format!("ffmpeg-{}.{}", crate::sidecar::host_triple(), ext)
+    }
+}
 
 pub fn resolve_ffmpeg(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("MOONLIT_FFMPEG") {
@@ -11,7 +23,14 @@ pub fn resolve_ffmpeg(app: &AppHandle) -> Result<PathBuf, String> {
             return Ok(p);
         }
     }
-    // Bundled sidecar: <res>/binaries/ffmpeg-<target> (Tauri externalBin layout).
+    // Bundled sidecar via the shared layout walker (dev staging +
+    // production resources, triple-scoped). This also covers the Phase 7
+    // `bundle.resources` shipment with no further code changes.
+    if let Some((p, source)) = crate::sidecar::search_bundled(&sidecar_name(), app) {
+        eprintln!("[moonlit] ffmpeg: {} ({})", p.display(), source);
+        return Ok(p);
+    }
+    // Legacy resource scan (flat `binaries/ffmpeg*` layout).
     if let Ok(res) = app.path().resource_dir() {
         let dir = res.join("binaries");
         if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -31,7 +50,8 @@ pub fn resolve_ffmpeg(app: &AppHandle) -> Result<PathBuf, String> {
             }
         }
     }
-    // Dev fallback: system ffmpeg.
+    // Dev fallback: system ffmpeg. Production always ships the pinned sidecar.
+    eprintln!("[moonlit] ffmpeg: no bundled sidecar, falling back to PATH (dev only)");
     Ok(PathBuf::from("ffmpeg"))
 }
 

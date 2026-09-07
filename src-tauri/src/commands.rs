@@ -133,6 +133,10 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
         save_encoder);
 
     let mut engine = Engine::new();
+    // ffmpeg for encode/mux/probe: bundled sidecar first (embedded, ships
+    // with the installer), dev PATH fallback. Never optional in practice —
+    // resolve_ffmpeg always returns at least the PATH fallback.
+    let ffmpeg_bin = crate::editor::ffmpeg::resolve_ffmpeg(app).ok();
     engine
         .start_buffer(CaptureConfig {
             duration_seconds: secs,
@@ -149,6 +153,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
             save_bitrate_kbps: save_bitrate,
             save_encoder,
             nvenc_opts,
+            ffmpeg_bin,
         })
         .await?;
     let tracks = audio::linked_count(&engine.audio_args()).await;
@@ -727,9 +732,13 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     let vendor = video::vendor(&gsr_bin).await;
 
     // Codec ids the backend reports, filtered to known-good entries.
+    // Probes run against the SHIPPED ffmpeg (bundled sidecar first), never
+    // an incidental PATH binary — production machines may not have one.
     // Labels/notes are frontend-owned (locales) — never hardcode UI text here.
+    let ffmpeg = crate::editor::ffmpeg::resolve_ffmpeg(&app)
+        .unwrap_or_else(|_| PathBuf::from("ffmpeg"));
     let mut codecs: Vec<CodecOpt> = Vec::new();
-    for id in video::offered_codecs(&gsr_bin).await {
+    for id in video::offered_codecs(&gsr_bin, &ffmpeg).await {
         if matches!(id.as_str(), "h264" | "hevc" | "av1" | "x264")
             && !codecs.iter().any(|c: &CodecOpt| c.id == id)
         {

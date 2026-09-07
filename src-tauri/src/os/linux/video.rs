@@ -31,7 +31,8 @@ fn parse_vendor(info: &str) -> String {
 }
 
 /// Codec ids from `--info` (`section=video_codecs`). Raw list, unfiltered.
-pub async fn offered_codecs(bin: &Path) -> Vec<String> {
+/// The ffmpeg path is Windows-only surface (probes); Linux ignores it.
+pub async fn offered_codecs(bin: &Path, _ffmpeg: &Path) -> Vec<String> {
     let Ok(out) = tokio::process::Command::new(bin)
         .arg("--info")
         .output()

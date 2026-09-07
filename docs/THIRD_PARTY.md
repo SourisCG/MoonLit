@@ -35,11 +35,30 @@ component shipped inside MoonLit installers and what the GPL requires for each.
   `09_WINDOWS_HANDOFF.md`); `os::backend_binary` reports that by design.
   The only Windows sidecar is static FFmpeg (BtbN).
 
-## FFmpeg (editor pipeline)
+## FFmpeg (editor pipeline + Windows capture engine)
 
-- **What:** `ffmpeg` CLI sidecar for thumbnails, lossless cuts, vertical presets.
+- **What:** `ffmpeg` CLI sidecar for thumbnails, lossless cuts, vertical presets
+  (Linux editor + saver) and for the whole Windows capture path (live
+  encode, save mux, codec probes).
 - **Upstream:** https://ffmpeg.org (static builds: BtbN for Windows,
   johnvansickle musl for Linux).
+- **Pinned Windows build (CI/dev fetch from this):**
+  BtbN `win64-gpl` monthly `autobuild-2026-08-31-13-27`,
+  asset `ffmpeg-N-126342-gf88b741dbf-win64-gpl.zip`
+  (`sha256:b4da332540eaebc6939181b59e267f163dd57407ef6596f7f3452845921d1d91`,
+  ~163 MB download). Fetched via `build-aux/fetch-ffmpeg.ps1` (verifies
+  hash + required encoders: nvenc h264/hevc/av1, amf h264/hevc, qsv
+  h264/hevc, libx264, aac), staged at
+  `src-tauri/binaries/x86_64-pc-windows-msvc/ffmpeg-x86_64-pc-windows-msvc.exe`
+  (gitignored, like GSR). Bump the pin by updating the script defaults.
+- **Ship model:** `tauri.conf.json > bundle.resources` includes the staged
+  exe on Windows builds (per-OS CI config overlay — the base conf stays
+  platform-neutral so Linux bundles never carry the `.exe`). Resolved at
+  runtime via `sidecar::search_bundled` (`editor::ffmpeg::resolve_ffmpeg`);
+  PATH is a dev-only fallback with a loud log. No shell-plugin sidecar:
+  the engine needs raw binary pipes, not line events.
+- **Dev fallback:** system `ffmpeg` from `PATH` when no sidecar is present,
+  with a log warning. Production always ships the pinned sidecar.
 - **License:** the static builds we ship (BtbN for Windows, johnvansickle
   musl for Linux) are GPL builds — they link `libx264`/`libx265`, which
   MoonLit needs for the `x264` CPU fallback codec (Windows `offered_codecs`

@@ -33,6 +33,10 @@ pub struct CaptureConfig {
     pub save_encoder: Option<TranscodeEncoder>,
     /// Extra `-ffmpeg-video-opts` (NVENC HQ recipe, NVIDIA only). None = backend defaults.
     pub nvenc_opts: Option<String>,
+    /// Resolved ffmpeg binary for encode/mux/probe duties (bundled sidecar
+    /// first, dev PATH fallback). None = resolve via env/PATH legacy path.
+    /// The Linux GSR backend ignores this (it shells its own sidecar setup).
+    pub ffmpeg_bin: Option<PathBuf>,
 }
 
 /// Background downscale applied at save time (lanczos, per-vendor encoder).

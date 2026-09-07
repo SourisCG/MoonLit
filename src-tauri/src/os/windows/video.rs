@@ -205,16 +205,16 @@ fn probe_cache() -> &'static Mutex<HashMap<String, Vec<String>>> {
 
 /// Codec ids this machine can really encode, in ladder order. Probes each
 /// candidate encoder with a live micro-encode (cached per process); falls
-/// back to the static vendor table when ffmpeg is missing. `x264` is always
-/// included when its probe passes (or when probing is impossible but the
-/// vendor is known — a CPU encoder needs no GPU).
-pub async fn offered_codecs(_bin: &Path) -> Vec<String> {
+/// back to the static vendor table when ffmpeg is missing. `ffmpeg` must be
+/// the SHIPPED binary (bundled sidecar first) — never an incidental PATH
+/// copy. `x264` is always included when its probe passes (or when probing
+/// is impossible but the vendor is known — a CPU encoder needs no GPU).
+pub async fn offered_codecs(_bin: &Path, ffmpeg: &Path) -> Vec<String> {
     let v = vendor(_bin).await;
     if let Some(hit) = probe_cache().lock().ok().and_then(|c| c.get(&v).cloned()) {
         return hit;
     }
-    let ffmpeg = capture_ffmpeg();
-    let ffmpeg_ok = tokio::process::Command::new(&ffmpeg)
+    let ffmpeg_ok = tokio::process::Command::new(ffmpeg)
         .args(["-hide_banner", "-version"])
         .output()
         .await
@@ -228,7 +228,7 @@ pub async fn offered_codecs(_bin: &Path) -> Vec<String> {
         let mut ok_ids = Vec::new();
         for codec in &candidates {
             let keep = match probe_encoder_name(&v, codec) {
-                Some(enc) => probe_encoder(&ffmpeg, enc).await,
+                Some(enc) => probe_encoder(ffmpeg, enc).await,
                 None => false,
             };
             if keep {
