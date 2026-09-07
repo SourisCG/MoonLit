@@ -53,6 +53,28 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
     diff is mechanical and Linux CI must confirm before release.
   - Still needs a user in-game pass: F9 → clip <1s, audible gain sliders,
     device/monitor/codec switching with restart notice.
+- **Phase 3-win batch 2 (2026-09-07, `fbb4286`→`052e08c`): audio stock fix,
+  embedded ffmpeg, AV-safe home, zero warnings**
+  - Stock-install audio failure (root-caused): settings seed GSR magic ids
+    (`default_input/output`) that never match cpal names → both streams
+    failed. `find_output/input_device` now resolve them to OS defaults;
+    regression live test included.
+  - FFmpeg fully embedded: `build-aux/fetch-ffmpeg.ps1` pins BtbN
+    `win64-gpl` monthly + sha256 + encoder-set assert; `resolve_ffmpeg`
+    via `sidecar.rs` (sidecar-first, PATH dev-only); `CaptureConfig`
+    carries the path (Linux ignores); probes use the shipped binary.
+    Full e2e re-verified against the pinned binary. No shell plugin
+    (line-events only — raw pipes need the bare path via resources).
+  - AV-safe home: `%LOCALAPPDATA%\MoonLit\Clips` on Windows (outside
+    Controlled Folder Access + OneDrive, no elevation), Linux unchanged;
+    one-time boot migration of legacy files, DB rows untouched, custom
+    folders never moved.
+  - `scale_arg` moved to `os/linux` (GSR-only); NVENC HQ recipe completed
+    (`spatial-aq 1`, `multipass disabled`, accepted by Gyan 9 + BtbN).
+  - Static CRT (`crt-static`, target-scoped): dumpbin shows system DLLs
+    only — no VC++ Redistributable needed.
+  - Gate: 17 unit tests pass, 3 live HW tests pass, zero `cargo` warnings,
+    zero-`cfg` grep empty, `pnpm build` green, full `cargo build` links.
 
 - **Phase 0/1** — Scaffold, tray minimize-to-tray, F9 global shortcut with notification, MoonLit glass layout, pausable canvas starfield, ES/EN i18n. Manual test: F9 counted globally, tray restore OK.
 - **Phase 1-fixes** — Frameless window + custom topbar (drag, minimize, maximize, close-to-tray), MoonLit moon+play CSS logo from moonlit.souriscg.dev, time-based soft starfield twinkle, Rust 400ms + frontend 300ms F9 dedupe. Manual test passed by user.
