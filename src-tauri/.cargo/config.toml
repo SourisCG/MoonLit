@@ -7,3 +7,10 @@
 # Fallback if Error 71 returns: GDK_BACKEND = "x11" (forces XWayland).
 [env]
 WEBKIT_DISABLE_DMABUF_RENDERER = "1"
+
+# Zero-install on Windows: statically link the MSVC C runtime so the shipped
+# .exe needs no VC++ Redistributable (no VCRUNTIME140*.dll / MSVCP140.dll).
+# Target-scoped: host tools (proc-macros, build scripts) and other platforms
+# are untouched. The UCRT stays dynamic (inbox on Win10+).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
