@@ -49,7 +49,7 @@ All in `src-tauri/src/os/windows/` (surface must stay identical to `os/linux/`):
 | File | Implement with | Contract |
 |---|---|---|
 | `wgc.rs` | `windows-capture` crate (WGC/DXGI, Win10 1903+; NO DLL injection — anti-cheat safety) + NVENC/AMF/QuickSync HW encode | `CaptureEngine` trait in `os/api.rs` incl. `audio_args()` + `save_plan()`; `backend_name()` → real name |
-| `audio.rs` | `cpal`: WASAPI loopback (`eRender` = game) + `eCapture` (mic) | `apply_gains(args, game, mic, mute_game, mute_mic)` multiplies samples in OUR path (never the OS mixer); `linked_count` reflects reality |
+| `audio.rs` | `cpal`: WASAPI loopback (`eRender` = game) + `eCapture` (mic) | `apply_gains(args, game, mic, mute_game, mute_mic)` multiplies samples in OUR path (never the OS mixer); `linked_count` reflects reality. GSR magic ids (`default_output`/`default_input`, seeded in settings) resolve to OS defaults. Privacy note: if Windows mic access is off for desktop apps (Settings → Privacy → Microphone), cpal links but captures silence — check there first on "no sound" reports |
 | `devices.rs` | `cpal` device enumeration | Drop the `_bin: &Path` param (no sidecar on Windows); return `AudioDevice{id, description, kind}` with `kind` mic/desktop |
 | `video.rs` | DXGI adapter query | `vendor()` → `nvidia`/`amd`/`intel`; `list_monitors()` → real `Monitor{name,width,height}`; `offered_codecs()` → subset of {h264,hevc,av1} the GPU encodes; `transcode_encoder()` already mapped (Nvenc/Amf/Qsv) |
 | `binary.rs` | nothing | Keep returning the native-backend Err (by design) |

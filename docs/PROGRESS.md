@@ -82,6 +82,16 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
   (`min(1 s, half the probed duration)`) so sub-second clips also index.
   Hermetic regression test (`lavfi→libx264` limited-range fixture, CI-safe);
   verified against Gyan 9 and the pinned BtbN (exit 0, valid `.jpg`).
+- **Timeline collapse fix (2026-09-07): ≤2 s clips on 10 s+ runs.** WGC
+  delivers only on screen change; the unpaced pump let the encoded timeline
+  collapse to the activity burst, and `-shortest` then cut the audio to it
+  (telemetry proved it: `wgc_in=123 pump_out=259` over 6 s). Fixes: CFR
+  pacer with deadline catch-up in the pump (telemetry now
+  `wgc_in=81 pump_out=425`, duration tracks wall-clock), `apad` per stem +
+  full-length silence placeholders (short stems can never truncate), MIX
+  derived at save from aligned solo tails (live mix-ring interleaved chunks
+  — removed), e2e asserts probed duration ∈ [4,8] s for a 6 s run, save
+  logs pump telemetry, mic-privacy note in `09`.
 
 - **Phase 0/1** — Scaffold, tray minimize-to-tray, F9 global shortcut with notification, MoonLit glass layout, pausable canvas starfield, ES/EN i18n. Manual test: F9 counted globally, tray restore OK.
 - **Phase 1-fixes** — Frameless window + custom topbar (drag, minimize, maximize, close-to-tray), MoonLit moon+play CSS logo from moonlit.souriscg.dev, time-based soft starfield twinkle, Rust 400ms + frontend 300ms F9 dedupe. Manual test passed by user.

@@ -23,10 +23,12 @@ use cpal::{Sample, SampleFormat};
 pub const STEM_RATE: u32 = 48_000;
 pub const STEM_CHANNELS: usize = 2;
 
-/// Snapshot of the three stems for the save mux (track order = mix, game, mic).
+/// Snapshot of the two solo stems for the save mux. The MIX track is
+/// derived at save time (sample sum on the shared 48 kHz grid), never
+/// recorded live — appending two independent callbacks into one ring would
+/// interleave chunks instead of mixing them.
 #[derive(Debug, Clone, Default)]
 pub struct AudioSnapshot {
-    pub mix: Vec<f32>,
     pub game: Vec<f32>,
     pub mic: Vec<f32>,
 }
@@ -35,7 +37,6 @@ pub struct AudioSnapshot {
 pub struct SharedAudio {
     game_ring: Mutex<Vec<f32>>,
     mic_ring: Mutex<Vec<f32>>,
-    mix_ring: Mutex<Vec<f32>>,
     /// Max stem samples kept (set from the buffer length at start).
     capacity: usize,
     game_pct: AtomicU32,
@@ -51,7 +52,6 @@ impl SharedAudio {
         Self {
             game_ring: Mutex::new(Vec::new()),
             mic_ring: Mutex::new(Vec::new()),
-            mix_ring: Mutex::new(Vec::new()),
             capacity: ((capacity_secs as usize) * STEM_RATE as usize) * STEM_CHANNELS,
             game_pct: AtomicU32::new(game_pct.min(200)),
             mic_pct: AtomicU32::new(mic_pct.min(200)),
@@ -86,7 +86,6 @@ impl SharedAudio {
 
     pub fn snapshot(&self) -> AudioSnapshot {
         AudioSnapshot {
-            mix: self.mix_ring.lock().map(|g| g.clone()).unwrap_or_default(),
             game: self.game_ring.lock().map(|g| g.clone()).unwrap_or_default(),
             mic: self.mic_ring.lock().map(|g| g.clone()).unwrap_or_default(),
         }
@@ -99,7 +98,6 @@ fn registry() -> &'static Mutex<Option<Arc<SharedAudio>>> {
 }
 
 /// Convert a callback slice to gained 48 kHz stereo f32.
-/// `raw=true` skips gain/mute (mix tap stays full-fidelity).
 fn convert(samples: &[f32], in_channels: u16, in_rate: u32, pct: u32, muted: bool) -> Vec<f32> {
     let stereo = to_stereo_48k(samples, in_channels, in_rate);
     if muted {
@@ -169,21 +167,18 @@ fn to_stereo_48k(samples: &[f32], in_channels: u16, in_rate: u32) -> Vec<f32> {
     }
 }
 
-/// Push one game quantum (gained stem + raw mix half). Shared by all
-/// sample-format arms so the F32/I16/U16 paths cannot drift apart.
+/// Push one game quantum (gained stem).
 fn push_game_quantum(shared: &Arc<SharedAudio>, f: &[f32], ch: u16, rate: u32) {
     let pct = shared.game_pct.load(Ordering::Relaxed);
     let muted = shared.mute_game.load(Ordering::Relaxed);
     SharedAudio::push_stem(&shared.game_ring, shared.capacity, &convert(f, ch, rate, pct, muted));
-    SharedAudio::push_stem(&shared.mix_ring, shared.capacity, &convert(f, ch, rate, 100, false));
 }
 
-/// Push one mic quantum (gained stem + raw mix half).
+/// Push one mic quantum (gained stem).
 fn push_mic_quantum(shared: &Arc<SharedAudio>, f: &[f32], ch: u16, rate: u32) {
     let pct = shared.mic_pct.load(Ordering::Relaxed);
     let muted = shared.mute_mic.load(Ordering::Relaxed);
     SharedAudio::push_stem(&shared.mic_ring, shared.capacity, &convert(f, ch, rate, pct, muted));
-    SharedAudio::push_stem(&shared.mix_ring, shared.capacity, &convert(f, ch, rate, 100, false));
 }
 /// Owned capture session. Dropping it stops both streams (cpal `Stream`
 /// stops on drop) and unregisters the shared state.
@@ -455,7 +450,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         assert!(cap.live_count() >= 1, "no live streams");
         let snap = cap.snapshot();
-        let total = snap.game.len() + snap.mic.len() + snap.mix.len();
+        let total = snap.game.len() + snap.mic.len();
         assert!(total > 0, "rings stayed empty after 2 s");
     }
 

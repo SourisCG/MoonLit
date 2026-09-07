@@ -89,6 +89,77 @@ pub fn live_encoder_args(
     out
 }
 
+/// Output cadence for the frame pump: WGC only delivers on change, so a
+/// quiet desktop would collapse the encoded timeline. The pump re-emits the
+/// latest frame at exactly this cadence (classic CFR pacing) — wall-clock
+/// duration always matches the session length. Pure (unit-tested).
+fn pace_interval_ms(fps: u32) -> u64 {
+    1000 / fps.max(1) as u64
+}
+
+/// Frame pump body: fresh frames win; on timeout the last frame is
+/// re-emitted to hold CFR. A deadline catch-up covers slow pipe writes:
+/// without it each 8 MB write stretches the cadence and the timeline slips
+/// behind wall-clock. Bounded (8/iter) so a hopeless encoder can't spiral.
+/// Generic over the writer for hermetic tests.
+fn pump_frames<W: Write>(
+    rx: mpsc::Receiver<Vec<u8>>,
+    stdin: &mut W,
+    interval_ms: u64,
+    fps: u32,
+    halt: &AtomicBool,
+    dead: &AtomicBool,
+    frames_in: &std::sync::atomic::AtomicU64,
+    frames_out: &std::sync::atomic::AtomicU64,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut last: Option<Vec<u8>> = None;
+    macro_rules! emit {
+        ($frame:expr) => {
+            if stdin.write_all($frame).is_err() {
+                dead.store(true, Ordering::Relaxed);
+                return;
+            }
+            frames_out.fetch_add(1, Ordering::Relaxed);
+        };
+    }
+    loop {
+        if halt.load(Ordering::Relaxed) {
+            break;
+        }
+        match rx.recv_timeout(Duration::from_millis(interval_ms)) {
+            Ok(frame) => {
+                frames_in.fetch_add(1, Ordering::Relaxed);
+                emit!(&frame);
+                last = Some(frame);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(prev) = &last {
+                    emit!(prev);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        // Catch-up: wall-clock frames owed vs frames written.
+        if last.is_some() {
+            let expected = t0.elapsed().as_millis() as u64 * fps.max(1) as u64 / 1000;
+            let mut burst = 0;
+            while frames_out.load(Ordering::Relaxed) < expected && burst < 8 {
+                if halt.load(Ordering::Relaxed) {
+                    break;
+                }
+                if let Some(prev) = &last {
+                    emit!(prev);
+                }
+                burst += 1;
+            }
+        }
+    }
+    let _ = stdin.flush();
+}
+
 /// Clip file name in the GSR style (`replay_YYYY-MM-DD_HH-MM-SS.mp4`) so
 /// Windows clips sort and read exactly like Linux ones.
 fn replay_filename() -> String {
@@ -112,6 +183,15 @@ fn cut_ts_window(ring: &[u8], keep_bytes: usize) -> &[u8] {
         }
     }
     win
+}
+
+/// MIX track from the two solo tails. Both stems share the 48 kHz stereo
+/// grid and both tails end at "now", so equal-length tails are sample
+/// aligned and sum to a true mix (Linux parity: mix plays everywhere).
+/// Shorter side decides the length; the WAV writer clamps the sum.
+fn mix_stems(game: &[f32], mic: &[f32]) -> Vec<f32> {
+    let n = game.len().min(mic.len());
+    game[..n].iter().zip(&mic[..n]).map(|(g, m)| g + m).collect()
 }
 
 /// Minimal PCM-16 WAV writer (stereo 48 kHz). No extra crate needed.
@@ -227,6 +307,9 @@ pub struct WindowsCaptureEngine {
     /// ffmpeg for encode/mux/probe (bundled sidecar first, passed in by
     /// shared startup code which owns the AppHandle).
     ffmpeg: PathBuf,
+    /// Pump telemetry: WGC frames in vs bytes-written frames out.
+    frames_in: Arc<std::sync::atomic::AtomicU64>,
+    frames_out: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl WindowsCaptureEngine {
@@ -245,6 +328,8 @@ impl WindowsCaptureEngine {
             bitrate_kbps: 0,
             fps: 60,
             ffmpeg: PathBuf::new(),
+            frames_in: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            frames_out: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -313,23 +398,19 @@ impl WindowsCaptureEngine {
             .into_owned_handle()
             .map_err(|e| format!("encoder stdout handoff failed: {e}"))?
             .into();
-        // Frame pump: WGC callback -> ffmpeg stdin.
+        // Frame pump (CFR-paced): WGC callback -> ffmpeg stdin.
+        // WGC only delivers on change; the pacer re-emits the latest frame
+        // so the encoded timeline always spans the full session.
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(FRAME_QUEUE);
         let dead = self.video_dead.clone();
-        let halt_tx = dead.clone();
+        let pump_halt = dead.clone();
+        let pump_in = self.frames_in.clone();
+        let pump_out = self.frames_out.clone();
+        let interval = pace_interval_ms(fps);
         std::thread::Builder::new()
             .name("moonlit-wgc-pump".into())
             .spawn(move || {
-                for frame in rx {
-                    if halt_tx.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    if stdin.write_all(&frame).is_err() {
-                        dead.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                }
-                let _ = stdin.flush();
+                pump_frames(rx, &mut stdin, interval, fps, &pump_halt, &dead, &pump_in, &pump_out);
             })
             .map_err(|e| format!("cannot spawn frame pump: {e}"))?;
         // TS drain: encoder stdout -> RAM ring.
@@ -363,8 +444,10 @@ impl WindowsCaptureEngine {
     }
 
     /// Mux the cut TS window + 3 stems into the final clip. Track order =
-    /// MIX, game, mic (Linux parity). Missing/empty stems become silence so
-    /// the file always carries 3×AAC.
+    /// MIX, game, mic (Linux parity). Stems shorter than the video are
+    /// padded (`apad`), never truncated: `-shortest` then always equals the
+    /// video length. Missing/empty stems become full-length silence so the
+    /// file always carries 3×AAC.
     async fn mux_clip(
         ffmpeg: &Path,
         cut_ts: &Path,
@@ -372,18 +455,22 @@ impl WindowsCaptureEngine {
         game: &[f32],
         mic: &[f32],
         dest: &Path,
+        full_secs: usize,
     ) -> Result<(), String> {
         let tmp = dest.with_extension("mux.tmp");
         let _ = tokio::fs::remove_file(&tmp).await;
-        let stems = [("mix", mix), ("game", game), ("mic", mic)];
+        // Full-length placeholder: a missing stem must not shorten the clip
+        // through -shortest (apad covers the partial case below).
+        let silence = vec![0.0f32; full_secs.max(1) * 48_000 * 2];
+        let stems = [
+            ("mix", if mix.is_empty() { &silence } else { mix }),
+            ("game", if game.is_empty() { &silence } else { game }),
+            ("mic", if mic.is_empty() { &silence } else { mic }),
+        ];
         let mut wav_paths = Vec::new();
         for (i, (name, samples)) in stems.iter().enumerate() {
             let p = tmp.with_extension(format!("{name}{i}.wav"));
-            let owned = if samples.is_empty() {
-                vec![0.0f32; 48_000 * 2 / 2] // 0.5 s silence placeholder
-            } else {
-                samples.to_vec()
-            };
+            let owned = samples.to_vec();
             tokio::task::spawn_blocking({
                 let p = p.clone();
                 move || write_wav(&p, &owned)
@@ -406,6 +493,9 @@ impl WindowsCaptureEngine {
             .args([
                 "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a",
                 "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                // Pad short stems to the video length; -shortest then always
+                // equals the video (a short/empty stem can never truncate).
+                "-filter:a:0", "apad", "-filter:a:1", "apad", "-filter:a:2", "apad",
                 "-metadata:s:a:0", "title=Mix",
                 "-metadata:s:a:1", "title=Game",
                 "-metadata:s:a:2", "title=Mic",
@@ -455,6 +545,8 @@ impl CaptureEngine for WindowsCaptureEngine {
             * 1024;
         self.ring_cap = self.ring_cap.max(16 * 1024 * 1024);
         self.video_dead.store(false, Ordering::Relaxed);
+        self.frames_in.store(0, Ordering::Relaxed);
+        self.frames_out.store(0, Ordering::Relaxed);
         self.video_ring.lock().map(|mut r| r.clear()).ok();
 
         let ffmpeg = config
@@ -586,6 +678,17 @@ impl CaptureEngine for WindowsCaptureEngine {
             }
         }
         let ffmpeg = self.ffmpeg.clone();
+        // Telemetry: frames WGC delivered vs frames the pump wrote, plus
+        // ring fill. A stalled source shows in>>out==0; a dead encoder
+        // shows video_dead with a frozen ring.
+        let (fin, fout, rlen) = (
+            self.frames_in.load(Ordering::Relaxed),
+            self.frames_out.load(Ordering::Relaxed),
+            self.video_ring.lock().map(|r| r.len()).unwrap_or(0),
+        );
+        eprintln!("[moonlit] save: wgc_in={fin} pump_out={fout} ring={}MB dead={}",
+            rlen / 1024 / 1024,
+            self.video_dead.load(Ordering::Relaxed));
         // Video window: last (duration + 2 s) of TS, resynced.
         let keep = ((self.bitrate_kbps as usize * (self.duration_secs as usize + 2)) / 8) * 1024;
         let cut = {
@@ -600,6 +703,8 @@ impl CaptureEngine for WindowsCaptureEngine {
             .await
             .map_err(|e| format!("cannot stage video window: {e}"))?;
         // Audio tails: last `duration` seconds of each 48 kHz stereo stem.
+        // The mix is derived here (sample sum on the shared grid), never
+        // recorded live.
         let tail = self.duration_secs as usize * 48_000 * 2;
         let snap = self
             .audio
@@ -613,14 +718,18 @@ impl CaptureEngine for WindowsCaptureEngine {
                 v
             }
         };
+        let game = tail_of(snap.game);
+        let mic = tail_of(snap.mic);
+        let mix = mix_stems(&game, &mic);
         let dest = self.output_dir.join(replay_filename());
         let res = Self::mux_clip(
             &ffmpeg,
             &ts_path,
-            &tail_of(snap.mix),
-            &tail_of(snap.game),
-            &tail_of(snap.mic),
+            &mix,
+            &game,
+            &mic,
             &dest,
+            self.duration_secs as usize,
         )
         .await;
         let _ = tokio::fs::remove_file(&ts_path).await;
@@ -712,6 +821,52 @@ mod tests {
         assert_eq!(cut_ts_window(&plain, 600).len(), 500);
     }
 
+    /// The pacer holds CFR on a stalled source: one frame in, the writer
+    /// keeps receiving re-emissions at cadence until halted.
+    #[test]
+    fn pacer_holds_cfr_without_input() {
+        use super::{pace_interval_ms, pump_frames};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::{mpsc, Arc};
+
+        assert_eq!(pace_interval_ms(60), 16);
+        assert_eq!(pace_interval_ms(30), 33);
+        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(4);
+        let halt = Arc::new(AtomicBool::new(false));
+        let dead = Arc::new(AtomicBool::new(false));
+        let fin = Arc::new(AtomicU64::new(0));
+        let fout = Arc::new(AtomicU64::new(0));
+        let (halt2, dead2, fin2, fout2) =
+            (halt.clone(), dead.clone(), fin.clone(), fout.clone());
+        let handle = std::thread::spawn(move || {
+            let mut sink = std::io::Cursor::new(Vec::<u8>::new());
+            pump_frames(rx, &mut sink, 10, 100, &halt2, &dead2, &fin2, &fout2);
+            sink.into_inner()
+        });
+        tx.send(vec![0xABu8; 64]).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(75));
+        halt.store(true, Ordering::Relaxed);
+        // Unblock a potential in-flight recv_timeout early exit race by
+        // dropping the sender after halt (pump breaks on halt regardless).
+        drop(tx);
+        let out = handle.join().expect("pump thread");
+        // 1 fresh + paced re-emissions (+ bounded catch-up) at 10 ms cadence.
+        assert_eq!(fin.load(Ordering::Relaxed), 1);
+        let n = fout.load(Ordering::Relaxed);
+        assert!(n >= 4, "pacer stalled: only {n} frames in ~75 ms");
+        assert!(out.len() >= 64 * 4, "writer got {} bytes", out.len());
+        assert!(!dead.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn mix_sums_aligned_tails() {
+        use super::mix_stems;
+        assert_eq!(mix_stems(&[0.5, -0.5], &[0.25, 0.25]), vec![0.75, -0.25]);
+        // Shorter side decides; tails share the "now" edge.
+        assert_eq!(mix_stems(&[1.0, 2.0, 3.0], &[10.0]), vec![11.0]);
+        assert!(mix_stems(&[], &[1.0]).is_empty());
+    }
+
     #[test]
     fn filename_shape() {
         let n = replay_filename();
@@ -767,6 +922,19 @@ mod tests {
         let err = String::from_utf8_lossy(&probe.stderr);
         assert!(err.contains("Video: h264"), "no h264 video:\n{err}");
         assert_eq!(err.matches("Audio: aac").count(), 3, "want 3xAAC:\n{err}");
+        // Duration must track wall-clock (6 s buffered): the CFR pacer keeps
+        // the timeline alive even on a static desktop. This assert is the
+        // regression net for timeline collapse (short clips on long runs).
+        let dur_ms = crate::editor::ffmpeg::probe_duration_ms(
+            &super::super::video::capture_ffmpeg(),
+            &path,
+        )
+        .await
+        .expect("duration probe");
+        assert!(
+            (4000..=9000).contains(&dur_ms),
+            "timeline collapsed: {dur_ms} ms for a 6 s run"
+        );
         eng.stop_buffer().await.expect("stop");
         let _ = std::fs::remove_file(&path);
     }
