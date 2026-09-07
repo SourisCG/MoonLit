@@ -68,3 +68,51 @@ pub fn find_device(id: &str, render: bool) -> Option<cpal::Device> {
     };
     list.into_iter().find(|d| dev_name(d).as_deref() == Some(id))
 }
+
+/// GSR magic ids (Linux defaults, also seeded into `settings` by migration
+/// `003_devices.sql`). On Windows they mean "the OS default device" — cpal
+/// friendly names never equal them, so they must be intercepted before the
+/// by-name search or stock installs can never link audio.
+pub fn is_default_output_id(id: &str) -> bool {
+    matches!(id.trim(), "" | "default_output")
+}
+
+pub fn is_default_input_id(id: &str) -> bool {
+    matches!(id.trim(), "" | "default_input")
+}
+
+/// Output (render) device for a game id: default endpoint for empty/GSR
+/// magic ids, by-name lookup otherwise.
+pub fn find_output_device(id: &str) -> Option<cpal::Device> {
+    if is_default_output_id(id) {
+        return cpal::default_host().default_output_device();
+    }
+    find_device(id.trim(), true)
+}
+
+/// Input (capture) device for a mic id: default endpoint for empty/GSR
+/// magic ids, by-name lookup otherwise.
+pub fn find_input_device(id: &str) -> Option<cpal::Device> {
+    if is_default_input_id(id) {
+        return cpal::default_host().default_input_device();
+    }
+    find_device(id.trim(), false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_default_input_id, is_default_output_id};
+
+    #[test]
+    fn magic_ids_mean_default() {
+        assert!(is_default_output_id(""));
+        assert!(is_default_output_id("  "));
+        assert!(is_default_output_id("default_output"));
+        assert!(!is_default_output_id("default_input"));
+        assert!(!is_default_output_id("Speakers (USB)"));
+        assert!(is_default_input_id(""));
+        assert!(is_default_input_id("default_input"));
+        assert!(!is_default_input_id("default_output"));
+        assert!(!is_default_input_id("Microphone (USB)"));
+    }
+}

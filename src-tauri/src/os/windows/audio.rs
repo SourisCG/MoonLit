@@ -15,7 +15,7 @@ use std::sync::{
     Arc, Mutex, OnceLock,
 };
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{Sample, SampleFormat};
 
 /// Common stem format: 48 kHz stereo f32 (WASAPI is usually 48 kHz already;
@@ -194,8 +194,9 @@ pub struct AudioCapture {
 }
 
 impl AudioCapture {
-    /// Start loopback + mic capture. Empty ids fall back to the default
-    /// render / input devices. At least one stream must come up.
+    /// Start loopback + mic capture. Empty ids and the GSR magic defaults
+    /// (`default_output`/`default_input`, seeded into settings) fall back to
+    /// the OS default render / input devices. At least one stream must come up.
     pub fn start(
         desktop_id: &str,
         mic_id: &str,
@@ -212,13 +213,8 @@ impl AudioCapture {
             mute_game,
             mute_mic,
         ));
-        let host = cpal::default_host();
         // Game: render endpoint opened as INPUT = WASAPI loopback.
-        let game_device = if desktop_id.trim().is_empty() {
-            host.default_output_device()
-        } else {
-            super::devices::find_device(desktop_id.trim(), true)
-        };
+        let game_device = super::devices::find_output_device(desktop_id);
         let game_stream = match game_device {
             Some(d) => match start_loopback_stream(&d, shared.clone()) {
                 Ok(s) => {
@@ -231,16 +227,12 @@ impl AudioCapture {
                 }
             },
             None => {
-                eprintln!("[moonlit] game device not found, continuing mic-only");
+                eprintln!("[moonlit] game device '{desktop_id}' not found, continuing mic-only");
                 None
             }
         };
         // Mic: capture endpoint.
-        let mic_device = if mic_id.trim().is_empty() {
-            host.default_input_device()
-        } else {
-            super::devices::find_device(mic_id.trim(), false)
-        };
+        let mic_device = super::devices::find_input_device(mic_id);
         let mic_stream = match mic_device {
             Some(d) => match start_mic_stream(&d, shared.clone()) {
                 Ok(s) => {
@@ -253,7 +245,7 @@ impl AudioCapture {
                 }
             },
             None => {
-                eprintln!("[moonlit] mic device not found, continuing without mic");
+                eprintln!("[moonlit] mic device '{mic_id}' not found, continuing without mic");
                 None
             }
         };
@@ -465,5 +457,17 @@ mod tests {
         let snap = cap.snapshot();
         let total = snap.game.len() + snap.mic.len() + snap.mix.len();
         assert!(total > 0, "rings stayed empty after 2 s");
+    }
+
+    /// Regression test for the stock-install failure: the GSR magic ids
+    /// seeded into settings must resolve like empty ids (OS defaults).
+    #[tokio::test]
+    #[ignore]
+    async fn live_magic_ids_link() {
+        use super::AudioCapture;
+        let cap = AudioCapture::start("default_output", "default_input", 12, 100, 100, false, false)
+            .expect("magic ids must resolve to defaults");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        assert!(cap.live_count() >= 1, "no live streams via magic ids");
     }
 }
