@@ -58,10 +58,14 @@ pub fn live_encoder_args(
     };
     if enc_name.ends_with("_nvenc") {
         if nvenc_hq {
+            // Full old-MoonLit HQ recipe (2.2): P7 + HQ + profile + BF2 +
+            // Spatial AQ + single-pass. Same set GSR runs validated live.
             flag("-preset", "p7");
             flag("-tune", "hq");
             flag("-profile:v", if codec == "hevc" { "main" } else { "high" });
             flag("-bf", "2");
+            flag("-spatial-aq", "1");
+            flag("-multipass", "disabled");
         }
         flag("-rc", "cbr");
     } else if enc_name.ends_with("_amf") {
@@ -666,6 +670,8 @@ mod tests {
         assert!(s.contains("-preset p7"), "{s}");
         assert!(s.contains("-tune hq"), "{s}");
         assert!(s.contains("-profile:v high"), "{s}");
+        assert!(s.contains("-spatial-aq 1"), "{s}");
+        assert!(s.contains("-multipass disabled"), "{s}");
         assert!(s.contains("-rc cbr"), "{s}");
         assert!(s.contains("-g 120"), "{s}");
     }

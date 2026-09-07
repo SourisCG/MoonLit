@@ -106,7 +106,7 @@ impl CaptureEngine for LinuxGsrEngine {
             "-c", "mp4",
             "-r", &config.duration_seconds.to_string(),
         ]);
-        if let Some(scale) = crate::video_quality::scale_arg(config.out_height) {
+        if let Some(scale) = scale_arg(config.out_height) {
             cmd.args(["-s", &scale]);
         }
         cmd.args([
@@ -187,8 +187,19 @@ impl CaptureEngine for LinuxGsrEngine {
     }
 }
 
-fn latest_mp4(dir: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir).ok()?
+/// GSR `-s` value for ladder heights (16:9 box, kept aspect). None = original.
+/// GSR-CLI-specific: lives in the Linux backend (Windows scales in-ffmpeg).
+fn scale_arg(height: u32) -> Option<String> {
+    match height {
+        360 => Some("640x360".to_string()),
+        720 => Some("1280x720".to_string()),
+        1080 => Some("1920x1080".to_string()),
+        1440 => Some("2560x1440".to_string()),
+        _ => None,
+    }
+}
+
+fn latest_mp4(dir: &Path) -> Option<PathBuf> {    std::fs::read_dir(dir).ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.is_file() && p.extension().map_or(false, |x| x == "mp4"))

@@ -26,17 +26,6 @@ pub fn bitrate_kbps(height: u32, codec: &str) -> u32 {
     }
 }
 
-/// GSR `-s` value for ladder heights (16:9 box, kept aspect). None = original.
-pub fn scale_arg(height: u32) -> Option<String> {
-    match height {
-        360 => Some("640x360".to_string()),
-        720 => Some("1280x720".to_string()),
-        1080 => Some("1920x1080".to_string()),
-        1440 => Some("2560x1440".to_string()),
-        _ => None,
-    }
-}
-
 /// Exact NVENC HQ `-ffmpeg-video-opts` (old-MoonLit table). Dashes verified
 /// live: GSR accepts every key, saves clean, bitrate lands on target.
 /// Apply ONLY on NVIDIA + h264/hevc (meaningless/invalid elsewhere).
