@@ -69,6 +69,8 @@ Phase 7 ships `ffmpeg` BtbN static as `ffmpeg-x86_64-pc-windows-msvc.exe`.
 ## 5. Checklist before pushing
 
 - [ ] No `sh`/`xdg-open`/`/proc`/`getcap`/`pkexec` reachable on Windows paths.
+- [ ] Clips never default under Videos/Documents/Desktop (AV-safe
+  `%LOCALAPPDATA%\MoonLit\Clips` home + one-time legacy migration).
 - [ ] No hardcoded UI text (backend returns ids; frontend locales cover EN+ES).
 - [ ] No absolute paths in DB; `%LOCALAPPDATA%`-style locations resolve via `dirs`/`app_data_dir`.
 - [ ] Behaviors in §2 all work without touching `commands.rs` contracts (extend, don't reshape, IPC shapes the frontend already uses).

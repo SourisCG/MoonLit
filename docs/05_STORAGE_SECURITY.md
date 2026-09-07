@@ -46,8 +46,16 @@ CREATE TABLE IF NOT EXISTS settings (
 -- video_codec, out_height, fps, monitor
 ```
 Migrations live in `src-tauri/migrations/` (`PRAGMA user_version` stamped).
-Default clips dir = OS videos folder + `MoonLit` (`dirs::video_dir`, works on
-Windows too); DB at OS app-data dir. Changing `clips_directory` (C:→D:) needs zero row migration.
+Default clips home is per-OS (`crate::os::paths`, so shared code never
+branches): Linux = OS videos folder + `MoonLit` (`dirs::video_dir`);
+Windows = `%LOCALAPPDATA%\MoonLit\Clips` (`dirs::data_local_dir`) —
+deliberately outside Videos/Documents/Desktop, which sit under Controlled
+Folder Access and are often redirected into OneDrive (an unsigned clip app
+mass-writing `.mp4` there is blocked/flagged and syncs every clip to the
+cloud). A one-time boot migration moves `*.mp4` + `thumb_*.jpg` from the
+legacy `~/Videos/MoonLit` to the new home when the stored setting still
+equals it (custom folders are never touched); DB rows need no migration
+(relative names). DB at OS app-data dir. Changing `clips_directory` (C:→D:) needs zero row migration.
 
 10k clips ≈ <5 MB.
 

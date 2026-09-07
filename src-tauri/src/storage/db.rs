@@ -61,6 +61,10 @@ impl DbState {
     }
 
     /// Fill empty `clips_directory` setting with the platform default and create it.
+    /// One-time relocation: when the stored dir is still the legacy Windows
+    /// default (~/Videos/MoonLit, pre AV-safe home), move our files to the
+    /// new home and repoint the setting. DB rows are untouched (relative).
+    /// Custom user folders are never migrated.
     fn ensure_clips_dir(&self) -> Result<(), String> {
         let conn = self.lock()?;
         let current: String = conn
@@ -81,6 +85,21 @@ impl DbState {
                 params![dir.to_string_lossy()],
             )
             .map_err(|e| format!("cannot save clips_directory: {e}"))?;
+        } else if let Some(legacy) = crate::os::paths::legacy_default_clips_dir() {
+            let fresh = paths::default_clips_dir();
+            if PathBuf::from(current.trim()) == legacy && legacy != fresh && legacy.is_dir() {
+                let moved = paths::migrate_legacy_clips_dir(&legacy, &fresh)?;
+                conn.execute(
+                    "UPDATE settings SET value = ?1 WHERE key = 'clips_directory'",
+                    params![fresh.to_string_lossy()],
+                )
+                .map_err(|e| format!("cannot save clips_directory: {e}"))?;
+                eprintln!("[moonlit] clips library relocated ({moved} files): {} -> {}",
+                    legacy.display(), fresh.display());
+                return Ok(());
+            }
+            std::fs::create_dir_all(&current)
+                .map_err(|e| format!("cannot create clips dir: {e}"))?;
         } else {
             std::fs::create_dir_all(&current)
                 .map_err(|e| format!("cannot create clips dir: {e}"))?;

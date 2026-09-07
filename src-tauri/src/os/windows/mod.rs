@@ -7,6 +7,7 @@ pub mod binary;
 pub mod caps;
 pub mod devices;
 pub mod open;
+pub mod paths;
 pub mod video;
 mod wgc;
 
