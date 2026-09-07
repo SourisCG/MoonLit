@@ -470,7 +470,10 @@ pub(crate) async fn do_save_clip(app: &AppHandle) -> Result<ClipRecord, String> 
         .ok_or("bad clip file name")?
         .to_string();
     let thumb_name = format!("thumb_{stem}.jpg");
-    crate::editor::ffmpeg::make_thumbnail(&ffmpeg, &path, &base.join(&thumb_name)).await?;
+    // Adaptive seek: 1 s into normal clips, mid-file for sub-second ones
+    // (a fixed 1 s seek lands past EOF and fails the thumbnail).
+    let seek = ((secs_ms as f32 / 2000.0).min(1.0)).max(0.05);
+    crate::editor::ffmpeg::make_thumbnail(&ffmpeg, &path, &base.join(&thumb_name), seek).await?;
     let clip = db.insert_clip(&file_name, &thumb_name, "Unknown", secs_ms, size)?;
     crate::cue::play_ding();
     let _ = app.emit("moonlit://clip-saved", &clip);

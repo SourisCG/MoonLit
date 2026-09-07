@@ -75,6 +75,13 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
     only — no VC++ Redistributable needed.
   - Gate: 17 unit tests pass, 3 live HW tests pass, zero `cargo` warnings,
     zero-`cfg` grep empty, `pnpm build` green, full `cargo build` links.
+- **Thumbnail fix (2026-09-07): `ffmpeg thumbnail failed` on every Windows
+  save.** NVENC/swscale emit limited-range yuv420p, which ffmpeg 9's mjpeg
+  encoder rejects (`THUMB_EXIT=-22`, reproduced). `make_thumbnail` now
+  passes `-strict unofficial` (pixels untouched) and takes an adaptive seek
+  (`min(1 s, half the probed duration)`) so sub-second clips also index.
+  Hermetic regression test (`lavfi→libx264` limited-range fixture, CI-safe);
+  verified against Gyan 9 and the pinned BtbN (exit 0, valid `.jpg`).
 
 - **Phase 0/1** — Scaffold, tray minimize-to-tray, F9 global shortcut with notification, MoonLit glass layout, pausable canvas starfield, ES/EN i18n. Manual test: F9 counted globally, tray restore OK.
 - **Phase 1-fixes** — Frameless window + custom topbar (drag, minimize, maximize, close-to-tray), MoonLit moon+play CSS logo from moonlit.souriscg.dev, time-based soft starfield twinkle, Rust 400ms + frontend 300ms F9 dedupe. Manual test passed by user.

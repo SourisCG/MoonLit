@@ -136,19 +136,25 @@ pub async fn scale_to_height(
     matches!(out, Ok(o) if o.status.success())
 }
 
-/// Extract one JPEG thumbnail at 1 s. Fast (no re-encode of the clip).
+/// Extract one JPEG thumbnail at `seek_secs`. Fast (no re-encode of the clip).
+/// `-strict unofficial`: capture pixels are limited-range yuv420p (NVENC /
+/// swscale default) and ffmpeg 9's mjpeg encoder rejects them otherwise.
+/// Pixels are untouched — this is only a gallery preview.
 pub async fn make_thumbnail(
     ffmpeg: &Path,
     input: &Path,
     output: &Path,
+    seek_secs: f32,
 ) -> Result<(), String> {
+    let seek = format!("{:.2}", seek_secs.clamp(0.05, 3600.0));
     let status = tokio::process::Command::new(ffmpeg)
         .args([
             "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", "00:00:01",
+            "-ss", &seek,
             "-i", &input.to_string_lossy(),
             "-vframes", "1",
             "-q:v", "2",
+            "-strict", "unofficial",
         ])
         .arg(output)
         .status()
@@ -158,4 +164,53 @@ pub async fn make_thumbnail(
         return Err("ffmpeg thumbnail failed".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::make_thumbnail;
+
+    /// Regression: thumbnails must work on limited-range yuv420p (what NVENC
+    /// and swscale produce), where ffmpeg 9's mjpeg encoder is strict.
+    /// Hermetic (lavfi + libx264, no HW); skips loudly without ffmpeg.
+    #[tokio::test]
+    async fn thumbnail_limited_range() {
+        let ffmpeg = super::PathBuf::from("ffmpeg");
+        let probe = tokio::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-version"])
+            .output()
+            .await;
+        if probe.map(|o| o.status.success()).unwrap_or(false) == false {
+            eprintln!("[moonlit-test] ffmpeg missing from PATH, skipping thumbnail test");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("moonlit-thumb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let clip = dir.join("limited.mp4");
+        let thumb = dir.join("thumb.jpg");
+        // 3 s of limited-range yuv420p h264 (swscale default range, like NVENC).
+        let st = tokio::process::Command::new(&ffmpeg)
+            .args([
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=red:s=320x240:d=3",
+                "-vf", "format=yuv420p",
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-color_range", "tv",
+            ])
+            .arg(&clip)
+            .status()
+            .await
+            .expect("fixture encode");
+        assert!(st.success(), "fixture encode failed");
+        make_thumbnail(&ffmpeg, &clip, &thumb, 1.0)
+            .await
+            .expect("thumbnail on limited-range input");
+        let size = std::fs::metadata(&thumb).map(|m| m.len()).unwrap_or(0);
+        assert!(size > 0, "thumbnail is empty");
+        // Sub-second clip: adaptive seek must still deliver.
+        make_thumbnail(&ffmpeg, &clip, &thumb, 0.2)
+            .await
+            .expect("thumbnail at 0.2 s");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
