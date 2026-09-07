@@ -1,6 +1,7 @@
 //! Tauri IPC handlers (Phase 2: persistence; Phase 3: capture).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::os::{
@@ -67,7 +68,12 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
     let secs = buffer_seconds(&db) as u32;
     let mic_device = setting_str(&db, "mic_device", "default_input");
     let desktop_device = setting_str(&db, "desktop_device", "default_output");
-    let (gsr_bin, source) = binary::backend_binary(app)?;
+    let (gsr_bin, source) = match binary::backend_binary(app) {
+        Ok(v) => v,
+        // Native backend (Windows WGC): no sidecar binary. Per-OS probes
+        // ignore this path, so shared code stays free of OS branches.
+        Err(_) => (PathBuf::new(), "native"),
+    };
     eprintln!("[moonlit] capture backend: {} ({})", gsr_bin.display(), source);
 
     // Video quality: Medal ladder + old-MoonLit NVENC HQ recipe.
@@ -663,11 +669,10 @@ pub async fn fix_gsr_caps(app: AppHandle) -> Result<(), String> {
     caps::fix_caps(&path).await
 }
 
-/// Capture devices from OUR bundled GSR (`--list-audio-devices`, name|desc).
+/// Capture devices (Linux: bundled GSR query; Windows: cpal enumeration).
 #[tauri::command]
-pub async fn list_audio_devices(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
-    let (bin, _) = binary::backend_binary(&app)?;
-    devices::list_audio_devices(&bin).await
+pub async fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
+    devices::list_audio_devices().await
 }
 
 /// Video options for the Settings UI: codec ids from the backend, ladder
@@ -714,7 +719,11 @@ pub struct VideoOptions {
 #[tauri::command]
 pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     use crate::video_quality as q;
-    let (gsr_bin, _) = binary::backend_binary(&app)?;
+    // Native backends (Windows WGC) have no sidecar binary; their probes
+    // ignore this path.
+    let gsr_bin: PathBuf = binary::backend_binary(&app)
+        .map(|(p, _)| p)
+        .unwrap_or_default();
     let vendor = video::vendor(&gsr_bin).await;
 
     // Codec ids the backend reports, filtered to known-good entries.

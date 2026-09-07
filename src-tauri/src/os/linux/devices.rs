@@ -1,11 +1,15 @@
 //! Capture device enumeration (Linux): query OUR bundled GSR binary.
 //! Output lines are `name|description`; kind follows GSR conventions.
+//! Argless like the Windows backend so shared code never branches: the
+//! binary resolves internally (MOONLIT_GSR_BIN → bundled sidecar → PATH),
+//! exactly as engine start does.
 
 use super::super::AudioDevice;
-use std::path::Path;
+use super::gsr::LinuxGsrEngine;
 
-pub async fn list_audio_devices(bin: &Path) -> Result<Vec<AudioDevice>, String> {
-    let out = tokio::process::Command::new(bin)
+pub async fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
+    let bin = LinuxGsrEngine::resolve_binary()?;
+    let out = tokio::process::Command::new(&bin)
         .arg("--list-audio-devices")
         .output()
         .await
