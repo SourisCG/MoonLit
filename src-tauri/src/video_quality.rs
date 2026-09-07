@@ -7,19 +7,20 @@
 pub const HEIGHTS: [u32; 4] = [360, 720, 1080, 1440];
 
 /// CBR kbps per (output height, codec). Medal parity (1080p h264 = 20M,
-/// same figure as the old-MoonLit advanced table).
+/// same figure as the old-MoonLit advanced table). `x264` (CPU) follows the
+/// h264 row: software `veryfast` needs at least the same headroom.
 pub fn bitrate_kbps(height: u32, codec: &str) -> u32 {
     match (height, codec) {
         (360, _) => 3000,
-        (720, "h264") => 10000,
+        (720, "h264" | "x264") => 10000,
         (720, _) => 7000,
-        (1080, "h264") => 20000,
+        (1080, "h264" | "x264") => 20000,
         (1080, "hevc") => 12000,
         (1080, _) => 8000,
-        (1440, "h264") => 25000,
+        (1440, "h264" | "x264") => 25000,
         (1440, "hevc") => 20000,
         (1440, _) => 15000,
-        (_, "h264") => 20000,
+        (_, "h264" | "x264") => 20000,
         (_, "hevc") => 12000,
         (_, _) => 8000,
     }

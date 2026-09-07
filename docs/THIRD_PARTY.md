@@ -40,10 +40,13 @@ component shipped inside MoonLit installers and what the GPL requires for each.
 - **What:** `ffmpeg` CLI sidecar for thumbnails, lossless cuts, vertical presets.
 - **Upstream:** https://ffmpeg.org (static builds: BtbN for Windows,
   johnvansickle musl for Linux).
-- **License:** depends on build flags. MoonLit uses LGPL-compatible builds
-  (external hardware encoders only: nvenc/amf/qsv/vaapi — no libx264/libx265
-  linked) AND keeps FFmpeg as a separate process (CLI boundary), so the
-  GPL-3.0-only status of MoonLit comes from GSR, not FFmpeg.
+- **License:** the static builds we ship (BtbN for Windows, johnvansickle
+  musl for Linux) are GPL builds — they link `libx264`/`libx265`, which
+  MoonLit needs for the `x264` CPU fallback codec (Windows `offered_codecs`
+  always lists it; save-time `TranscodeEncoder::X264` maps to `libx264`).
+  This is compliant because MoonLit as a whole is already `GPL-3.0-only`
+  (via GSR, above). FFmpeg stays a separate process (CLI boundary); no
+  libx264 code is linked into MoonLit itself.
 - **Dev fallback:** system `ffmpeg` from `PATH` when no sidecar is present,
   with a log warning. Production always ships the pinned sidecar.
 

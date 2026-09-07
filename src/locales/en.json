@@ -41,6 +41,8 @@
     "codec_hevc_note": "~40% lighter; Discord/Twitter may reject it.",
     "codec_av1_label": "AV1",
     "codec_av1_note": "Best compression; modern hardware only.",
+    "codec_x264_label": "x264 (CPU fallback)",
+    "codec_x264_note": "Works without a GPU encoder; heavier on CPU.",
     "resolution": "Resolution",
     "source": "Source (no rescale)",
     "fps": "Frame rate",

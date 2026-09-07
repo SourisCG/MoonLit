@@ -255,8 +255,11 @@ pub async fn offered_codecs(_bin: &Path) -> Vec<String> {
 
 /// Save-time transcode encoder for (`vendor`, `codec`) — mirrors
 /// `os/linux/video`. AMD→Amf, Intel→Qsv, NVIDIA→Nvenc; `x264` is software
-/// and works on any vendor (wired in the x264 pass).
-pub fn transcode_encoder(vendor: &str, _codec: &str) -> Option<TranscodeEncoder> {
+/// and resolves on any vendor.
+pub fn transcode_encoder(vendor: &str, codec: &str) -> Option<TranscodeEncoder> {
+    if codec == "x264" {
+        return Some(TranscodeEncoder::X264);
+    }
     match vendor {
         "nvidia" => Some(TranscodeEncoder::Nvenc),
         "amd" => Some(TranscodeEncoder::Amf),
@@ -295,5 +298,8 @@ mod tests {
         assert_eq!(transcode_encoder("amd", "h264"), Some(TE::Amf));
         assert_eq!(transcode_encoder("intel", "h264"), Some(TE::Qsv));
         assert_eq!(transcode_encoder("unknown", "h264"), None);
+        // x264 is software: resolves on any vendor, unknown included.
+        assert_eq!(transcode_encoder("unknown", "x264"), Some(TE::X264));
+        assert_eq!(transcode_encoder("nvidia", "x264"), Some(TE::X264));
     }
 }

@@ -61,7 +61,8 @@ bitrate on target).
 | 1440p | 25M | 20M | 15M | ~188 MB |
 
 Notes: 1080p@20M matches the old-MoonLit advanced table 1:1 (CBR/P7/HQ/AQ/BF2/keyint-2s).
-`preset=p7`/`profile=high` alone were tested and only work as part of the full
+`x264` (Windows CPU fallback, always listed) follows the h264 ladder row;
+save-time it maps to `libx264` (`veryfast` + `zerolatency`).`preset=p7`/`profile=high` alone were tested and only work as part of the full
 set above (alone they starve keyframes in tiny test buffers — an artifact of
 short `-r`, not production buffers; the full set saves clean).
 VAAPI/QSV/AMD keep GSR defaults (`very_high`, no passthrough opts).

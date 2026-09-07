@@ -74,14 +74,17 @@ pub struct AudioDevice {
 
 /// Video encoder id for save-time transcoding, chosen per GPU vendor.
 /// Unknown vendors fall back to `None` (caller keeps the source file).
+/// `X264` is the software CPU encoder — vendor-independent, always offered
+/// on Windows as a fallback when no GPU block fits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TranscodeEncoder {    Nvenc,
     Amf,
     Qsv,
+    X264,
 }
 
 impl TranscodeEncoder {
-    /// FFmpeg encoder name for `codec` (`h264`/`hevc`/`av1`).
+    /// FFmpeg encoder name for `codec` (`h264`/`hevc`/`av1`/`x264`).
     pub fn ffmpeg_name(self, codec: &str) -> Option<&'static str> {
         match (self, codec) {
             (Self::Nvenc, "hevc") => Some("hevc_nvenc"),
@@ -91,6 +94,8 @@ impl TranscodeEncoder {
             (Self::Amf, _) => Some("h264_amf"),
             (Self::Qsv, "hevc") => Some("hevc_qsv"),
             (Self::Qsv, _) => Some("h264_qsv"),
+            (Self::X264, "x264") => Some("libx264"),
+            (Self::X264, _) => None,
         }
     }
 }

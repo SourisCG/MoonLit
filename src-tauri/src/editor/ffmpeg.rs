@@ -82,18 +82,22 @@ pub async fn scale_to_height(
         "-c:v", enc_name,
     ]);
     // Preset/tune knobs only exist on NVENC; QSV/AMF use their own quality
-    // flags so the command stays valid on every vendor.
+    // flags so the command stays valid on every vendor. x264 (CPU) runs
+    // veryfast + zerolatency: tuned for live capture, not file size.
     if matches!(encoder, crate::os::TranscodeEncoder::Nvenc) {
         cmd.args(["-preset", "p7", "-tune", "hq"]);
     } else if matches!(encoder, crate::os::TranscodeEncoder::Amf) {
         cmd.args(["-quality", "quality"]);
+    } else if matches!(encoder, crate::os::TranscodeEncoder::X264) {
+        cmd.args(["-preset", "veryfast", "-tune", "zerolatency"]);
     } else {
         cmd.args(["-preset", "veryslow"]);
     }
     // `high` is an H.264 profile; HEVC uses `main`. AV1 skips profile flags.
+    // `x264` is H.264 too, so it takes `high` like `h264`.
     if codec == "hevc" {
         cmd.args(["-profile:v", "main"]);
-    } else if codec == "h264" {
+    } else if codec == "h264" || codec == "x264" {
         cmd.args(["-profile:v", "high"]);
     }
     let gop = (fps.max(1) * 2).to_string();

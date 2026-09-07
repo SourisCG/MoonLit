@@ -78,7 +78,7 @@ async fn start_engine(app: &AppHandle) -> Result<EngineStatus, String> {
 
     // Video quality: Medal ladder + old-MoonLit NVENC HQ recipe.
     let mut codec = setting_str(&db, "video_codec", "h264");
-    if !["h264", "hevc", "av1"].contains(&codec.as_str()) {
+    if !["h264", "hevc", "av1", "x264"].contains(&codec.as_str()) {
         codec = "h264".to_string();
     }
     let out_height: u32 = setting_str(&db, "out_height", "0").parse().unwrap_or(0);
@@ -730,7 +730,7 @@ pub async fn video_options(app: AppHandle) -> Result<VideoOptions, String> {
     // Labels/notes are frontend-owned (locales) — never hardcode UI text here.
     let mut codecs: Vec<CodecOpt> = Vec::new();
     for id in video::offered_codecs(&gsr_bin).await {
-        if matches!(id.as_str(), "h264" | "hevc" | "av1")
+        if matches!(id.as_str(), "h264" | "hevc" | "av1" | "x264")
             && !codecs.iter().any(|c: &CodecOpt| c.id == id)
         {
             codecs.push(CodecOpt { id });
