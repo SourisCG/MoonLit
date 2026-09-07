@@ -148,8 +148,11 @@ fn static_codecs_for_vendor(vendor: &str) -> Vec<String> {
     base.iter().map(|s| s.to_string()).collect()
 }
 
-/// Candidate ffmpeg encoder names per codec id for the probe.
-fn probe_encoder_name(vendor: &str, codec: &str) -> Option<&'static str> {
+/// Canonical ffmpeg encoder for (`vendor`, `codec`) in the capture path.
+/// `None` means the combo cannot encode here (caller must fail loudly —
+/// the settings UI only offers probed codecs, so this guards stale configs).
+/// Shared by the live engine and the save path.
+pub fn capture_encoder_name(vendor: &str, codec: &str) -> Option<&'static str> {
     match (vendor, codec) {
         ("nvidia", "h264") => Some("h264_nvenc"),
         ("nvidia", "hevc") => Some("hevc_nvenc"),
@@ -161,6 +164,11 @@ fn probe_encoder_name(vendor: &str, codec: &str) -> Option<&'static str> {
         (_, "x264") => Some("libx264"),
         _ => None,
     }
+}
+
+/// Candidate ffmpeg encoder names per codec id for the probe.
+fn probe_encoder_name(vendor: &str, codec: &str) -> Option<&'static str> {
+    capture_encoder_name(vendor, codec)
 }
 
 /// True when `ffmpeg` can actually open the encoder (10 black frames through
