@@ -11,7 +11,7 @@ Details per phase live in `ROADMAP_PHASES.md`; technical specs in `01_*`–`08_*
 | license | GPL-3.0-only (required by gpu-screen-recorder) | ✅ done | `2b99add` | Verbatim LICENSE + metadata + README |
 | 2 | rusqlite persistence (relative paths) + keyring secrets + settings UI | ✅ done | `c72edba` | CRUD, vault OK, folder picker fixed |
 | 3 | Capture engine Linux (GSR embedded, 3-track mix-first, gains, ladder, 30/60fps, monitor select) | ✅ done (Linux) | `5ffd70d`+ui | F9 → `.mp4` 3×aac, thumbs, durations, gains — user-verified |
-| 3-win | Capture engine Windows trip (WGC + WASAPI + AMF/QSV, same behaviors) | ⬜ next | — | See `09_WINDOWS_HANDOFF.md`; closes Phase 3 |
+| 3-win | Capture engine Windows trip (WGC + WASAPI + AMF/QSV/x264, same behaviors) | ✅ done (code, HW-verified; user in-game F9 pass pending) | `7078a13` | See `09_WINDOWS_HANDOFF.md`; e2e-tested on RTX 3060 |
 | 3-ui | Transparent tray icon, i18n codec labels, opener perms, disk note | ✅ done | `7c5d733` (batch) | user-verified pending |
 
 ## Cross-platform gate (project rule)
@@ -26,6 +26,33 @@ Applies from Phase 3 on (capture, detection, editor/FFmpeg, packaging).
 | 7 | CI/CD packaging | ⬜ pending | — | Tag produces all installers |
 
 ## Log
+
+- **Phase 3-win — Windows capture engine (2026-09-07, commits `681529d`→`7078a13`)**
+  Native WGC replay engine behind the same `CaptureEngine` surface; Linux
+  untouched except a mechanical `list_audio_devices` signature alignment
+  (argless on both backends; Linux resolves its GSR binary internally).
+  `commands.rs` IPC contracts unchanged (only a native-binary fallback path,
+  still zero-`cfg` — the rule grep prints nothing).
+  - `video.rs`: DXGI vendor (dGPU by VRAM, Basic Render skipped), WGC
+    monitors + `resolve_monitor`, probed `offered_codecs` (live
+    micro-encode per candidate, cached; AV1 only where it encodes).
+  - `audio.rs`: cpal loopback + mic, 48 kHz stereo stems, live 0–200%
+    gains via atomics, mix tap full-fidelity (Linux parity).
+  - `wgc.rs`: WGC → ffmpeg (NVENC/AMF/QSV/libx264, CBR ladder, 2 s GOP,
+    NVENC HQ only on nvidia+h264/hevc) → MPEG-TS RAM ring; save cuts the
+    window and muxes 3×AAC (mix/game/mic) in GSR filename style.
+  - `x264` always offered (user decision): ladder follows h264,
+    `TranscodeEncoder::X264` → `libx264`, EN+ES locale keys,
+    `THIRD_PARTY.md` corrected (shipped ffmpeg builds link libx264; the
+    project was already GPL-3.0-only via GSR).
+  - OS floor documented (Win10 1903+/Win11) in `09`/`02`/`08`.
+  - Verified live on RTX 3060: 1080p60 NVENC buffer, save → h264 + 3×AAC;
+    `cargo check` + `cargo test` (15 pass) green on
+    `x86_64-pc-windows-msvc`. Full Linux `cargo check` from Windows is
+    blocked by missing GTK system libs (environmental); the Linux-side
+    diff is mechanical and Linux CI must confirm before release.
+  - Still needs a user in-game pass: F9 → clip <1s, audible gain sliders,
+    device/monitor/codec switching with restart notice.
 
 - **Phase 0/1** — Scaffold, tray minimize-to-tray, F9 global shortcut with notification, MoonLit glass layout, pausable canvas starfield, ES/EN i18n. Manual test: F9 counted globally, tray restore OK.
 - **Phase 1-fixes** — Frameless window + custom topbar (drag, minimize, maximize, close-to-tray), MoonLit moon+play CSS logo from moonlit.souriscg.dev, time-based soft starfield twinkle, Rust 400ms + frontend 300ms F9 dedupe. Manual test passed by user.
