@@ -37,6 +37,16 @@ rodio = "0.21"
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.29", features = ["signal", "process"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# WGC/DXGI capture (Win10 1903+ floor, no DLL injection) + WASAPI audio.
+windows-capture = "2.0.1"
+cpal = "0.16"
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Gdi",
+] }
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

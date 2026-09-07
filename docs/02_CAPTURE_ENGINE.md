@@ -132,6 +132,9 @@ rodio = "0.21" # confirmation ding (synthesized, no assets)
 
 ## 3. Windows: `windows-capture` + hardware encoder
 
+- **OS floor: Windows 10 version 1903 (build 18362)+, Windows 11 supported.**
+  WGC does not exist below 1903, so MoonLit for Windows requires 1903+;
+  the installer targets that floor (see `08_CI_CD_DISTRIBUTION.md`).
 - No DLL injection (anti-cheat safe for Valorant/CS2). Use Windows Graphics Capture (WGC) / DXGI via `windows-capture` crate (Win10 1903+, Win11), 60/120 FPS.
 - Audio: two WASAPI streams via `cpal`:
   - Thread A: `default_output` loopback (`eRender`) = game.

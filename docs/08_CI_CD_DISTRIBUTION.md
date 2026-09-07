@@ -21,6 +21,11 @@ Developer OS: Fedora. Targets: WinGet/MS Store (later), Flathub (later), direct 
 
 Add `"msix"` only when Partner Center flow starts. Current `tauri.conf.json` has `targets: "all"` (scaffold default) — narrow it in Phase 7.
 
+Minimum supported Windows version: **Windows 10 version 1903 (build 18362)+**
+(WGC capture floor; Windows 11 supported). NSIS/MSI metadata must reflect
+this floor so the installer refuses older builds instead of installing a
+build whose capture backend cannot initialize.
+
 Sidecars in `src-tauri/binaries/`: `ffmpeg-x86_64-pc-windows-msvc.exe`, `ffmpeg-x86_64-unknown-linux-gnu` (static: BtbN / johnvansickle musl). Declare in `tauri.conf.json > bundle.externalBin`.
 Plus `moonlit-gsr/gpu-screen-recorder` (+ `gsr-kms-server`) for Linux targets,
 built in CI from the pinned snapshot in `docs/THIRD_PARTY.md`. Full ship matrix

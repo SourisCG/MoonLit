@@ -9,6 +9,9 @@ implement the Windows side without breaking Linux.
 - Toolchain: MSVC (VS Build Tools) + Rust stable + Node 20 + `pnpm install`.
   Dev loop: `pnpm tauri:dev`. Verify: `pnpm build`,
   `cargo check --target x86_64-pc-windows-msvc`, `cargo test`.
+- Minimum supported OS: **Windows 10 version 1903 (build 18362) or later**
+  (Windows 11 supported). This is the WGC (Windows Graphics Capture) API
+  floor — capture cannot work below 1903, so the installer targets 1903+.
 - Package manager is **pnpm** (never npm). Commits: small, conventional
   (`feat/fix/docs`), push to `origin/main` when green.
 - Zero-`cfg` rule: NO `cfg(target_os)` and NO OS APIs outside `src-tauri/src/os/`.
